@@ -336,6 +336,7 @@ bootloaders_update: \
 	cubepilot_cubeorange_bootloader \
 	cubepilot_cubeorangeplus_bootloader \
 	hkust_nxt-dual_bootloader \
+	hkust_nxt-dual-wl_bootloader \
 	hkust_nxt-v1_bootloader \
 	holybro_durandal-v1_bootloader \
 	holybro_kakuteh7_bootloader \
