@@ -22,3 +22,8 @@ param set-default MAV_TYPE 2
 param set-default CA_AIRFRAME 0
 param set-default CA_ROTOR_COUNT 4
 param set-default CBRK_SUPPLY_CHK 894281
+
+# AS5600 magnetic encoder configuration for wheel loader
+param set-default SENS_EN_AS5600 1
+param set-default AS5600_I2C_BUS 1
+param set-default AS5600_OFFSET 0.0
