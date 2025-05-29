@@ -1,0 +1,45 @@
+module_name: quad_encoder
+serial_config:
+    - command: quad_encoder start -i ${QUADENC_INSTANCE}
+      port_config_param:
+        name: QUADENC_CFG
+        group: Sensors
+parameters:
+    - group: Quadrature Encoder
+      definitions:
+        QUADENC_PIN_A:
+            description:
+                short: Encoder channel A GPIO pin
+            type: int32
+            default: 0
+        QUADENC_PIN_B:
+            description:
+                short: Encoder channel B GPIO pin
+            type: int32
+            default: 1
+        QUADENC_PIN_Z:
+            description:
+                short: Encoder index GPIO pin (-1 to disable)
+            type: int32
+            default: -1
+        QUADENC_MODE:
+            description:
+                short: Encoder counting mode
+                long: 1=X1, 2=X2, 4=X4
+            type: int32
+            default: 4
+        QUADENC_PPR:
+            description:
+                short: Pulses per revolution
+            type: int32
+            default: 1024
+        QUADENC_WHEEL_R:
+            description:
+                short: Wheel radius for linear distance calculation
+            type: float
+            default: 0.0
+        QUADENC_EN:
+            description:
+                short: Enable quadrature encoder
+            type: int32
+            default: 0

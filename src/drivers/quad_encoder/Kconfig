@@ -1,0 +1,137 @@
+menuconfig DRIVERS_QUAD_ENCODER
+	bool "Quadrature Encoder Driver"
+	default n
+	depends on SENSORS_QENCODER
+	help
+	  Enable the quadrature encoder driver that supports
+	  multiple use cases including wheels, motors, linear actuators,
+	  and rotary position sensing.
+
+if DRIVERS_QUAD_ENCODER
+
+config QUADENCODER_GPIO_SUPPORT
+	bool "GPIO-based encoder support"
+	default y
+	help
+	  Enable support for GPIO-based quadrature encoders
+
+config QUADENCODER_TIMER_SUPPORT
+	bool "Timer-based encoder support"
+	default y
+	help
+	  Enable support for hardware timer-based encoders
+
+config QUADENCODER_SPI_SUPPORT
+	bool "SPI encoder support"
+	default n
+	help
+	  Enable support for SPI-based absolute encoders
+
+config QUADENCODER_MAX_INSTANCES
+	int "Maximum encoder instances"
+	default 4
+	range 1 8
+	help
+	  Maximum number of encoder instances supported
+
+config QUADENCODER_DEFAULT_PPR
+	int "Default pulses per revolution"
+	default 1024
+	range 64 10000
+	help
+	  Default encoder resolution in pulses per revolution
+
+config QUADENCODER_VELOCITY_CALC
+	bool "Enable velocity calculation"
+	default y
+	help
+	  Enable automatic velocity calculation
+
+config QUADENCODER_VELOCITY_FILTER_CUTOFF
+	int "Velocity filter cutoff frequency (Hz)"
+	default 10
+	range 1 100
+	depends on QUADENCODER_VELOCITY_CALC
+	help
+	  Cutoff frequency for velocity low-pass filter
+
+config QUADENCODER_FILTER_ENABLE
+	bool "Enable digital filtering"
+	default y
+	help
+	  Enable digital filtering for noise reduction
+
+config QUADENCODER_FILTER_SAMPLES
+	int "Digital filter sample count"
+	default 3
+	range 1 15
+	depends on QUADENCODER_FILTER_ENABLE
+	help
+	  Number of samples for digital noise filtering
+
+config QUADENCODER_INDEX_SUPPORT
+	bool "Enable index signal support"
+	default y
+	help
+	  Enable support for encoder index (Z) signals
+
+config QUADENCODER_INTERRUPT_PRIORITY
+	int "Interrupt priority"
+	default 5
+	range 1 15
+	depends on QUADENCODER_GPIO_SUPPORT
+	help
+	  Interrupt priority for GPIO-based encoder signals
+
+config QUADENCODER_DEBOUNCE_TIME_US
+	int "Debounce time (microseconds)"
+	default 50
+	range 10 1000
+	depends on QUADENCODER_GPIO_SUPPORT
+	help
+	  Debounce time for encoder signals
+
+config QUADENCODER_UORB_QUEUE_SIZE
+	int "uORB message queue size"
+	default 4
+	range 1 10
+	help
+	  Size of uORB message queue for encoder data
+
+config QUADENCODER_PUBLISH_RATE_MAX
+	int "Maximum publish rate (Hz)"
+	default 100
+	range 10 1000
+	help
+	  Maximum rate for publishing encoder data to uORB
+
+config QUADENCODER_POSITION_SCALING
+	bool "Enable position scaling"
+	default y
+	help
+	  Enable automatic position scaling to engineering units
+
+config QUADENCODER_DIAGNOSTICS
+	bool "Enable diagnostics"
+	default n
+	help
+	  Enable encoder diagnostics and error monitoring
+
+if QUADENCODER_DIAGNOSTICS
+
+config QUADENCODER_ERROR_THRESHOLD
+	int "Error count threshold"
+	default 100
+	range 10 10000
+	help
+	  Number of errors before flagging encoder as faulty
+
+config QUADENCODER_SIGNAL_QUALITY
+	bool "Signal quality monitoring"
+	default y
+	help
+	  Monitor encoder signal quality and integrity
+
+endif # QUADENCODER_DIAGNOSTICS
+
+endif # DRIVERS_QUAD_ENCODER

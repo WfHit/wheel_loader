@@ -1,0 +1,8 @@
+menuconfig EXAMPLES_QUAD_ENCODER_TEST
+	bool "Quadrature encoder test and examples"
+	default n
+	depends on DRIVERS_QUAD_ENCODER
+	help
+	  Test application for the quadrature encoder driver.
+	  Includes basic encoder tests, motor control examples,
+	  and linear position control demonstrations.
