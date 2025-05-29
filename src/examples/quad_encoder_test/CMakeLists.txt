@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2021 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2023 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,41 +30,15 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-if("${PX4_BOARD_LABEL}" STREQUAL  "bootloader")
-	add_library(drivers_board
-		bootloader_main.c
-		usb.c
-	)
-	target_link_libraries(drivers_board
-		PRIVATE
-			nuttx_arch
-			nuttx_drivers
-			bootloader
-	)
-	target_include_directories(drivers_board PRIVATE ${PX4_SOURCE_DIR}/platforms/nuttx/src/bootloader/common)
 
-else()
-	add_library(drivers_board
-		i2c.cpp
-		init.c
-		led.c
-		sdio.c
-		spi.cpp
-		timer_config.cpp
-		usb.c
-		mtd.cpp
-		board_quadencoder.c
+px4_add_module(
+	MODULE examples__quad_encoder_test
+	MAIN quad_encoder_test
+	COMPILE_FLAGS
+	SRCS
+		quad_encoder_test_main.c
+		motor_control_example.c
+		linear_position_example.c
+	DEPENDS
+		platforms__common
 	)
-	# add_dependencies(drivers_board arch_board_hw_info)
-
-	target_link_libraries(drivers_board
-		PRIVATE
-			arch_io_pins
-			arch_spi
-			arch_board_hw_info
-			drivers__led
-			nuttx_arch
-			nuttx_drivers
-			px4_layer
-	)
-endif()

@@ -11,3 +11,21 @@
 
 # DShot telemetry is always on UART7
 # dshot telemetry -d /dev/ttyS5
+
+# Start quadrature encoder driver for dual wheel control
+if param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder driver"
+	quad_encoder start
+
+	# Wait for driver to initialize
+	sleep 1
+
+	# Verify encoder devices are available
+	if [ -c /dev/qe0 ] && [ -c /dev/qe1 ]
+	then
+		echo "Quadrature encoders initialized successfully"
+	else
+		echo "Warning: Quadrature encoder initialization failed"
+	fi
+fi

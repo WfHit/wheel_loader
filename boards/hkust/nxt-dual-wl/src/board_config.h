@@ -223,6 +223,9 @@ extern void stm32_usbinitialize(void);
 
 extern void board_peripheral_reset(int ms);
 
+/* Quadrature encoder support */
+extern int nxt_dual_wl_quadencoder_initialize(void);
+
 #include <px4_platform_common/board_common.h>
 
 #endif /* __ASSEMBLY__ */
