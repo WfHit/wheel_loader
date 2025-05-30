@@ -203,15 +203,6 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 #endif
 
-	/* Initialize quadrature encoders */
-#ifdef CONFIG_SENSORS_QUADENCODER_COMMON
-	ret = nxt_dual_wl_quadencoder_initialize();
-	if (ret != OK) {
-		syslog(LOG_ERR, "[boot] FAILED to init quadrature encoders %d\n", ret);
-		led_on(LED_RED);
-	}
-#endif
-
 	/* Configure the HW based on the manifest */
 	px4_platform_configure();
 
