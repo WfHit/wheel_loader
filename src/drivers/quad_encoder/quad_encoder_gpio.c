@@ -8,14 +8,14 @@
 #include <errno.h>
 #include <string.h>
 
-#include <lib/quad_encoder/quadencoder_types.h>
+#include <lib/quad_encoder/quad_encoder_types.h>
 
-#include "quadencoder_common.h"
+#include "quad_encoder_common.h"
 
 /* GPIO-based encoder state */
 struct gpio_encoder_s {
-	struct quadencoder_dev_s common;    /* Common encoder data */
-	struct quadencoder_pins_s pins;     /* Pin configuration */
+	struct quad_encoder_dev_s common;    /* Common encoder data */
+	struct quad_encoder_pins_s pins;     /* Pin configuration */
 
 	/* Pin states */
 	bool last_a;
@@ -82,7 +82,7 @@ static int gpio_encoder_interrupt(int irq, void *context, void *arg)
 }
 
 /* Initialize GPIO-based encoder */
-int quadencoder_gpio_initialize(FAR struct quadencoder_config_s *config,
+int quad_encoder_gpio_initialize(FAR struct quad_encoder_config_s *config,
 				FAR struct qe_lowerhalf_s **lower)
 {
 	struct gpio_encoder_s *priv;
@@ -96,7 +96,7 @@ int quadencoder_gpio_initialize(FAR struct quadencoder_config_s *config,
 	}
 
 	/* Copy pin configuration */
-	memcpy(&priv->pins, &config->pins, sizeof(struct quadencoder_pins_s));
+	memcpy(&priv->pins, &config->pins, sizeof(struct quad_encoder_pins_s));
 
 	/* Initialize decode table for X4 mode */
 	/* This table maps state transitions to count changes */
@@ -153,7 +153,7 @@ int quadencoder_gpio_initialize(FAR struct quadencoder_config_s *config,
 	priv->last_b = gpio_read(priv->pins.pin_b);
 
 	/* Initialize common structure */
-	quadencoder_common_initialize(&priv->common, 0, 0);
+	quad_encoder_common_initialize(&priv->common, 0, 0);
 
 	*lower = &priv->common.lower;
 	return OK;

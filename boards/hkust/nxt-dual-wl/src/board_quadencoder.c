@@ -49,8 +49,8 @@
 #include <errno.h>
 
 #include "board_config.h"
-#include "../../../../src/drivers/quad_encoder/quadencoder_common.h"
-#include "../../../../src/lib/quad_encoder/quadencoder_types.h"
+#include <drivers/quad_encoder/quad_encoder_common.h>
+#include <lib/quad_encoder/quad_encoder_types.h>
 
 /* NXT Dual WL Encoder Pin Definitions */
 
@@ -68,7 +68,7 @@
 #define NXT_ENCODER_PIN_MODE    (GPIO_INPUT | GPIO_PULLUP)
 
 /* Board-specific encoder configurations */
-static struct quadencoder_config_s g_encoder1_config = {
+static struct quad_encoder_config_s g_encoder1_config = {
 	.pins = {
 		.pin_a = NXT_ENCODER1_PIN_A,
 		.pin_b = NXT_ENCODER1_PIN_B,
@@ -78,10 +78,10 @@ static struct quadencoder_config_s g_encoder1_config = {
 		.invert_b = false,
 		.invert_z = false
 	},
-	.hw_type = QUADENCODER_HW_GPIO,
+	.hw_type = QUAD_ENCODER_HW_GPIO,
 };
 
-static struct quadencoder_config_s g_encoder2_config = {
+static struct quad_encoder_config_s g_encoder2_config = {
 	.pins = {
 		.pin_a = NXT_ENCODER2_PIN_A,
 		.pin_b = NXT_ENCODER2_PIN_B,
@@ -91,7 +91,7 @@ static struct quadencoder_config_s g_encoder2_config = {
 		.invert_b = false,
 		.invert_z = false
 	},
-	.hw_type = QUADENCODER_HW_GPIO,
+	.hw_type = QUAD_ENCODER_HW_GPIO,
 };
 
 /****************************************************************************
@@ -102,16 +102,16 @@ static struct quadencoder_config_s g_encoder2_config = {
  *   This board supports two encoders for dual wheel control
  *
  ****************************************************************************/
-int nxt_dual_wl_quadencoder_initialize(void)
+int nxt_dual_wl_quad_encoder_initialize(void)
 {
-	FAR struct quadencoder_dev_s *dev1;
-	FAR struct quadencoder_dev_s *dev2;
+	FAR struct quad_encoder_dev_s *dev1;
+	FAR struct quad_encoder_dev_s *dev2;
 	int ret;
 
 	PX4_INFO("Initializing NXT Dual WL quadrature encoders");
 
 	/* Initialize encoder 1 (left wheel or primary axis) */
-	ret = quadencoder_gpio_initialize(&g_encoder1_config, &dev1);
+	ret = quad_encoder_gpio_initialize(&g_encoder1_config, &dev1);
 
 	if (ret < 0) {
 		PX4_ERR("Failed to initialize encoder 1: %d", ret);
@@ -119,7 +119,7 @@ int nxt_dual_wl_quadencoder_initialize(void)
 	}
 
 	/* Initialize encoder 2 (right wheel or secondary axis) */
-	ret = quadencoder_gpio_initialize(&g_encoder2_config, &dev2);
+	ret = quad_encoder_gpio_initialize(&g_encoder2_config, &dev2);
 
 	if (ret < 0) {
 		PX4_ERR("Failed to initialize encoder 2: %d", ret);
@@ -137,10 +137,10 @@ int nxt_dual_wl_quadencoder_initialize(void)
  *   Runtime pin reconfiguration (if needed)
  *
  ****************************************************************************/
-int nxt_dual_wl_quadencoder_set_pins(int encoder_id,
-				      struct quadencoder_pins_s *pins)
+int nxt_dual_wl_quad_encoder_set_pins(int encoder_id,
+				      struct quad_encoder_pins_s *pins)
 {
-	struct quadencoder_config_s *config;
+	struct quad_encoder_config_s *config;
 
 	/* Select encoder configuration */
 	switch (encoder_id) {
@@ -157,7 +157,7 @@ int nxt_dual_wl_quadencoder_set_pins(int encoder_id,
 	}
 
 	/* Update pin configuration */
-	memcpy(&config->pins, pins, sizeof(struct quadencoder_pins_s));
+	memcpy(&config->pins, pins, sizeof(struct quad_encoder_pins_s));
 
 	/* Note: This requires re-initialization of the encoder */
 	return OK;

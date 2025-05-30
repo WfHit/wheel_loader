@@ -1,0 +1,5 @@
+menuconfig DRIVERS_ACTUATORS_HBRIDGE_DRV8701
+	bool "hbridge_drv8701"
+	default n
+	---help---
+		Enable support for DRV8701 H-Bridge motor driver

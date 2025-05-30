@@ -4,10 +4,9 @@ px4_add_module(
 	COMPILE_FLAGS
 	SRCS
 		quad_encoder_main.cpp
-		quadencoder_common.c
-		quadencoder_gpio.c
-		quadencoder_timer.c
-		quadencoder_params.c
+		quad_encoder_common.c
+		quad_encoder_gpio.c
+		quad_encoder_timer.c
 	DEPENDS
 		platforms__common
 	)
