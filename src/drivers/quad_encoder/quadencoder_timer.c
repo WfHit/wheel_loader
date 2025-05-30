@@ -1,14 +1,16 @@
 #include <nuttx/config.h>
-#include <nuttx/timers/timer.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/timers/timer.h>
+
 #include <arch/board/board.h>
 
-#include <errno.h>
 #include <debug.h>
+#include <errno.h>
 #include <string.h>
 
-#include "quadencoder_common.h"
 #include <lib/quad_encoder/quadencoder_types.h>
+
+#include "quadencoder_common.h"
 
 /* Timer-based encoder implementation */
 struct timer_encoder_s {

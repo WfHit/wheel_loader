@@ -3,13 +3,14 @@
 #include <nuttx/irq.h>
 #include <nuttx/sensors/qencoder.h>
 
-#include <stdio.h>
-#include <errno.h>
 #include <debug.h>
+#include <errno.h>
+#include <stdio.h>
 #include <string.h>
 
+#include <lib/quad_encoder/quadencoder_ioctl.h>
+
 #include "quadencoder_common.h"
-#include "../lib/quad_encoder/quadencoder_ioctl.h"
 
 /* Lower half operations */
 static int quadencoder_setup(FAR struct qe_lowerhalf_s *lower);

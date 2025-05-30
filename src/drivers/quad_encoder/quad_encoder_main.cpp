@@ -1,23 +1,25 @@
 #include <px4_platform_common/px4_config.h>
-#include <px4_platform_common/tasks.h>
-#include <px4_platform_common/posix.h>
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/module.h>
+#include <px4_platform_common/posix.h>
+#include <px4_platform_common/tasks.h>
 
 #include <uORB/uORB.h>
-#include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/sensor_quad_encoder.h>
 
 #include <drivers/drv_hrt.h>
+
 #include <lib/parameters/param.h>
 
-#include <sys/ioctl.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <math.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+#include <lib/quad_encoder/quadencoder_ioctl.h>
 
 #include "quadencoder_common.h"
-#include "../lib/quad_encoder/quadencoder_ioctl.h"
 
 class QuadEncoder : public ModuleBase<QuadEncoder>
 {
