@@ -17,9 +17,9 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include <lib/quad_encoder/quadencoder_ioctl.h>
+#include <lib/quad_encoder/quad_encoder_ioctl.h>
 
-#include "quadencoder_common.h"
+#include "quad_encoder_common.h"
 
 class QuadEncoder : public ModuleBase<QuadEncoder>
 {

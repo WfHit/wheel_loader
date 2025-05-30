@@ -8,26 +8,26 @@
 #include <errno.h>
 #include <string.h>
 
-#include <lib/quad_encoder/quadencoder_types.h>
+#include <lib/quad_encoder/quad_encoder_types.h>
 
-#include "quadencoder_common.h"
+#include "quad_encoder_common.h"
 
 /* Timer-based encoder implementation */
 struct timer_encoder_s {
-	struct quadencoder_dev_s common;
+	struct quad_encoder_dev_s common;
 	int timer_id;
 	int channel_a;
 	int channel_b;
 };
 
 /****************************************************************************
- * Name: quadencoder_timer_initialize
+ * Name: quad_encoder_timer_initialize
  *
  * Description:
  *   Initialize hardware timer-based encoder (more efficient than GPIO)
  *
  ****************************************************************************/
-int quadencoder_timer_initialize(FAR struct quadencoder_config_s *config,
+int quad_encoder_timer_initialize(FAR struct quad_encoder_config_s *config,
 				 FAR struct qe_lowerhalf_s **lower)
 {
 	struct timer_encoder_s *priv;
@@ -68,7 +68,7 @@ int quadencoder_timer_initialize(FAR struct quadencoder_config_s *config,
 #endif
 
 	/* Initialize common structure */
-	quadencoder_common_initialize(&priv->common, 0, 0);
+	quad_encoder_common_initialize(&priv->common, 0, 0);
 
 	*lower = &priv->common.lower;
 	return OK;

@@ -1,4 +1,4 @@
-/****************************************************************************
+/***************************************************#include <lib/quad_encoder/quad_encoder_ioctl.h>************************
  *
  *   Copyright (c) 2023 PX4 Development Team. All rights reserved.
  *
@@ -50,7 +50,7 @@
 #include <unistd.h>
 #include <math.h>
 
-#include "../../lib/quad_encoder/quadencoder_ioctl.h"
+#include "../../lib/quad_encoder/quad_encoder_ioctl.h"
 
 /* External example functions */
 extern int motor_control_example(void);
