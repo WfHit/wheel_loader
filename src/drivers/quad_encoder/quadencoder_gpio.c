@@ -4,12 +4,13 @@
 #include <nuttx/irq.h>
 #include <nuttx/kmalloc.h>
 
-#include <errno.h>
 #include <debug.h>
+#include <errno.h>
 #include <string.h>
 
-#include "quadencoder_common.h"
 #include <lib/quad_encoder/quadencoder_types.h>
+
+#include "quadencoder_common.h"
 
 /* GPIO-based encoder state */
 struct gpio_encoder_s {

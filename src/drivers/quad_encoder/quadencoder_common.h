@@ -3,6 +3,7 @@
 #include <nuttx/config.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/semaphore.h>
+
 #include <lib/quad_encoder/quadencoder_types.h>
 
 /* Configuration */
