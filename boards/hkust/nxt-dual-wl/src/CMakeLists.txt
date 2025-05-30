@@ -53,7 +53,6 @@ else()
 		timer_config.cpp
 		usb.c
 		mtd.cpp
-		board_quadencoder.c
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)
 
