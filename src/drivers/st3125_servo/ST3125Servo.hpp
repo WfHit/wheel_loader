@@ -33,22 +33,23 @@
 
 #pragma once
 
+#include <termios.h>
+
+#include <drivers/drv_hrt.h>
+#include <lib/drivers/device/device.h>
+#include <lib/parameters/param.h>
+#include <lib/perf/perf_counter.h>
 #include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <lib/drivers/device/device.h>
-#include <lib/perf/perf_counter.h>
-#include <lib/parameters/param.h>
-#include <drivers/drv_hrt.h>
+
 #include <uORB/Publication.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/servo_feedback.h>
 #include <uORB/topics/robotic_servo_command.h>
-
-#include <termios.h>
+#include <uORB/topics/servo_feedback.h>
 #include <fcntl.h>
 #include <unistd.h>
 

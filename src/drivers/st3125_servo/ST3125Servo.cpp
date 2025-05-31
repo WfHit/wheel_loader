@@ -32,8 +32,10 @@
  ****************************************************************************/
 
 #include "ST3125Servo.hpp"
-#include <px4_platform_common/log.h>
+
 #include <lib/mathlib/mathlib.h>
+#include <px4_platform_common/log.h>
+
 #include <matrix/matrix/math.hpp>
 
 ST3125Servo::ST3125Servo() :
