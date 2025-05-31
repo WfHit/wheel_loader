@@ -66,6 +66,10 @@
 #  include <parameters/flashparams/flashfs.h>
 #endif
 
+#ifdef CONFIG_BOARD_NXT_QENCODER
+#  include "board_qencoder.h"
+#endif
+
 __BEGIN_DECLS
 extern void led_init(void);
 extern void led_on(int led);
@@ -205,6 +209,17 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	/* Configure the HW based on the manifest */
 	px4_platform_configure();
+
+#ifdef CONFIG_BOARD_NXT_QENCODER
+	/* Initialize quadrature encoders */
+	int qe_ret = board_qencoder_initialize();
+	if (qe_ret < 0) {
+		syslog(LOG_ERR, "[boot] FAILED to init quadrature encoders: %d\n", qe_ret);
+		led_on(LED_RED);
+	} else {
+		syslog(LOG_INFO, "[boot] Quadrature encoders initialized successfully\n");
+	}
+#endif
 
 	return OK;
 }

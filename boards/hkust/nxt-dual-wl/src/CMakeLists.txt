@@ -53,6 +53,9 @@ else()
 		timer_config.cpp
 		usb.c
 		mtd.cpp
+		nxt_qencoder.c
+		board_qencoder.c
+		#encoder_example.c
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)
 
