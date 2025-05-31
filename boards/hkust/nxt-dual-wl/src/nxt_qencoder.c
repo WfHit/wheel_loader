@@ -40,6 +40,7 @@
 #include <nuttx/sensors/qencoder.h>
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
+#include <nuttx/fs/fs.h>
 
 #include <sys/types.h>
 #include <errno.h>
@@ -55,6 +56,7 @@
  ****************************************************************************/
 
 #define QE_DEBUG 1
+#define CONFIG_NXT_QENCODER_MAX_INSTANCES 8
 
 #if QE_DEBUG
 #  define qeinfo(format, ...)   syslog(LOG_INFO, format, ##__VA_ARGS__)
@@ -77,6 +79,10 @@ struct nxt_qe_lowerhalf_s
   /* Configuration */
   struct nxt_qe_config_s config;
 
+  /* Instance identification */
+  uint8_t instance_id;
+  char devpath[16];
+
   /* Runtime state */
   volatile int32_t position;
   volatile uint32_t index_count;
@@ -94,6 +100,23 @@ struct nxt_qe_lowerhalf_s
 
   /* Status */
   struct qe_status_s status;
+};
+
+/* Global instance management structure */
+struct nxt_qe_instances_s
+{
+  /* Semaphore for thread-safe access */
+  sem_t lock;
+
+  /* Instance tracking */
+  uint8_t num_instances;
+  struct nxt_qe_lowerhalf_s *instances[CONFIG_NXT_QENCODER_MAX_INSTANCES];
+
+  /* Device path tracking */
+  char devpaths[CONFIG_NXT_QENCODER_MAX_INSTANCES][16];
+
+  /* Instance status */
+  bool active[CONFIG_NXT_QENCODER_MAX_INSTANCES];
 };
 
 /****************************************************************************
@@ -115,9 +138,19 @@ static int qe_index_isr(int irq, FAR void *context, FAR void *arg);
 /* Velocity calculation */
 static void qe_calculate_velocity(FAR struct nxt_qe_lowerhalf_s *priv);
 
+/* Instance management functions */
+static int qe_alloc_instance(void);
+static int qe_free_instance(uint8_t instance_id);
+static FAR struct nxt_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id);
+static int qe_init_instance_manager(void);
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+
+/* Global instance manager */
+static struct nxt_qe_instances_s g_qe_instances;
+static bool g_instance_manager_initialized = false;
 
 /* Lower half operations */
 static const struct qe_ops_s g_qe_ops =
@@ -494,10 +527,6 @@ static int qe_ioctl(FAR struct qe_lowerhalf_s *lower, int cmd, unsigned long arg
 }
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
  * Name: nxt_qencoder_initialize
  *
  * Description:
@@ -517,29 +546,458 @@ int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
   priv = (FAR struct nxt_qe_lowerhalf_s *)kmm_zalloc(sizeof(struct nxt_qe_lowerhalf_s));
   if (!priv)
     {
-      qeerr("ERROR: Failed to allocate encoder structure\n");
       return -ENOMEM;
     }
 
-  /* Initialize the lower half structure */
-  priv->lower.ops = &g_qe_ops;
+  /* Initialize instance fields */
+  priv->instance_id = CONFIG_NXT_QENCODER_MAX_INSTANCES;
+  strncpy(priv->devpath, devpath, sizeof(priv->devpath) - 1);
+  priv->devpath[sizeof(priv->devpath) - 1] = '\0';
+
+  /* Copy configuration */
   memcpy(&priv->config, config, sizeof(struct nxt_qe_config_s));
 
-  /* Initialize state */
-  priv->position = 0;
-  priv->index_count = 0;
-  priv->error_count = 0;
-  priv->velocity = 0;
+  /* Setup lower half interface */
+  priv->lower.ops = &g_qe_ops;
 
-  /* Register the encoder device */
-  ret = qe_register(devpath, (FAR struct qe_lowerhalf_s *)priv);
+  /* Allocate instance */
+  ret = qe_alloc_instance();
   if (ret < 0)
     {
-      qeerr("ERROR: Failed to register encoder device: %d\n", ret);
       kmm_free(priv);
       return ret;
     }
 
-  qeinfo("Encoder initialized successfully at %s\n", devpath);
+  priv->instance_id = ret;
+  g_qe_instances.instances[priv->instance_id] = priv;
+
+  /* Register character device */
+  ret = qe_register(priv->devpath, &priv->lower);
+  if (ret < 0)
+    {
+      qe_free_instance(priv->instance_id);
+      kmm_free(priv);
+      return ret;
+    }
+
+  /* Store device path in instance manager */
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret >= 0)
+    {
+      strncpy(g_qe_instances.devpaths[priv->instance_id], priv->devpath,
+              sizeof(g_qe_instances.devpaths[priv->instance_id]) - 1);
+      g_qe_instances.devpaths[priv->instance_id][sizeof(g_qe_instances.devpaths[priv->instance_id]) - 1] = '\0';
+      nxsem_post(&g_qe_instances.lock);
+    }
+
+  qeinfo("Encoder initialized successfully (instance ID: %d)\n", priv->instance_id);
+
   return OK;
+}
+
+/****************************************************************************
+ * Name: nxt_qencoder_uninitialize
+ *
+ * Description:
+ *   Uninitialize a specific quadrature encoder instance
+ *
+ * Input Parameters:
+ *   instance_id - Instance ID to uninitialize
+ *
+ * Returned Value:
+ *   Zero (OK) on success; negative errno on failure
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_uninitialize(uint8_t instance_id)
+{
+  FAR struct nxt_qe_lowerhalf_s *priv;
+  int ret;
+
+  qeinfo("Uninitializing encoder instance %d\n", instance_id);
+
+  /* Find instance */
+  priv = qe_find_instance(instance_id);
+  if (!priv)
+    {
+      qeerr("ERROR: Instance %d not found\n", instance_id);
+      return -ENODEV;
+    }
+
+  /* Shutdown encoder operations */
+  qe_shutdown((FAR struct qe_lowerhalf_s *)priv);
+
+  /* Unregister character device */
+  ret = unregister_driver(priv->devpath);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to unregister encoder device: %d\n", ret);
+      return ret;
+    }
+
+  /* Free instance */
+  ret = qe_free_instance(instance_id);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to free instance: %d\n", ret);
+      return ret;
+    }
+
+  /* Free memory */
+  kmm_free(priv);
+
+  qeinfo("Encoder instance %d uninitialized successfully\n", instance_id);
+  return OK;
+}
+
+/****************************************************************************
+ * Name: nxt_qencoder_uninitialize_all
+ *
+ * Description:
+ *   Uninitialize all active quadrature encoder instances
+ *
+ * Returned Value:
+ *   Zero (OK) on success; negative errno on failure
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_uninitialize_all(void)
+{
+  int ret = OK;
+  int total_errors = 0;
+
+  qeinfo("Uninitializing all encoder instances\n");
+
+  if (!g_instance_manager_initialized)
+    {
+      return OK; /* Nothing to cleanup */
+    }
+
+  /* Lock for thread safety */
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to acquire instance lock: %d\n", ret);
+      return ret;
+    }
+
+  /* Uninitialize all active instances */
+  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES; i++)
+    {
+      if (g_qe_instances.active[i] && g_qe_instances.instances[i])
+        {
+          /* Unlock before calling uninitialize (it will lock again) */
+          nxsem_post(&g_qe_instances.lock);
+
+          ret = nxt_qencoder_uninitialize(i);
+          if (ret < 0)
+            {
+              qeerr("ERROR: Failed to uninitialize instance %d: %d\n", i, ret);
+              total_errors++;
+            }
+
+          /* Relock for next iteration */
+          ret = nxsem_wait(&g_qe_instances.lock);
+          if (ret < 0)
+            {
+              qeerr("ERROR: Failed to reacquire instance lock: %d\n", ret);
+              return ret;
+            }
+        }
+    }
+
+  nxsem_post(&g_qe_instances.lock);
+
+  /* Destroy semaphore */
+  nxsem_destroy(&g_qe_instances.lock);
+  g_instance_manager_initialized = false;
+
+  qeinfo("All encoder instances uninitialized (errors: %d)\n", total_errors);
+  return (total_errors > 0) ? -EIO : OK;
+}
+
+/****************************************************************************
+ * Name: nxt_qencoder_get_instance_count
+ *
+ * Description:
+ *   Get number of active encoder instances
+ *
+ * Returned Value:
+ *   Number of active instances; negative errno on failure
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_get_instance_count(void)
+{
+  int ret;
+  uint8_t count;
+
+  if (!g_instance_manager_initialized)
+    {
+      return 0;
+    }
+
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  count = g_qe_instances.num_instances;
+  nxsem_post(&g_qe_instances.lock);
+
+  return count;
+}
+
+/****************************************************************************
+ * Name: nxt_qencoder_list_instances
+ *
+ * Description:
+ *   List all active encoder instances
+ *
+ * Input Parameters:
+ *   instances - Array to store instance information
+ *   max_count - Maximum number of instances to return
+ *
+ * Returned Value:
+ *   Number of instances returned; negative errno on failure
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
+                               uint8_t max_count)
+{
+  int ret;
+  uint8_t count = 0;
+
+  if (!instances || max_count == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (!g_instance_manager_initialized)
+    {
+      return 0;
+    }
+
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES && count < max_count; i++)
+    {
+      if (g_qe_instances.active[i] && g_qe_instances.instances[i])
+        {
+          instances[count].instance_id = i;
+          instances[count].active = true;
+          strncpy(instances[count].devpath, g_qe_instances.devpaths[i],
+                  sizeof(instances[count].devpath) - 1);
+          instances[count].devpath[sizeof(instances[count].devpath) - 1] = '\0';
+          memcpy(&instances[count].config, &g_qe_instances.instances[i]->config,
+                 sizeof(struct nxt_qe_config_s));
+          count++;
+        }
+    }
+
+  nxsem_post(&g_qe_instances.lock);
+
+  return count;
+}
+
+/****************************************************************************
+ * Name: qe_init_instance_manager
+ *
+ * Description:
+ *   Initialize the global instance manager
+ *
+ ****************************************************************************/
+
+static int qe_init_instance_manager(void)
+{
+  int ret;
+
+  if (g_instance_manager_initialized)
+    {
+      return OK;
+    }
+
+  /* Initialize semaphore */
+  ret = nxsem_init(&g_qe_instances.lock, 0, 1);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to initialize instance lock: %d\n", ret);
+      return ret;
+    }
+
+  /* Initialize instance tracking */
+  g_qe_instances.num_instances = 0;
+  memset(g_qe_instances.instances, 0, sizeof(g_qe_instances.instances));
+  memset(g_qe_instances.devpaths, 0, sizeof(g_qe_instances.devpaths));
+  memset(g_qe_instances.active, 0, sizeof(g_qe_instances.active));
+
+  g_instance_manager_initialized = true;
+  qeinfo("Instance manager initialized\n");
+
+  return OK;
+}
+
+/****************************************************************************
+ * Name: qe_alloc_instance
+ *
+ * Description:
+ *   Allocate a new encoder instance
+ *
+ * Returned Value:
+ *   Instance ID on success; negative errno on failure
+ *
+ ****************************************************************************/
+
+static int qe_alloc_instance(void)
+{
+  int ret;
+  int instance_id = -1;
+
+  /* Initialize instance manager if needed */
+  ret = qe_init_instance_manager();
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Lock for thread safety */
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to acquire instance lock: %d\n", ret);
+      return ret;
+    }
+
+  /* Find available instance slot */
+  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES; i++)
+    {
+      if (!g_qe_instances.active[i])
+        {
+          instance_id = i;
+          g_qe_instances.active[i] = true;
+          g_qe_instances.num_instances++;
+          break;
+        }
+    }
+
+  nxsem_post(&g_qe_instances.lock);
+
+  if (instance_id < 0)
+    {
+      qeerr("ERROR: No available instance slots (max: %d)\n",
+            CONFIG_NXT_QENCODER_MAX_INSTANCES);
+      return -ENOMEM;
+    }
+
+  qeinfo("Allocated instance ID: %d\n", instance_id);
+  return instance_id;
+}
+
+/****************************************************************************
+ * Name: qe_free_instance
+ *
+ * Description:
+ *   Free an encoder instance
+ *
+ * Input Parameters:
+ *   instance_id - Instance ID to free
+ *
+ * Returned Value:
+ *   Zero (OK) on success; negative errno on failure
+ *
+ ****************************************************************************/
+
+static int qe_free_instance(uint8_t instance_id)
+{
+  int ret;
+
+  if (!g_instance_manager_initialized)
+    {
+      return -ENOTTY;
+    }
+
+  if (instance_id >= CONFIG_NXT_QENCODER_MAX_INSTANCES)
+    {
+      return -EINVAL;
+    }
+
+  /* Lock for thread safety */
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to acquire instance lock: %d\n", ret);
+      return ret;
+    }
+
+  if (!g_qe_instances.active[instance_id])
+    {
+      nxsem_post(&g_qe_instances.lock);
+      qeerr("ERROR: Instance %d is not active\n", instance_id);
+      return -ENODEV;
+    }
+
+  /* Free instance slot */
+  g_qe_instances.active[instance_id] = false;
+  g_qe_instances.instances[instance_id] = NULL;
+  memset(g_qe_instances.devpaths[instance_id], 0,
+         sizeof(g_qe_instances.devpaths[instance_id]));
+  g_qe_instances.num_instances--;
+
+  nxsem_post(&g_qe_instances.lock);
+
+  qeinfo("Freed instance ID: %d\n", instance_id);
+  return OK;
+}
+
+/****************************************************************************
+ * Name: qe_find_instance
+ *
+ * Description:
+ *   Find an encoder instance by ID
+ *
+ * Input Parameters:
+ *   instance_id - Instance ID to find
+ *
+ * Returned Value:
+ *   Pointer to instance structure; NULL on failure
+ *
+ ****************************************************************************/
+
+static FAR struct nxt_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id)
+{
+  FAR struct nxt_qe_lowerhalf_s *priv = NULL;
+  int ret;
+
+  if (!g_instance_manager_initialized)
+    {
+      return NULL;
+    }
+
+  if (instance_id >= CONFIG_NXT_QENCODER_MAX_INSTANCES)
+    {
+      return NULL;
+    }
+
+  /* Lock for thread safety */
+  ret = nxsem_wait(&g_qe_instances.lock);
+  if (ret < 0)
+    {
+      qeerr("ERROR: Failed to acquire instance lock: %d\n", ret);
+      return NULL;
+    }
+
+  if (g_qe_instances.active[instance_id])
+    {
+      priv = g_qe_instances.instances[instance_id];
+    }
+
+  nxsem_post(&g_qe_instances.lock);
+
+  return priv;
 }
