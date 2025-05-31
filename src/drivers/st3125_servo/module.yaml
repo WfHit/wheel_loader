@@ -1,0 +1,95 @@
+module_name: ST3125 Smart Servo Driver
+serial_config:
+  - command: st3125_servo start ${SERIAL_DEV} ${BAUD_PARAM}
+    port_config_param:
+      name: ST3125_SER_CFG
+      group: ST3125 Servo
+
+actuator_output:
+  output_groups:
+    - param_prefix: ST3125
+      channel_label: 'Servo'
+      standard_params:
+        disarmed: { min: 0, max: 4095, default: 2048 }
+        min: { min: 0, max: 4095, default: 0 }
+        max: { min: 0, max: 4095, default: 4095 }
+        failsafe: { min: 0, max: 4095, default: 2048 }
+      num_channels: 12
+
+parameters:
+  - group: ST3125 Servo
+    definitions:
+      ST3125_BAUDRATE:
+        description:
+          short: ST3125 Serial baudrate
+          long: |
+            Baudrate for serial communication with ST3125 servos.
+            Valid values: 9600, 19200, 38400, 57600, 115200, 500000, 1000000
+        type: int32
+        default: 115200
+        min: 9600
+        max: 1000000
+      ST3125_UPDATE_RATE:
+        description:
+          short: ST3125 Update rate
+          long: Rate at which servo feedback is updated and commands are sent.
+        type: int32
+        default: 100
+        unit: Hz
+        min: 10
+        max: 400
+      ST3125_POS_MIN:
+        description:
+          short: ST3125 Minimum position
+          long: |
+            Minimum position limit for all servos (in servo units).
+            ST3125 range: 0-4095 (0-300 degrees)
+        type: int32
+        default: 0
+        min: 0
+        max: 4095
+      ST3125_POS_MAX:
+        description:
+          short: ST3125 Maximum position
+          long: |
+            Maximum position limit for all servos (in servo units).
+            ST3125 range: 0-4095 (0-300 degrees)
+        type: int32
+        default: 4095
+        min: 0
+        max: 4095
+      ST3125_TORQUE_EN:
+        description:
+          short: ST3125 Torque enable
+          long: |
+            Enable torque output for all servos on startup.
+            0: Disable torque, 1: Enable torque
+        type: int32
+        default: 1
+        min: 0
+        max: 1
+      ST3125_AUTO_DISC:
+        description:
+          short: ST3125 Auto-discovery
+          long: |
+            Enable automatic discovery of connected servos.
+            0: Disable, 1: Enable
+        type: int32
+        default: 1
+        min: 0
+        max: 1
+      ST3125_DEBUG:
+        description:
+          short: ST3125 Debug level
+          long: |
+            Debug output level for ST3125 driver.
+            0: None, 1: Errors, 2: Warnings, 3: Info, 4: Debug
+        type: int32
+        default: 1
+        min: 0
+        max: 4
+
+serial_ports:
+  - label: ST3125 Servos
+    description: ST3125 Smart Servo serial port
+    default_baudrate: 115200

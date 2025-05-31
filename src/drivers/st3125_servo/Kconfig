@@ -1,0 +1,52 @@
+menuconfig DRIVERS_ST3125_SERVO
+	bool "ST3125 Smart Servo Driver"
+	default n
+	---help---
+		Enable support for ST3125 smart servo motors.
+		This driver provides control and feedback for SCServo ST3125
+		smart servo motors via serial communication.
+
+if DRIVERS_ST3125_SERVO
+
+config ST3125_SERVO_MAX_SERVOS
+	int "Maximum number of servos"
+	default 12
+	range 1 32
+	---help---
+		Maximum number of ST3125 servos that can be controlled
+		simultaneously.
+
+config ST3125_SERVO_SERIAL_DEVICE
+	string "Serial device"
+	default "/dev/ttyS3"
+	---help---
+		Serial device used for communication with ST3125 servos.
+
+config ST3125_SERVO_DEFAULT_BAUDRATE
+	int "Default baudrate"
+	default 115200
+	---help---
+		Default baudrate for serial communication with ST3125 servos.
+		Can be overridden by ST3125_BAUDRATE parameter.
+
+config ST3125_SERVO_PROTOCOL_TIMEOUT
+	int "Protocol timeout (ms)"
+	default 10
+	range 1 100
+	---help---
+		Timeout in milliseconds for servo communication protocol.
+
+config ST3125_SERVO_MAX_RETRIES
+	int "Maximum retries"
+	default 3
+	range 1 10
+	---help---
+		Maximum number of retries for failed servo communications.
+
+config ST3125_SERVO_DEBUG
+	bool "Enable debug output"
+	default n
+	---help---
+		Enable debug output for ST3125 servo driver.
+
+endif # DRIVERS_ST3125_SERVO
