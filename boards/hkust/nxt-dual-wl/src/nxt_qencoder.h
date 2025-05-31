@@ -82,6 +82,15 @@ struct qe_status_s
   uint32_t sample_rate;      /* Actual sampling rate */
 };
 
+/* Instance information structure */
+struct nxt_qe_instance_info_s
+{
+  uint8_t instance_id;
+  char devpath[16];
+  bool active;
+  struct nxt_qe_config_s config;
+};
+
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
@@ -111,6 +120,66 @@ extern "C"
 
 int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
                            FAR const char *devpath);
+
+/****************************************************************************
+ * Name: nxt_qencoder_uninitialize
+ *
+ * Description:
+ *   Uninitialize a specific quadrature encoder instance.
+ *
+ * Input Parameters:
+ *   instance_id - Instance ID to uninitialize
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_uninitialize(uint8_t instance_id);
+
+/****************************************************************************
+ * Name: nxt_qencoder_uninitialize_all
+ *
+ * Description:
+ *   Uninitialize all active quadrature encoder instances.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_uninitialize_all(void);
+
+/****************************************************************************
+ * Name: nxt_qencoder_get_instance_count
+ *
+ * Description:
+ *   Get number of active encoder instances.
+ *
+ * Returned Value:
+ *   Number of active instances; negative errno on failure.
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_get_instance_count(void);
+
+/****************************************************************************
+ * Name: nxt_qencoder_list_instances
+ *
+ * Description:
+ *   List all active encoder instances.
+ *
+ * Input Parameters:
+ *   instances - Array to store instance information
+ *   max_count - Maximum number of instances to return
+ *
+ * Returned Value:
+ *   Number of instances returned; negative errno on failure.
+ *
+ ****************************************************************************/
+
+int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
+                               uint8_t max_count);
 
 #undef EXTERN
 #ifdef __cplusplus

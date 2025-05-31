@@ -14,3 +14,6 @@ bmi088 -s -b 4 -G -R 2 start
 
 # internal baro
 spl06 -X -a 0x77 start
+
+# Start quad encoder driver for wheel odometry
+quad_encoder start
