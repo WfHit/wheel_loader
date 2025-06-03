@@ -70,26 +70,26 @@ PARAM_DEFINE_FLOAT(BCT_ACT_BASE_X, -200.0);
 PARAM_DEFINE_FLOAT(BCT_ACT_BASE_Y, -100.0);
 
 /**
- * Drive linkage boom attachment X
+ * Bellcrank boom attachment X
  *
- * X position of drive linkage pivot on boom (mm)
+ * X position of bellcrank pivot on boom (mm)
  *
  * @group Bucket Geometry
  * @unit mm
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_DRV_BOOM_X, 300.0);
+PARAM_DEFINE_FLOAT(BCT_BELLCRANK_BOOM_X, 300.0);
 
 /**
- * Drive linkage boom attachment Y
+ * Bellcrank boom attachment Y
  *
- * Y position of drive linkage pivot on boom (mm)
+ * Y position of bellcrank pivot on boom (mm)
  *
  * @group Bucket Geometry
  * @unit mm
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_DRV_BOOM_Y, 50.0);
+PARAM_DEFINE_FLOAT(BCT_BELLCRANK_BOOM_Y, 50.0);
 
 /**
  * Bucket boom pivot X
@@ -114,33 +114,33 @@ PARAM_DEFINE_FLOAT(BCT_BKT_BOOM_X, 600.0);
 PARAM_DEFINE_FLOAT(BCT_BKT_BOOM_Y, 0.0);
 
 /**
- * Drive linkage length
+ * Bellcrank length
  *
- * Total length of drive linkage (mm)
+ * Total length of bellcrank (mm)
  *
  * @group Bucket Geometry
  * @unit mm
  * @min 10.0
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_DRV_LENGTH, 150.0);
+PARAM_DEFINE_FLOAT(BCT_BELLCRANK_LENGTH, 150.0);
 
 /**
- * Coupler linkage length
+ * Linkage length
  *
- * Total length of coupler linkage connecting drive link to bucket (mm)
+ * Total length of linkage connecting bellcrank to bucket (mm)
  *
  * @group Bucket Geometry
  * @unit mm
  * @min 10.0
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_CPL_LENGTH, 200.0);
+PARAM_DEFINE_FLOAT(BCT_LINKAGE_LENGTH, 200.0);
 
 /**
  * Actuator attachment offset
  *
- * Distance from drive linkage pivot to actuator attachment point (mm)
+ * Distance from bellcrank pivot to actuator attachment point (mm)
  *
  * @group Bucket Geometry
  * @unit mm
@@ -152,7 +152,7 @@ PARAM_DEFINE_FLOAT(BCT_ACT_OFFSET, 50.0);
 /**
  * Bucket attachment offset
  *
- * Angular offset from coupler linkage to bucket attachment (rad)
+ * Angular offset from linkage to bucket attachment (rad)
  *
  * @group Bucket Geometry
  * @unit rad
