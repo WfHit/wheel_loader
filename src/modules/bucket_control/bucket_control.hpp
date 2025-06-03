@@ -76,10 +76,14 @@ private:
         float bucket_boom_pivot_y;      // Bucket pivot point on boom Y
 
         // Linkage lengths (mm)
-        float bellcrank_length;         // Length of bellcrank (connects actuator to linkage)
-        float linkage_length;           // Length of linkage (connects bellcrank to bucket)
+        float bellcrank_length;         // Length of bellcrank arm to coupler attachment
+        float coupler_length;           // Length of coupler (connects bellcrank to bucket)
         float actuator_offset;          // Distance from bellcrank pivot to actuator attachment
-        float bucket_offset;            // Distance from bucket pivot to linkage attachment
+        float bucket_arm_length;        // Distance from bucket pivot to coupler attachment point
+
+        // Bellcrank and bucket geometry (angles in radians)
+        float bellcrank_internal_angle; // Fixed angle between bellcrank arms (actuator to linkage)
+        float bucket_offset;            // Angular offset of bucket arm from bucket reference
 
         // Actuator geometry
         float actuator_min_length;      // Minimum actuator length
@@ -95,9 +99,9 @@ private:
     float compensateBoomAngle(float target_ground_angle, float boom_angle);
     void updateKinematicParameters();
 
-    // Four-bar linkage solver for bellcrank -> linkage -> bucket system
+    // Four-bar linkage solver for bellcrank -> coupler -> bucket system
     bool solveBucketLinkage(float actuator_length, float boom_angle,
-                           float &bucket_angle, float &bellcrank_angle, float &linkage_angle);
+                           float &bucket_angle, float &bellcrank_angle, float &coupler_angle);
 
     // Motion control
     void updateMotionControl();
@@ -168,8 +172,10 @@ private:
 
         // Linkage dimensions
         (ParamFloat<px4::params::BCT_BELLCRANK_LENGTH>) _param_bellcrank_length,
-        (ParamFloat<px4::params::BCT_LINKAGE_LENGTH>) _param_linkage_length,
+        (ParamFloat<px4::params::BCT_COUPLER_LENGTH>) _param_coupler_length,
         (ParamFloat<px4::params::BCT_ACT_OFFSET>) _param_actuator_offset,
+        (ParamFloat<px4::params::BCT_BKT_ARM_LEN>) _param_bucket_arm_length,
+        (ParamFloat<px4::params::BCT_BELLCRANK_INT_ANG>) _param_bellcrank_internal_angle,
         (ParamFloat<px4::params::BCT_BKT_OFFSET>) _param_bucket_offset,
         (ParamFloat<px4::params::BCT_BOOM_LENGTH>) _param_boom_length,
 
