@@ -1,0 +1,5 @@
+uint64 timestamp     # time since system start (microseconds)
+float32 angle        # boom angle in radians (relative to horizontal)
+float32 velocity     # boom angular velocity (rad/s)
+float32 load         # current load on boom (normalized 0-1)
+uint8 state          # boom state (similar to bucket states)
