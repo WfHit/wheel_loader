@@ -70,16 +70,16 @@ private:
         // Attachment points (all in mm, relative to boom pivot)
         float actuator_base_x;          // Actuator base attachment X (chassis)
         float actuator_base_y;          // Actuator base attachment Y (chassis)
-        float drive_link_boom_x;        // Drive linkage attachment to boom X
-        float drive_link_boom_y;        // Drive linkage attachment to boom Y
+        float bellcrank_boom_x;         // Bellcrank attachment to boom X
+        float bellcrank_boom_y;         // Bellcrank attachment to boom Y
         float bucket_boom_pivot_x;      // Bucket pivot point on boom X
         float bucket_boom_pivot_y;      // Bucket pivot point on boom Y
 
         // Linkage lengths (mm)
-        float drive_link_length;        // Length of drive linkage (connects actuator to coupler)
-        float coupler_link_length;      // Length of coupler linkage (connects drive link to bucket)
-        float actuator_offset;          // Distance from drive link pivot to actuator attachment
-        float bucket_offset;            // Distance from bucket pivot to coupler attachment
+        float bellcrank_length;         // Length of bellcrank (connects actuator to linkage)
+        float linkage_length;           // Length of linkage (connects bellcrank to bucket)
+        float actuator_offset;          // Distance from bellcrank pivot to actuator attachment
+        float bucket_offset;            // Distance from bucket pivot to linkage attachment
 
         // Actuator geometry
         float actuator_min_length;      // Minimum actuator length
@@ -95,9 +95,9 @@ private:
     float compensateBoomAngle(float target_ground_angle, float boom_angle);
     void updateKinematicParameters();
 
-    // Four-bar linkage solver for drive_link -> coupler_link -> bucket system
+    // Four-bar linkage solver for bellcrank -> linkage -> bucket system
     bool solveBucketLinkage(float actuator_length, float boom_angle,
-                           float &bucket_angle, float &drive_link_angle, float &coupler_angle);
+                           float &bucket_angle, float &bellcrank_angle, float &linkage_angle);
 
     // Motion control
     void updateMotionControl();
@@ -159,16 +159,16 @@ private:
         (ParamFloat<px4::params::BCT_ACT_BASE_Y>) _param_actuator_base_y,
 
         // Drive linkage attachment to boom
-        (ParamFloat<px4::params::BCT_DRV_BOOM_X>) _param_drive_link_boom_x,
-        (ParamFloat<px4::params::BCT_DRV_BOOM_Y>) _param_drive_link_boom_y,
+        (ParamFloat<px4::params::BCT_BELLCRANK_BOOM_X>) _param_bellcrank_boom_x,
+        (ParamFloat<px4::params::BCT_BELLCRANK_BOOM_Y>) _param_bellcrank_boom_y,
 
         // Bucket pivot on boom
         (ParamFloat<px4::params::BCT_BKT_BOOM_X>) _param_bucket_boom_pivot_x,
         (ParamFloat<px4::params::BCT_BKT_BOOM_Y>) _param_bucket_boom_pivot_y,
 
         // Linkage dimensions
-        (ParamFloat<px4::params::BCT_DRV_LENGTH>) _param_drive_link_length,
-        (ParamFloat<px4::params::BCT_CPL_LENGTH>) _param_coupler_link_length,
+        (ParamFloat<px4::params::BCT_BELLCRANK_LENGTH>) _param_bellcrank_length,
+        (ParamFloat<px4::params::BCT_LINKAGE_LENGTH>) _param_linkage_length,
         (ParamFloat<px4::params::BCT_ACT_OFFSET>) _param_actuator_offset,
         (ParamFloat<px4::params::BCT_BKT_OFFSET>) _param_bucket_offset,
         (ParamFloat<px4::params::BCT_BOOM_LENGTH>) _param_boom_length,

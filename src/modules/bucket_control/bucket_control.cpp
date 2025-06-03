@@ -22,7 +22,7 @@ bool BucketControl::init()
     _motor_index = _param_motor_index.get();
 
     // Validate geometry
-    if (_kinematics.drive_link_length <= 0 || _kinematics.coupler_link_length <= 0) {
+    if (_kinematics.bellcrank_length <= 0 || _kinematics.linkage_length <= 0) {
         PX4_ERR("Invalid linkage lengths");
         return false;
     }
@@ -35,8 +35,8 @@ bool BucketControl::init()
     ScheduleOnInterval(10_ms); // 100Hz update rate
 
     PX4_INFO("Bucket control initialized");
-    PX4_INFO("Drive link: %.1fmm, Coupler: %.1fmm, Boom: %.1fmm",
-             _kinematics.drive_link_length, _kinematics.coupler_link_length, _kinematics.boom_length);
+    PX4_INFO("Bellcrank: %.1fmm, Linkage: %.1fmm, Boom: %.1fmm",
+             _kinematics.bellcrank_length, _kinematics.linkage_length, _kinematics.boom_length);
 
     return true;
 }
@@ -46,13 +46,13 @@ void BucketControl::updateKinematicParameters()
     // Load geometry from parameters
     _kinematics.actuator_base_x = _param_actuator_base_x.get();
     _kinematics.actuator_base_y = _param_actuator_base_y.get();
-    _kinematics.drive_link_boom_x = _param_drive_link_boom_x.get();
-    _kinematics.drive_link_boom_y = _param_drive_link_boom_y.get();
+    _kinematics.bellcrank_boom_x = _param_bellcrank_boom_x.get();
+    _kinematics.bellcrank_boom_y = _param_bellcrank_boom_y.get();
     _kinematics.bucket_boom_pivot_x = _param_bucket_boom_pivot_x.get();
     _kinematics.bucket_boom_pivot_y = _param_bucket_boom_pivot_y.get();
 
-    _kinematics.drive_link_length = _param_drive_link_length.get();
-    _kinematics.coupler_link_length = _param_coupler_link_length.get();
+    _kinematics.bellcrank_length = _param_bellcrank_length.get();
+    _kinematics.linkage_length = _param_linkage_length.get();
     _kinematics.actuator_offset = _param_actuator_offset.get();
     _kinematics.bucket_offset = _param_bucket_offset.get();
     _kinematics.boom_length = _param_boom_length.get();
@@ -62,7 +62,7 @@ void BucketControl::updateKinematicParameters()
 }
 
 bool BucketControl::solveBucketLinkage(float actuator_length, float boom_angle,
-                                       float &bucket_angle, float &drive_link_angle, float &coupler_angle)
+                                       float &bucket_angle, float &bellcrank_angle, float &linkage_angle)
 {
     // Transform coordinates to account for boom rotation
     float cos_boom = cosf(boom_angle);
@@ -72,63 +72,63 @@ bool BucketControl::solveBucketLinkage(float actuator_length, float boom_angle,
     float act_base_x_boom = _kinematics.actuator_base_x * cos_boom + _kinematics.actuator_base_y * sin_boom;
     float act_base_y_boom = -_kinematics.actuator_base_x * sin_boom + _kinematics.actuator_base_y * cos_boom;
 
-    // Drive link pivot is fixed to boom (no transformation needed)
-    float drive_pivot_x = _kinematics.drive_link_boom_x;
-    float drive_pivot_y = _kinematics.drive_link_boom_y;
+    // Bellcrank pivot is fixed to boom (no transformation needed)
+    float bellcrank_pivot_x = _kinematics.bellcrank_boom_x;
+    float bellcrank_pivot_y = _kinematics.bellcrank_boom_y;
 
-    // Step 1: Solve for drive link angle using actuator triangle
-    // Triangle: actuator_base -> drive_pivot -> actuator_attachment_on_drive_link
-    float dx = drive_pivot_x - act_base_x_boom;
-    float dy = drive_pivot_y - act_base_y_boom;
-    float base_to_drive_dist = sqrtf(dx*dx + dy*dy);
+    // Step 1: Solve for bellcrank angle using actuator triangle
+    // Triangle: actuator_base -> bellcrank_pivot -> actuator_attachment_on_bellcrank
+    float dx = bellcrank_pivot_x - act_base_x_boom;
+    float dy = bellcrank_pivot_y - act_base_y_boom;
+    float base_to_bellcrank_dist = sqrtf(dx*dx + dy*dy);
 
-    // Law of cosines to find angle at drive pivot
-    float cos_drive_angle = (base_to_drive_dist*base_to_drive_dist +
-                            _kinematics.actuator_offset*_kinematics.actuator_offset -
-                            actuator_length*actuator_length) /
-                           (2.0f * base_to_drive_dist * _kinematics.actuator_offset);
+    // Law of cosines to find angle at bellcrank pivot
+    float cos_bellcrank_angle = (base_to_bellcrank_dist*base_to_bellcrank_dist +
+                                _kinematics.actuator_offset*_kinematics.actuator_offset -
+                                actuator_length*actuator_length) /
+                               (2.0f * base_to_bellcrank_dist * _kinematics.actuator_offset);
 
-    if (fabsf(cos_drive_angle) > 1.0f) {
+    if (fabsf(cos_bellcrank_angle) > 1.0f) {
         // No valid solution - actuator cannot reach
         return false;
     }
 
     float base_angle = atan2f(dy, dx);
-    drive_link_angle = base_angle - acosf(cos_drive_angle); // Subtract because actuator pulls
+    bellcrank_angle = base_angle - acosf(cos_bellcrank_angle); // Subtract because actuator pulls
 
-    // Step 2: Find drive link endpoint (where coupler attaches)
-    float drive_end_x = drive_pivot_x + _kinematics.drive_link_length * cosf(drive_link_angle);
-    float drive_end_y = drive_pivot_y + _kinematics.drive_link_length * sinf(drive_link_angle);
+    // Step 2: Find bellcrank endpoint (where linkage attaches)
+    float bellcrank_end_x = bellcrank_pivot_x + _kinematics.bellcrank_length * cosf(bellcrank_angle);
+    float bellcrank_end_y = bellcrank_pivot_y + _kinematics.bellcrank_length * sinf(bellcrank_angle);
 
-    // Step 3: Solve for coupler angle
-    // Coupler connects drive link end to bucket pivot
+    // Step 3: Solve for linkage angle
+    // Linkage connects bellcrank end to bucket pivot
     float bucket_pivot_x = _kinematics.bucket_boom_pivot_x;
     float bucket_pivot_y = _kinematics.bucket_boom_pivot_y;
 
-    dx = bucket_pivot_x - drive_end_x;
-    dy = bucket_pivot_y - drive_end_y;
-    float coupler_required_length = sqrtf(dx*dx + dy*dy);
+    dx = bucket_pivot_x - bellcrank_end_x;
+    dy = bucket_pivot_y - bellcrank_end_y;
+    float linkage_required_length = sqrtf(dx*dx + dy*dy);
 
-    // Check if coupler can span the distance
-    if (fabsf(coupler_required_length - _kinematics.coupler_link_length) > 1.0f) { // 1mm tolerance
-        // Coupler cannot reach - invalid geometry
+    // Check if linkage can span the distance
+    if (fabsf(linkage_required_length - _kinematics.linkage_length) > 1.0f) { // 1mm tolerance
+        // Linkage cannot reach - invalid geometry
         return false;
     }
 
-    coupler_angle = atan2f(dy, dx);
+    linkage_angle = atan2f(dy, dx);
 
     // Step 4: Calculate bucket angle
-    // Bucket angle is determined by coupler orientation plus offset
-    bucket_angle = coupler_angle + _kinematics.bucket_offset;
+    // Bucket angle is determined by linkage orientation plus offset
+    bucket_angle = linkage_angle + _kinematics.bucket_offset;
 
     return true;
 }
 
 float BucketControl::actuatorLengthToBucketAngle(float actuator_length, float boom_angle)
 {
-    float bucket_angle, drive_angle, coupler_angle;
+    float bucket_angle, bellcrank_angle, linkage_angle;
 
-    if (solveBucketLinkage(actuator_length, boom_angle, bucket_angle, drive_angle, coupler_angle)) {
+    if (solveBucketLinkage(actuator_length, boom_angle, bucket_angle, bellcrank_angle, linkage_angle)) {
         return bucket_angle;
     }
 
