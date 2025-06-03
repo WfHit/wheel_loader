@@ -126,16 +126,16 @@ PARAM_DEFINE_FLOAT(BCT_BKT_BOOM_Y, 0.0);
 PARAM_DEFINE_FLOAT(BCT_BELLCRANK_LENGTH, 150.0);
 
 /**
- * Linkage length
+ * Coupler length
  *
- * Total length of linkage connecting bellcrank to bucket (mm)
+ * Total length of coupler connecting bellcrank to bucket (mm)
  *
  * @group Bucket Geometry
  * @unit mm
  * @min 10.0
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_LINKAGE_LENGTH, 200.0);
+PARAM_DEFINE_FLOAT(BCT_COUPLER_LENGTH, 200.0);
 
 /**
  * Actuator attachment offset
@@ -150,9 +150,34 @@ PARAM_DEFINE_FLOAT(BCT_LINKAGE_LENGTH, 200.0);
 PARAM_DEFINE_FLOAT(BCT_ACT_OFFSET, 50.0);
 
 /**
+ * Bucket arm length
+ *
+ * Distance from bucket pivot to coupler attachment point (mm)
+ *
+ * @group Bucket Geometry
+ * @unit mm
+ * @min 10.0
+ * @decimal 1
+ */
+PARAM_DEFINE_FLOAT(BCT_BKT_ARM_LEN, 100.0);
+
+/**
+ * Bellcrank internal angle
+ *
+ * Fixed angle between bellcrank arms (actuator to coupler) in radians
+ *
+ * @group Bucket Geometry
+ * @unit rad
+ * @min -3.14159
+ * @max 3.14159
+ * @decimal 3
+ */
+PARAM_DEFINE_FLOAT(BCT_BELLCRANK_INT_ANG, 1.57);
+
+/**
  * Bucket attachment offset
  *
- * Angular offset from linkage to bucket attachment (rad)
+ * Angular offset of bucket arm from coupler direction (rad)
  *
  * @group Bucket Geometry
  * @unit rad
