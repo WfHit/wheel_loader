@@ -1,0 +1,6 @@
+module_name: Bucket Control
+serial_config:
+    - command: bucket_control start
+      port_config_param:
+        name: SER_BCT_CFG
+        group: Serial
