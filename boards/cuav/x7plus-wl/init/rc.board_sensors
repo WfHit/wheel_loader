@@ -1,0 +1,60 @@
+#!/bin/sh
+#
+# CUAV X7+ WL (Wheel Loader) Controller board sensor initialization
+#------------------------------------------------------------------------------
+
+# Start primary IMU sensor drivers
+# ICM42688P on SPI1 (primary gyro/accel)
+icm42688p -s -R 0 start
+
+# BMI088 on SPI1 (backup gyro/accel)
+bmi088 -A -s -R 0 start
+bmi088 -G -s -R 0 start
+
+# Barometer sensors
+# MS5611 on SPI1 (primary barometer)
+ms5611 -s start
+
+# ICP201XX on SPI2 (backup barometer)
+icp201xx -s -b 2 start
+
+# Magnetometer sensors
+# IST8310 on I2C external bus
+ist8310 -X start
+
+# HMC5883L on internal I2C bus (backup)
+hmc5883l -I start
+
+# GPS modules
+# Start GPS on UART1 (GPS1)
+gps start -d /dev/ttyS0 -p ubx
+
+# Start second GPS on UART2 (GPS2) for RTK
+gps start -d /dev/ttyS1 -p ubx -g 1
+
+# Safety button
+safety_button start
+
+# RGB LED PWM driver
+rgbled_pwm start
+
+# Tone alarm
+tone_alarm start
+
+# ADC for battery monitoring
+adc start
+
+# Battery monitoring with dual battery support
+battery_status start
+
+# Power monitoring
+ina226 -X start
+
+# Smart battery monitoring (if available)
+batmon start
+
+# RC input processing
+rc_update start
+
+# Start safety-critical wheel loader sensors
+echo "CUAV X7+ WL (Wheel Loader) Controller sensors started"
