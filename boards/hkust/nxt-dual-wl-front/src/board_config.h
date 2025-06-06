@@ -162,6 +162,12 @@
 #define QENCODER2_A_GPIO                   /* PD5 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTD|GPIO_PIN5)
 #define QENCODER2_B_GPIO                   /* PD6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTD|GPIO_PIN6)
 
+/* Raw GPIO definitions for QEncoder driver (without flags) */
+#define QENCODER1_A_GPIO_RAW               (GPIO_PORTC | GPIO_PIN6)  /* PC6 */
+#define QENCODER1_B_GPIO_RAW               (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
+#define QENCODER2_A_GPIO_RAW               (GPIO_PORTD | GPIO_PIN5)  /* PD5 */
+#define QENCODER2_B_GPIO_RAW               (GPIO_PORTD | GPIO_PIN6)  /* PD6 */
+
 // #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
 // #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
 

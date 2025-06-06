@@ -31,8 +31,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_NXT_DUAL_WL_SRC_NXT_QENCODER_H
-#define __BOARDS_NXT_DUAL_WL_SRC_NXT_QENCODER_H
+#ifndef __PX4_NUTTX_STM32_COMMON_NUTTX_QENCODER_H
+#define __PX4_NUTTX_STM32_COMMON_NUTTX_QENCODER_H
 
 /****************************************************************************
  * Included Files
@@ -56,7 +56,7 @@
  ****************************************************************************/
 
 /* Encoder configuration */
-struct nxt_qe_config_s
+struct nuttx_qe_config_s
 {
   /* GPIO mode configuration */
   struct {
@@ -83,12 +83,12 @@ struct qe_status_s
 };
 
 /* Instance information structure */
-struct nxt_qe_instance_info_s
+struct nuttx_qe_instance_info_s
 {
   uint8_t instance_id;
   char devpath[16];
   bool active;
-  struct nxt_qe_config_s config;
+  struct nuttx_qe_config_s config;
 };
 
 /****************************************************************************
@@ -104,7 +104,7 @@ extern "C"
 #endif
 
 /****************************************************************************
- * Name: nxt_qencoder_initialize
+ * Name: nuttx_qencoder_initialize
  *
  * Description:
  *   Initialize quadrature encoder and register as a character device.
@@ -118,11 +118,11 @@ extern "C"
  *
  ****************************************************************************/
 
-int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
-                           FAR const char *devpath);
+int nuttx_qencoder_initialize(FAR const struct nuttx_qe_config_s *config,
+                             FAR const char *devpath);
 
 /****************************************************************************
- * Name: nxt_qencoder_uninitialize
+ * Name: nuttx_qencoder_uninitialize
  *
  * Description:
  *   Uninitialize a specific quadrature encoder instance.
@@ -135,10 +135,10 @@ int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
  *
  ****************************************************************************/
 
-int nxt_qencoder_uninitialize(uint8_t instance_id);
+int nuttx_qencoder_uninitialize(uint8_t instance_id);
 
 /****************************************************************************
- * Name: nxt_qencoder_uninitialize_all
+ * Name: nuttx_qencoder_uninitialize_all
  *
  * Description:
  *   Uninitialize all active quadrature encoder instances.
@@ -148,10 +148,10 @@ int nxt_qencoder_uninitialize(uint8_t instance_id);
  *
  ****************************************************************************/
 
-int nxt_qencoder_uninitialize_all(void);
+int nuttx_qencoder_uninitialize_all(void);
 
 /****************************************************************************
- * Name: nxt_qencoder_get_instance_count
+ * Name: nuttx_qencoder_get_instance_count
  *
  * Description:
  *   Get number of active encoder instances.
@@ -161,10 +161,10 @@ int nxt_qencoder_uninitialize_all(void);
  *
  ****************************************************************************/
 
-int nxt_qencoder_get_instance_count(void);
+int nuttx_qencoder_get_instance_count(void);
 
 /****************************************************************************
- * Name: nxt_qencoder_list_instances
+ * Name: nuttx_qencoder_list_instances
  *
  * Description:
  *   List all active encoder instances.
@@ -178,12 +178,12 @@ int nxt_qencoder_get_instance_count(void);
  *
  ****************************************************************************/
 
-int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
-                               uint8_t max_count);
+int nuttx_qencoder_list_instances(FAR struct nuttx_qe_instance_info_s *instances,
+                                 uint8_t max_count);
 
 #undef EXTERN
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* __BOARDS_NXT_DUAL_WL_SRC_NXT_QENCODER_H */
+#endif /* __PX4_NUTTX_STM32_COMMON_NUTTX_QENCODER_H */
