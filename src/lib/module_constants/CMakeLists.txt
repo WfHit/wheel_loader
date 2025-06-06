@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2024 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,18 +31,19 @@
 #
 ############################################################################
 
-px4_add_module(
-	MODULE modules__articulated_chassis__steering_controller
-	MAIN steering_controller
-	STACK_MAIN 2048
-	SRCS
-		SteeringController.cpp
-		steering_controller_main.cpp
-	DEPENDS
-		mathlib
-		matrix
-		module_constants
-		pid
-	MODULE_CONFIG
-		MODULE_STACKSIZE=2048
+# Module constants library for articulated chassis modules
+# Provides common constants for module IDs, health status, and operational status
+
+px4_add_library(module_constants
+	INTERFACE
+)
+
+target_include_directories(module_constants
+	INTERFACE
+		${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_definitions(module_constants
+	INTERFACE
+		MODULE_CONSTANTS_ENABLED=1
 )
