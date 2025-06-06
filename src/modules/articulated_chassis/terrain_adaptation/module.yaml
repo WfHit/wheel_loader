@@ -1,0 +1,94 @@
+module_name: Terrain Adaptation
+serial_config:
+    - command: terrain_adaptation start
+      port_config_param:
+        name: TA_SER_CFG
+        group: Terrain Adaptation
+
+parameters:
+    - group: Terrain Adaptation
+      definitions:
+        TA_ROUGHNESS_THRESHOLD:
+            description:
+                short: Terrain roughness threshold
+                long: |
+                    Threshold for detecting rough terrain conditions.
+            type: float
+            unit: m/s^2
+            min: 0.1
+            max: 5.0
+            default: 1.0
+            decimal: 2
+
+        TA_SLOPE_THRESHOLD:
+            description:
+                short: Slope detection threshold
+                long: |
+                    Threshold angle for detecting significant slopes.
+            type: float
+            unit: rad
+            min: 0.05
+            max: 0.785
+            default: 0.174
+            decimal: 3
+
+        TA_FRICTION_ALPHA:
+            description:
+                short: Friction estimation filter coefficient
+                long: |
+                    Filter coefficient for friction coefficient estimation.
+            type: float
+            min: 0.01
+            max: 1.0
+            default: 0.1
+            decimal: 3
+
+        TA_SPEED_REDUCTION:
+            description:
+                short: Speed reduction factor
+                long: |
+                    Factor by which to reduce speed on difficult terrain.
+            type: float
+            min: 0.1
+            max: 1.0
+            default: 0.7
+            decimal: 2
+
+        TA_STABILITY_MARGIN:
+            description:
+                short: Stability margin factor
+                long: |
+                    Safety margin factor for stability calculations.
+            type: float
+            min: 1.0
+            max: 3.0
+            default: 1.5
+            decimal: 2
+
+        TA_CLASSIFIER_METHOD:
+            description:
+                short: Terrain classification method
+                long: |
+                    Method used for terrain classification (0=basic, 1=ML, 2=advanced).
+            type: int32
+            min: 0
+            max: 2
+            default: 1
+
+        TA_ENABLE:
+            description:
+                short: Enable terrain adaptation
+                long: |
+                    Enable automatic terrain adaptation system.
+            type: bool
+            default: true
+
+        TA_SER_CFG:
+            description:
+                short: Serial Configuration for Terrain Adaptation
+                long: |
+                    Configure on which serial port to run Terrain Adaptation.
+            type: int32
+            min: 0
+            max: 6
+            default: 0

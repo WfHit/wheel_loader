@@ -1,0 +1,5 @@
+menuconfig MODULES_SLIP_ESTIMATOR
+	bool "slip_estimator"
+	default n
+	---help---
+		Enable support for slip_estimator

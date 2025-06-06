@@ -1,0 +1,5 @@
+menuconfig MODULES_SAFETY_MANAGER
+	bool "safety_manager"
+	default n
+	---help---
+		Enable support for safety_manager

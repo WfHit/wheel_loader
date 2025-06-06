@@ -1,0 +1,10 @@
+module_name: Wheel Controller
+serial_config:
+    - command: wheel_controller start -i 0 -f  # Front wheel
+      port_config_param:
+        name: WC_FRONT_CFG
+        group: Wheel Controller
+    - command: wheel_controller start -i 1     # Rear wheel
+      port_config_param:
+        name: WC_REAR_CFG
+        group: Wheel Controller

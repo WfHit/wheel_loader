@@ -1,0 +1,150 @@
+module_name: Predictive Traction Control
+serial_config:
+    - command: predictive_traction start
+      port_config_param:
+        name: PTC_SER_CFG
+        group: Predictive Traction Control
+
+parameters:
+    - group: Predictive Traction Control
+      definitions:
+        PTC_SLIP_WARN:
+            description:
+                short: Slip warning threshold
+                long: |
+                    Slip threshold that triggers warning level intervention.
+            type: float
+            min: 0.05
+            max: 0.5
+            default: 0.15
+            decimal: 3
+
+        PTC_SLIP_CRIT:
+            description:
+                short: Slip critical threshold
+                long: |
+                    Slip threshold that triggers critical intervention.
+            type: float
+            min: 0.1
+            max: 0.8
+            default: 0.3
+            decimal: 3
+
+        PTC_PRED_HORIZON:
+            description:
+                short: Prediction horizon
+                long: |
+                    Time horizon for predictive control in seconds.
+            type: float
+            unit: s
+            min: 0.1
+            max: 2.0
+            default: 0.5
+            decimal: 2
+
+        PTC_WEIGHT_SLIP:
+            description:
+                short: Slip cost weight
+                long: |
+                    Weight for slip in the cost function.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 1.0
+            decimal: 2
+
+        PTC_WEIGHT_STAB:
+            description:
+                short: Stability cost weight
+                long: |
+                    Weight for stability in the cost function.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 2.0
+            decimal: 2
+
+        PTC_WEIGHT_CTRL:
+            description:
+                short: Control effort weight
+                long: |
+                    Weight for control effort in the cost function.
+            type: float
+            min: 0.01
+            max: 1.0
+            default: 0.1
+            decimal: 3
+
+        PTC_MAX_TORQUE_RATE:
+            description:
+                short: Maximum torque rate
+                long: |
+                    Maximum rate of torque change for smooth control.
+            type: float
+            unit: Nm/s
+            min: 100
+            max: 10000
+            default: 2000
+            decimal: 0
+
+        PTC_MAX_STEER_RATE:
+            description:
+                short: Maximum steering rate
+                long: |
+                    Maximum rate of steering change for smooth control.
+            type: float
+            unit: rad/s
+            min: 0.1
+            max: 2.0
+            default: 0.5
+            decimal: 2
+
+        PTC_LEARNING_EN:
+            description:
+                short: Enable learning
+                long: |
+                    Enable adaptive learning of vehicle and terrain parameters.
+            type: bool
+            default: true
+
+        PTC_ADAPT_RATE:
+            description:
+                short: Adaptation rate
+                long: |
+                    Rate of parameter adaptation for learning algorithm.
+            type: float
+            min: 0.001
+            max: 0.1
+            default: 0.01
+            decimal: 4
+
+        PTC_MAX_ITER:
+            description:
+                short: Maximum iterations
+                long: |
+                    Maximum iterations for optimization algorithm.
+            type: int32
+            min: 5
+            max: 100
+            default: 20
+
+        PTC_CONV_TOL:
+            description:
+                short: Convergence tolerance
+                long: |
+                    Convergence tolerance for optimization algorithm.
+            type: float
+            min: 0.0001
+            max: 0.01
+            default: 0.001
+            decimal: 5
+
+        PTC_SER_CFG:
+            description:
+                short: Serial Configuration for Predictive Traction Control
+                long: |
+                    Configure on which serial port to run Predictive Traction Control.
+            type: int32
+            min: 0
+            max: 6
+            default: 0

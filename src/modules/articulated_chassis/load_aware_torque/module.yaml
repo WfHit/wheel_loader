@@ -1,0 +1,160 @@
+module_name: Load Aware Torque Distribution
+serial_config:
+    - command: load_aware_torque start
+      port_config_param:
+        name: LAT_SER_CFG
+        group: Load Aware Torque Distribution
+
+parameters:
+    - group: Load Aware Torque Distribution
+      definitions:
+        LAT_MIN_FRONT_RATIO:
+            description:
+                short: Minimum front torque ratio
+                long: |
+                    Minimum percentage of total torque allocated to front wheels.
+            type: float
+            min: 0.1
+            max: 0.5
+            default: 0.2
+            decimal: 2
+
+        LAT_MAX_FRONT_RATIO:
+            description:
+                short: Maximum front torque ratio
+                long: |
+                    Maximum percentage of total torque allocated to front wheels.
+            type: float
+            min: 0.5
+            max: 0.9
+            default: 0.8
+            decimal: 2
+
+        LAT_FILTER_TC:
+            description:
+                short: Distribution filter time constant
+                long: |
+                    Time constant for torque distribution filtering.
+            type: float
+            unit: s
+            min: 0.01
+            max: 1.0
+            default: 0.1
+            decimal: 3
+
+        LAT_RATE_LIMIT:
+            description:
+                short: Distribution rate limit
+                long: |
+                    Maximum rate of change for torque distribution.
+            type: float
+            unit: 1/s
+            min: 0.1
+            max: 10.0
+            default: 2.0
+            decimal: 2
+
+        LAT_STABILITY_GAIN:
+            description:
+                short: Stability gain factor
+                long: |
+                    Gain for stability-based torque distribution adjustments.
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 1.0
+            decimal: 2
+
+        LAT_DYNAMIC_GAIN:
+            description:
+                short: Dynamic load gain
+                long: |
+                    Gain for dynamic load-based torque distribution adjustments.
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.5
+            decimal: 2
+
+        LAT_TERRAIN_GAIN:
+            description:
+                short: Terrain adaptation gain
+                long: |
+                    Gain for terrain-based torque distribution adjustments.
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.3
+            decimal: 2
+
+        LAT_EFFICIENCY_WEIGHT:
+            description:
+                short: Efficiency optimization weight
+                long: |
+                    Weight for efficiency in the optimization function.
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.3
+            decimal: 2
+
+        LAT_TRACTION_WEIGHT:
+            description:
+                short: Traction optimization weight
+                long: |
+                    Weight for traction in the optimization function.
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.7
+            decimal: 2
+
+        LAT_COG_X_OFFSET:
+            description:
+                short: Center of gravity X offset
+                long: |
+                    Longitudinal offset of center of gravity from nominal position.
+            type: float
+            unit: m
+            min: -2.0
+            max: 2.0
+            default: 0.0
+            decimal: 2
+
+        LAT_COG_Z_OFFSET:
+            description:
+                short: Center of gravity Z offset
+                long: |
+                    Vertical offset of center of gravity from nominal position.
+            type: float
+            unit: m
+            min: -1.0
+            max: 1.0
+            default: 0.0
+            decimal: 2
+
+        LAT_ADAPTIVE_EN:
+            description:
+                short: Enable adaptive distribution
+                long: |
+                    Enable adaptive torque distribution based on conditions.
+            type: bool
+            default: true
+
+        LAT_EFFICIENCY_OPT:
+            description:
+                short: Enable efficiency optimization
+                long: |
+                    Enable fuel/energy efficiency optimization in torque distribution.
+            type: bool
+            default: true
+
+        LAT_SER_CFG:
+            description:
+                short: Serial Configuration for Load Aware Torque Distribution
+                long: |
+                    Configure on which serial port to run Load Aware Torque Distribution.
+            type: int32
+            min: 0
+            max: 6
+            default: 0

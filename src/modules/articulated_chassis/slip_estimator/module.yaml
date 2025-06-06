@@ -1,0 +1,101 @@
+module_name: Slip Estimator
+serial_config:
+    - command: slip_estimator start
+      port_config_param:
+        name: SE_SER_CFG
+        group: Slip Estimator
+
+parameters:
+    - group: Slip Estimator
+      definitions:
+        SE_WHEEL_RADIUS:
+            description:
+                short: Wheel radius
+                long: |
+                    Radius of the wheel used for slip calculation.
+            type: float
+            unit: m
+            min: 0.1
+            max: 2.0
+            default: 0.75
+            decimal: 2
+
+        SE_VEHICLE_MASS:
+            description:
+                short: Vehicle mass
+                long: |
+                    Total mass of the vehicle for normal force calculation.
+            type: float
+            unit: kg
+            min: 1000
+            max: 50000
+            default: 15000
+            decimal: 0
+
+        SE_COG_HEIGHT:
+            description:
+                short: Center of gravity height
+                long: |
+                    Height of center of gravity above ground for load transfer calculation.
+            type: float
+            unit: m
+            min: 0.5
+            max: 3.0
+            default: 1.2
+            decimal: 2
+
+        SE_WHEELBASE:
+            description:
+                short: Wheelbase
+                long: |
+                    Distance between front and rear axle centers.
+            type: float
+            unit: m
+            min: 1.0
+            max: 8.0
+            default: 3.5
+            decimal: 2
+
+        SE_PROCESS_NOISE:
+            description:
+                short: Process noise
+                long: |
+                    Process noise covariance for EKF slip estimation.
+            type: float
+            min: 0.001
+            max: 1.0
+            default: 0.01
+            decimal: 4
+
+        SE_MEASUREMENT_NOISE:
+            description:
+                short: Measurement noise
+                long: |
+                    Measurement noise covariance for sensors.
+            type: float
+            min: 0.001
+            max: 1.0
+            default: 0.05
+            decimal: 4
+
+        SE_ESTIMATION_METHOD:
+            description:
+                short: Estimation method
+                long: |
+                    Method used for slip estimation.
+                    0: Basic kinematic
+                    1: Extended Kalman Filter
+            type: int32
+            min: 0
+            max: 1
+            default: 1
+
+        SE_SER_CFG:
+            description:
+                short: Serial Configuration for Slip Estimator
+                long: |
+                    Configure on which serial port to run Slip Estimator.
+            type: int32
+            min: 0
+            max: 6
+            default: 0
