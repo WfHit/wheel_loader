@@ -1,0 +1,16 @@
+menuconfig MODULES_BOOM_CONTROL
+	bool "boom_control"
+	default n
+	---help---
+		Enable support for Boom Control module.
+
+		This module controls the boom actuator for wheel loader vehicles,
+		providing position control using DRV8701 H-bridge motor driver
+		and AS5600 magnetic encoder for angle feedback.
+
+menuconfig USER_BOOM_CONTROL
+	bool "boom_control running as userspace module"
+	default n
+	depends on BOARD_PROTECTED && MODULES_BOOM_CONTROL
+	---help---
+		Put boom_control in userspace memory

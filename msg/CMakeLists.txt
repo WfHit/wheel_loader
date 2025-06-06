@@ -47,6 +47,10 @@ set(msg_files
 	Airspeed.msg
 	AirspeedWind.msg
 	AutotuneAttitudeControlStatus.msg
+	BoomCommand.msg
+	BoomStatus.msg
+	BucketCommand.msg
+	BucketStatus.msg
 	ButtonEvent.msg
 	CameraCapture.msg
 	CameraStatus.msg
@@ -238,6 +242,15 @@ set(msg_files
 	VehicleTorqueSetpoint.msg
 	VelocityLimits.msg
 	WheelEncoders.msg
+	WheelSpeedsSetpoint.msg
+	SteeringSetpoint.msg
+	SteeringStatus.msg
+	SlipEstimation.msg
+	TractionControl.msg
+	PredictiveTraction.msg
+	LoadAwareTorque.msg
+	TerrainAdaptation.msg
+	ModuleStatus.msg
 	SensorQuadEncoder.msg
 	ServoFeedback.msg
 	RoboticServoCommand.msg
