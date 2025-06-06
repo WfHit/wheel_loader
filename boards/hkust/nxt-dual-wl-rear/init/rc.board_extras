@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# NXT-Dual-WL-Rear board specific extras init
+# Rear wheel and boom control board
+#------------------------------------------------------------------------------
+
+# Start quadrature encoder driver for rear wheel control
+if param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder driver for rear wheel"
+	quad_encoder start
+
+	# Wait for driver to initialize
+	sleep 1
+
+	# Verify encoder devices are available
+	if [ -c /dev/qe0 ] && [ -c /dev/qe1 ]
+	then
+		echo "Rear wheel quadrature encoders initialized successfully"
+	else
+		echo "Warning: Rear wheel quadrature encoder initialization failed"
+	fi
+fi
+
+# Start boom control module
+if param compare BOOM_CTRL_EN 1
+then
+	echo "Starting boom control module"
+	boom_control start
+
+	# Wait for module to initialize
+	sleep 1
+
+	echo "Boom control module started successfully"
+fi
+
+# Start H-bridge driver for boom actuator
+drv8701 start
+
+# Initialize rear wheel motor control
+echo "Initializing rear wheel motor control"
