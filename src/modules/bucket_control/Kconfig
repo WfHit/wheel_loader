@@ -1,0 +1,15 @@
+menuconfig MODULES_BUCKET_CONTROL
+	bool "bucket_control"
+	default n
+	---help---
+		Enable support for Bucket Control module.
+
+		This module controls the bucket actuator for wheel loader vehicles,
+		providing hydraulic control for bucket positioning and operation.
+
+menuconfig USER_BUCKET_CONTROL
+	bool "bucket_control running as userspace module"
+	default n
+	depends on BOARD_PROTECTED && MODULES_BUCKET_CONTROL
+	---help---
+		Put bucket_control in userspace memory
