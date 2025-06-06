@@ -1,0 +1,73 @@
+# CUAV X7+ WL (Wheel Loader) Controller Firmware Prototype
+#
+# Simplified board configuration for wheel loader main controller
+# Focus on essential functions only:
+#
+# - STM32F765 MCU (Cortex-M7, 216MHz)
+# - Triple redundant IMU sensors (ICM42688P primary, BMI088 backup)
+# - Dual barometer sensors (MS5611 primary, ICP201XX backup)
+# - Dual GPS with RTK support
+# - Six UART ports including dedicated NXT controller communication
+# - Dual CAN bus interfaces
+# - Advanced power monitoring and management
+# - RGB status LEDs and safety button
+# - 8 main PWM outputs + 6 auxiliary outputs
+#
+# Wheel Loader Specific Features:
+# - Real-time communication with front and rear NXT controllers via UART
+# - Boom and bucket hydraulic control interfaces
+# - Articulated chassis steering control
+# - Traction control system integration
+# - Battery monitoring for heavy-duty 24V systems
+# - Robust environmental protection
+#
+# Communication Architecture:
+# - Ground station communication via telemetry
+# - RC manual control input
+# - Distributed uORB messaging to NXT controllers
+# - RTK GPS for high-precision positioning
+# - System health monitoring and diagnostics
+#
+# Safety Features:
+# - Dual redundant sensors for critical systems
+# - Emergency stop capability
+# - System health monitoring
+# - Fail-safe modes for hydraulic systems
+# - Battery voltage monitoring and protection
+
+BOARD_TYPE="CUAV_X7PLUS_WL"
+BOARD_CLASS="FMU"
+MCU_TYPE="STM32F765"
+MCU_CORE="cortex-m7"
+FLASH_SIZE="2MB"
+RAM_SIZE="512KB"
+
+# Hardware version
+HW_MAJOR_VER=1
+HW_MINOR_VER=0
+
+# Board-specific features
+FEATURES="DUAL_GPS RTK_SUPPORT DUAL_CAN NXT_COMM HYDRAULIC_CONTROL TRACTION_CONTROL"
+
+# Power configuration
+PRIMARY_VOLTAGE="24V"
+BACKUP_VOLTAGE="12V"
+USB_VOLTAGE="5V"
+
+# Communication interfaces
+UART_COUNT=6
+SPI_COUNT=2
+I2C_COUNT=3
+CAN_COUNT=2
+
+# PWM outputs
+MAIN_PWM_OUTPUTS=8
+AUX_PWM_OUTPUTS=6
+
+# Sensor configuration
+IMU_PRIMARY="ICM42688P"
+IMU_BACKUP="BMI088"
+BARO_PRIMARY="MS5611"
+BARO_BACKUP="ICP201XX"
+MAG_PRIMARY="IST8310"
+MAG_BACKUP="HMC5883L"

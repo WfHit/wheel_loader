@@ -1,0 +1,77 @@
+#!/bin/sh
+#
+# CUAV X7+ WL (Wheel Loader) Controller board specific defaults
+#------------------------------------------------------------------------------
+
+# Battery monitoring configuration for wheel loader
+param set-default BAT1_V_DIV 18
+param set-default BAT2_V_DIV 18
+param set-default BAT1_A_PER_V 24
+param set-default BAT2_A_PER_V 24
+
+# Enable IMU thermal control
+param set-default SENS_EN_THERMAL 1
+param set-default SENS_TEMP_ID 6946850
+
+# Configure NXT UART communication - High-speed for STM32F765
+param set-default NXT1_BAUD 921600
+param set-default NXT2_BAUD 921600
+
+# Wheel loader specific parameters
+param set-default WL_ENABLE 1
+param set-default WL_MODE 2        # 0=manual, 1=semi-auto, 2=auto
+param set-default WL_MAX_SPEED 5.0 # Maximum speed in m/s
+param set-default WL_MAX_STEER 45  # Maximum steering angle in degrees
+
+# Boom control parameters
+param set-default BOOM_ENABLE 1
+param set-default BOOM_MAX_LIFT 60   # Maximum lift angle in degrees
+param set-default BOOM_MAX_TILT 45   # Maximum tilt angle in degrees
+
+# Bucket control parameters
+param set-default BUCKET_ENABLE 1
+param set-default BUCKET_MAX_ANGLE 90 # Maximum bucket angle in degrees
+
+# Traction control parameters
+param set-default TC_ENABLE 1
+param set-default TC_SLIP_THRESHOLD 0.2
+param set-default TC_MAX_TORQUE_REDUCTION 0.5
+
+# EKF2 configuration for wheel loader
+param set-default EKF2_AID_MASK 1      # GPS only
+param set-default EKF2_HGT_MODE 0      # Barometric height
+param set-default EKF2_GPS_MASK 0      # All GPS data
+
+# MAVLink configuration for ground station
+param set-default MAV_0_CONFIG 101     # TELEM1
+param set-default MAV_0_RATE 80000     # 80 kbps
+param set-default MAV_0_MODE 0         # Normal mode
+
+# Second MAVLink disabled - TELEM2 reserved for NXT Controller 1
+# param set-default MAV_1_CONFIG 102     # TELEM2 - DISABLED (used by NXT1)
+# param set-default MAV_1_RATE 57600     # 57.6 kbps
+# param set-default MAV_1_MODE 1         # Minimal mode
+
+# RC configuration
+param set-default RC_MAP_MODE_SW 5     # Mode switch on channel 5
+param set-default RC_MAP_FLTMODE 6     # Flight mode on channel 6
+
+# Safety configuration
+param set-default CBRK_SUPPLY_CHK 894281  # Disable power supply check for wheel loader
+param set-default CBRK_USB_CHK 197848     # Disable USB check
+
+# uORB proxy configuration for distributed messaging
+param set-default UORB_PROXY_ENABLE 1
+param set-default UORB_PROXY_UART1 /dev/ttyS2  # NXT1 port (TELEM2)
+param set-default UORB_PROXY_UART2 /dev/ttyS3  # NXT2 port (UART4)
+
+# Vehicle type configuration
+param set-default MAV_TYPE 10          # Ground rover
+
+# Start board-specific services
+rgbled_pwm start
+safety_button start
+
+# Start wheel loader specific uORB proxy for NXT communication
+uorb_proxy start -d /dev/ttyS2 -m front
+uorb_proxy start -d /dev/ttyS3 -m rear
