@@ -32,7 +32,7 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__articulated_chassis__safety_manager
+	MODULE modules__safety_manager
 	MAIN safety_manager
 	STACK_MAIN 2048
 	SRCS

@@ -15,6 +15,7 @@
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/BoomStatus.h>
 #include <uORB/topics/BucketStatus.h>
+#include <uORB/topics/WheelLoaderStatus.h>
 
 using namespace time_literals;
 using namespace matrix;
@@ -73,6 +74,7 @@ private:
      * Load analysis functions
      */
     void update_load_state();
+    void update_articulation_state();
     void calculate_static_weight_distribution();
     void calculate_dynamic_weight_transfer();
     void estimate_center_of_gravity();
@@ -114,6 +116,7 @@ private:
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
     uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
+    uORB::Subscription _wheel_loader_status_sub{ORB_ID(wheel_loader_status)};
 
     // uORB publications
     uORB::Publication<load_aware_torque_s> _load_aware_torque_pub{ORB_ID(load_aware_torque)};
@@ -144,6 +147,7 @@ private:
         float roll_angle_rad{0.0f};
         float slope_angle_rad{0.0f};
         float yaw_rate_rad_s{0.0f};
+        float articulation_angle_rad{0.0f};  // Articulation angle between front and rear sections
         bool dynamics_valid{false};
     } _dynamics_state;
 

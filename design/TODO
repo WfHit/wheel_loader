@@ -1,7 +1,7 @@
-1. front wheel control update
-2. using quad Encoder
-3. using H Bridge
-4. msg name del folder
-5. module name
-6. extend chassis control to wheel loader control
-7. add wheel loader link make upper layer controller agnostic to lowe layer
+1. simplify steering
+2. hydralic to elctric
+3. gpio pin for limit switch
+4. add limit switch module
+5. limit switch to safety
+6. limit switch to h bridge
+7. quad encoder gpio

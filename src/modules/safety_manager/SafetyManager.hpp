@@ -7,27 +7,47 @@
 #include <lib/mathlib/mathlib.h>
 #include <matrix/matrix.hpp>
 
-// uORB message includes
-#include <uORB/topics/WheelSpeedsSetpoint.h>
-#include <uORB/topics/SteeringSetpoint.h>
-#include <uORB/topics/TractionControl.h>
-#include <uORB/topics/ModuleStatus.h>
+// uORB message includes - System Status
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failsafe_flags.h>
 #include <uORB/topics/actuator_armed.h>
+#include <uORB/topics/ModuleStatus.h>
+#include <uORB/topics/SystemSafety.h>
+
+// uORB message includes - Chassis Control
+#include <uORB/topics/WheelSpeedsSetpoint.h>
+#include <uORB/topics/SteeringSetpoint.h>
+#include <uORB/topics/TractionControl.h>
+
+// uORB message includes - Hydraulic Systems
+#include <uORB/topics/BoomStatus.h>
+#include <uORB/topics/BucketStatus.h>
+#include <uORB/topics/LoadAwareTorque.h>
+
+// uORB message includes - Sensors and Navigation
+#include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/sensor_accel.h>
+#include <uORB/topics/sensor_gyro.h>
+
+// uORB message includes - Environmental
+#include <uORB/topics/WheelLoaderStatus.h>
+#include <uORB/topics/SystemSafety.h>
 
 using namespace time_literals;
 
 /**
- * @brief Safety Manager for chassis control system
+ * @brief System-Level Safety Manager for Wheel Loader
  *
- * Advanced safety monitoring and fail-safe system that:
- * - Monitors all safety-critical parameters
- * - Implements fail-safe behaviors
- * - Provides independent safety override
- * - Manages safety interlocks and permits
- * - Performs continuous safety assessment
+ * Comprehensive safety monitoring and fail-safe system that oversees all vehicle systems:
+ * - Monitors all safety-critical parameters across all subsystems
+ * - Implements multi-layered fail-safe behaviors
+ * - Provides independent safety override capability
+ * - Manages safety interlocks and operational permits
+ * - Performs continuous safety assessment and risk analysis
  * - Implements emergency response procedures
+ * - Coordinates safety between chassis, hydraulics, and auxiliary systems
+ * - Maintains safety records and diagnostics
  */
 class SafetyManager : public ModuleBase<SafetyManager>, public ModuleParams
 {
@@ -69,7 +89,7 @@ private:
         SAFETY_SHUTDOWN = 3
     };
 
-    // Fault types
+    // Fault types for system-level monitoring
     enum FaultType {
         FAULT_NONE = 0,
         FAULT_SPEED_LIMIT = 1,
@@ -79,13 +99,19 @@ private:
         FAULT_SENSOR = 16,
         FAULT_STABILITY = 32,
         FAULT_LOAD = 64,
-        FAULT_TERRAIN = 128
+        FAULT_TERRAIN = 128,
+        FAULT_HYDRAULIC = 256,      // Hydraulic system faults
+        FAULT_BOOM = 512,           // Boom control faults
+        FAULT_BUCKET = 1024,        // Bucket control faults
+        FAULT_ARTICULATION = 2048,  // Articulation system faults
+        FAULT_POWER = 4096,         // Power system faults
+        FAULT_THERMAL = 8192        // Thermal management faults
     };
 
     void run() override;
 
     /**
-     * Safety monitoring functions
+     * System-level safety monitoring functions
      */
     void monitor_speed_limits();
     void monitor_steering_limits();
@@ -95,6 +121,15 @@ private:
     void monitor_hardware_health();
     void monitor_sensor_validity();
     void monitor_terrain_conditions();
+
+    // Additional system-level monitoring
+    void monitor_hydraulic_systems();
+    void monitor_boom_operations();
+    void monitor_bucket_operations();
+    void monitor_articulation_system();
+    void monitor_power_systems();
+    void monitor_thermal_conditions();
+    void monitor_operator_interface();
 
     /**
      * Safety assessment
@@ -130,6 +165,14 @@ private:
     bool check_autonomous_permit();
     bool check_load_operation_permit();
 
+    // System-level permit checking
+    bool check_hydraulic_operation_permit();
+    bool check_boom_operation_permit();
+    bool check_bucket_operation_permit();
+    bool check_articulation_permit();
+    bool check_engine_start_permit();
+    bool check_emergency_override_permit();
+
     /**
      * Recovery procedures
      */
@@ -140,13 +183,25 @@ private:
     // uORB subscriptions - System status
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _module_status_sub{ORB_ID(module_status)};
+    uORB::Subscription _actuator_armed_sub{ORB_ID(actuator_armed)};
+    uORB::Subscription _failsafe_flags_sub{ORB_ID(failsafe_flags)};
+
+    // uORB subscriptions - Chassis Control
     uORB::Subscription _wheel_speeds_sub{ORB_ID(wheel_speeds_setpoint)};
     uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
     uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
+    uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
+
+    // uORB subscriptions - Hydraulic Systems
+    uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
+    uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
+    uORB::Subscription _wheel_loader_status_sub{ORB_ID(wheel_loader_status)};
 
     // uORB subscriptions - Sensor data
     uORB::Subscription _imu_sub{ORB_ID(sensor_accel)};
     uORB::Subscription _gyro_sub{ORB_ID(sensor_gyro)};
+    uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+    uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
     uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
     uORB::Subscription _load_aware_torque_sub{ORB_ID(load_aware_torque)};
     uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)};
@@ -158,6 +213,7 @@ private:
     // uORB publications - Safety outputs
     uORB::Publication<vehicle_command_s> _safety_command_pub{ORB_ID(vehicle_command)};
     uORB::Publication<module_status_s> _safety_status_pub{ORB_ID(module_status)};
+    uORB::Publication<system_safety_s> _system_safety_pub{ORB_ID(system_safety)};
 
     // Safety state
     struct SafetyState {
@@ -275,7 +331,81 @@ private:
         uint32_t terrain_violations{0};
     } _terrain_monitor;
 
-    // Safety permits
+    // Hydraulic system monitoring
+    struct HydraulicMonitoring {
+        float system_pressure_bar{0.0f};
+        float max_safe_pressure_bar{300.0f};
+        float hydraulic_temperature_c{0.0f};
+        float max_safe_temperature_c{80.0f};
+        bool pressure_fault{false};
+        bool temperature_fault{false};
+        bool pump_fault{false};
+        bool reservoir_low{false};
+        uint32_t hydraulic_violations{0};
+        float hydraulic_health_score{1.0f};
+    } _hydraulic_monitor;
+
+    // Boom system monitoring
+    struct BoomMonitoring {
+        float boom_angle_rad{0.0f};
+        float boom_pressure_bar{0.0f};
+        float max_safe_boom_angle_rad{1.57f}; // 90 degrees
+        bool boom_limit_exceeded{false};
+        bool boom_hydraulic_fault{false};
+        bool boom_encoder_fault{false};
+        uint32_t boom_violations{0};
+    } _boom_monitor;
+
+    // Bucket system monitoring
+    struct BucketMonitoring {
+        float bucket_angle_rad{0.0f};
+        float bucket_pressure_bar{0.0f};
+        float max_safe_bucket_angle_rad{2.09f}; // 120 degrees
+        bool bucket_limit_exceeded{false};
+        bool bucket_hydraulic_fault{false};
+        bool bucket_encoder_fault{false};
+        uint32_t bucket_violations{0};
+    } _bucket_monitor;
+
+    // Articulation system monitoring
+    struct ArticulationMonitoring {
+        float articulation_angle_rad{0.0f};
+        float articulation_rate_rads{0.0f};
+        float max_safe_articulation_angle_rad{0.52f}; // 30 degrees
+        float max_safe_articulation_rate_rads{0.5f};
+        bool angle_limit_exceeded{false};
+        bool rate_limit_exceeded{false};
+        bool articulation_fault{false};
+        uint32_t articulation_violations{0};
+    } _articulation_monitor;
+
+    // Power system monitoring
+    struct PowerMonitoring {
+        float battery_voltage_v{0.0f};
+        float system_current_a{0.0f};
+        float power_consumption_w{0.0f};
+        float max_safe_current_a{200.0f};
+        float min_safe_voltage_v{22.0f};
+        bool voltage_fault{false};
+        bool current_fault{false};
+        bool power_fault{false};
+        uint32_t power_violations{0};
+    } _power_monitor;
+
+    // Thermal system monitoring
+    struct ThermalMonitoring {
+        float engine_temperature_c{0.0f};
+        float hydraulic_temperature_c{0.0f};
+        float ambient_temperature_c{0.0f};
+        float max_safe_engine_temp_c{100.0f};
+        float max_safe_hydraulic_temp_c{80.0f};
+        bool engine_overheat{false};
+        bool hydraulic_overheat{false};
+        bool cooling_fault{false};
+        uint32_t thermal_violations{0};
+    } _thermal_monitor;
+
+    // Safety permits for system-level operations
     struct SafetyPermits {
         bool motion_permitted{false};
         bool steering_permitted{false};
@@ -283,6 +413,15 @@ private:
         bool load_operation_permitted{false};
         bool high_speed_permitted{false};
         bool manual_override_active{false};
+
+        // System-level permits
+        bool hydraulic_operation_permitted{false};
+        bool boom_operation_permitted{false};
+        bool bucket_operation_permitted{false};
+        bool articulation_permitted{false};
+        bool engine_start_permitted{false};
+        bool emergency_override_permitted{false};
+
         uint64_t permit_update_time{0};
     } _safety_permits;
 
