@@ -1,5 +1,21 @@
 #include "LoadAwareTorqueDistribution.hpp"
-#include <px4_platform_common/getopt.h>
+#include <px    // Main control loop
+    while (!should_exit()) {
+
+        // Check for parameter updates
+        if (_parameter_update_sub.updated()) {
+            parameter_update_s param_update;
+            _parameter_update_sub.copy(&param_update);
+            updateParams();
+        }
+
+        // Update load state from sensors
+        update_load_state();
+
+        // Update articulation state from wheel loader feedback
+        update_articulation_state();
+
+        // Calculate static weight distributionmon/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
 #include <uORB/topics/vehicle_attitude.h>
@@ -65,6 +81,9 @@ void LoadAwareTorqueDistribution::run()
 
         // Update load state from sensors
         update_load_state();
+
+        // Update articulation state
+        update_articulation_state();
 
         // Calculate static weight distribution
         calculate_static_weight_distribution();
@@ -179,6 +198,25 @@ void LoadAwareTorqueDistribution::update_load_state()
     }
 }
 
+void LoadAwareTorqueDistribution::update_articulation_state()
+{
+    // Check for updates from wheel loader status topic
+    if (_wheel_loader_status_sub.updated()) {
+        wheel_loader_status_s status;
+        _wheel_loader_status_sub.copy(&status);
+
+        // Update articulation angle in dynamics state
+        _dynamics_state.articulation_angle_rad = status.articulation_angle_feedback;
+
+        // Validate dynamics data
+        _dynamics_state.dynamics_valid = true;
+
+        PX4_DEBUG("Updated articulation angle: %.2f rad (%.1f degrees)",
+                 (double)_dynamics_state.articulation_angle_rad,
+                 (double)math::degrees(_dynamics_state.articulation_angle_rad));
+    }
+}
+
 void LoadAwareTorqueDistribution::calculate_static_weight_distribution()
 {
     if (!_load_state.load_data_valid) {
@@ -186,19 +224,44 @@ void LoadAwareTorqueDistribution::calculate_static_weight_distribution()
     }
 
     // Calculate weight distribution based on center of gravity
+    // For articulated wheel loader: COG_x > 0 means COG shifted forward from vehicle center
+    // This increases front axle load (typical when bucket is loaded)
     float wheelbase = WHEELBASE_M;
-    float rear_moment_arm = wheelbase / 2.0f + _load_state.cog_x_m;
-    float front_moment_arm = wheelbase / 2.0f - _load_state.cog_x_m;
 
-    // Static weight distribution (moment balance)
-    float rear_weight_ratio = rear_moment_arm / wheelbase;
-    float front_weight_ratio = front_moment_arm / wheelbase;
+    // For articulated vehicle, calculate effective wheelbase adjustment based on articulation angle
+    // During articulation, the effective wheelbase changes slightly
+    float articulation_adjustment = 1.0f;
+    if (fabsf(_dynamics_state.articulation_angle_rad) > 0.05f) {
+        // Adjust effective wheelbase - becomes slightly shorter as articulation increases
+        articulation_adjustment = cosf(_dynamics_state.articulation_angle_rad);
+        wheelbase = wheelbase * articulation_adjustment;
+    }
 
-    // Clamp to physical limits
-    rear_weight_ratio = math::constrain(rear_weight_ratio, 0.2f, 0.8f);
-    front_weight_ratio = 1.0f - rear_weight_ratio;
+    // Moment arms measured from rear axle (correct physics approach)
+    // When COG shifts forward (+X), front moment arm decreases, rear moment arm increases
+    float rear_moment_arm = wheelbase - _load_state.cog_x_m;  // Distance from rear axle to COG
+    float front_moment_arm = _load_state.cog_x_m;             // Distance from front axle to COG
+
+    // Moment balance: Total_Weight × COG_distance_from_rear = Front_Weight × wheelbase
+    // Front_Weight = (Total_Weight × rear_moment_arm) / wheelbase
+    float front_weight_ratio = rear_moment_arm / wheelbase;
+    float rear_weight_ratio = front_moment_arm / wheelbase;
+
+    // Validate moment balance (should sum to 1.0)
+    float ratio_sum = front_weight_ratio + rear_weight_ratio;
+    if (fabsf(ratio_sum - 1.0f) > 0.01f) {
+        // Normalize if calculation error
+        front_weight_ratio /= ratio_sum;
+        rear_weight_ratio /= ratio_sum;
+    }
+
+    // Clamp to physical limits for articulated wheel loader
+    // Front axle can carry 20-75% of load depending on bucket state
+    front_weight_ratio = math::constrain(front_weight_ratio, 0.2f, 0.75f);
+    rear_weight_ratio = 1.0f - front_weight_ratio;
 
     // For optimal traction, torque distribution should match weight distribution
+    // Heavier axle gets proportionally more torque
     _torque_distribution.base_distribution = front_weight_ratio;
 
     // Store calculated axle loads
@@ -224,20 +287,36 @@ void LoadAwareTorqueDistribution::calculate_dynamic_weight_transfer()
 
     float dynamic_adjustment = 0.0f;
 
+    // Get time delta for dynamic calculations
+    uint64_t current_time = hrt_absolute_time();
+    float dt = 0.02f; // Default to 50Hz if first run
+
+    if (_load_state.last_update_time > 0) {
+        dt = (current_time - _load_state.last_update_time) / 1e6f;
+    }
+    _load_state.last_update_time = current_time;
+
     // Longitudinal weight transfer due to acceleration/braking
     if (fabsf(_dynamics_state.longitudinal_accel_ms2) > 0.5f) {
-        // Weight transfers to rear during acceleration, to front during braking
+        // Physics: During acceleration, inertial force acts backward on COG
+        // This creates additional load on rear axle, reduces front axle load
+        // Weight transfer = (mass × accel × COG_height) / wheelbase
         float accel_factor = _dynamics_state.longitudinal_accel_ms2 / 9.81f; // Normalize to g-force
         float height_factor = _load_state.cog_z_m / WHEELBASE_M; // Height influence
 
+        // Positive acceleration (forward) reduces front weight, increases rear weight
+        // Negative value means reducing front torque ratio during acceleration
         dynamic_adjustment = -accel_factor * height_factor * _dynamic_gain.get();
         dynamic_adjustment = math::constrain(dynamic_adjustment, -MAX_WEIGHT_TRANSFER_RATIO, MAX_WEIGHT_TRANSFER_RATIO);
     }
 
     // Slope influence on weight distribution
     if (fabsf(_dynamics_state.slope_angle_rad) > 0.087f) { // > 5 degrees
+        // On uphill slope: weight transfers to rear axle (component of gravity)
+        // On downhill slope: weight transfers to front axle
         float slope_factor = sinf(_dynamics_state.slope_angle_rad);
-        dynamic_adjustment += slope_factor * 0.2f; // Shift torque uphill
+        // Positive slope (uphill) reduces front weight ratio
+        dynamic_adjustment -= slope_factor * 0.2f; // More rear bias on uphill
     }
 
     _torque_distribution.dynamic_adjustment = dynamic_adjustment;
@@ -251,8 +330,10 @@ void LoadAwareTorqueDistribution::apply_dynamic_adjustments()
 
     // Apply rate limiting to prevent sudden changes
     uint64_t current_time = hrt_absolute_time();
+    float dt = 0.02f; // Default control period
+
     if (_filter_state.last_filter_time > 0) {
-        float dt = (current_time - _filter_state.last_filter_time) / 1e6f;
+        dt = (current_time - _filter_state.last_filter_time) / 1e6f;
         float max_change = _distribution_rate_limit.get() * dt;
 
         float distribution_change = adjusted_distribution - _filter_state.previous_distribution;
@@ -279,26 +360,51 @@ void LoadAwareTorqueDistribution::apply_stability_corrections()
     float slip_difference = _traction_state.slip_rear - _traction_state.slip_front;
     if (fabsf(slip_difference) > 0.05f) {
         // If rear slips more, shift torque to front
+        // Use proportional control with saturation
         stability_correction = slip_difference * _stability_gain.get();
         stability_correction = math::constrain(stability_correction, -0.3f, 0.3f);
         _performance.stability_interventions++;
     }
 
-    // Lateral stability correction
+    // Lateral stability correction - during high lateral acceleration
     if (fabsf(_dynamics_state.lateral_accel_ms2) > 2.0f) {
-        // Reduce front torque during high lateral acceleration to maintain stability
-        stability_correction -= 0.1f;
+        // For articulated wheel loader: reduce front torque during aggressive steering
+        // to prevent front axle from breaking traction and losing steering control
+        float lateral_factor = (_dynamics_state.lateral_accel_ms2 / 9.81f) * 0.05f; // Scale by g-force
+        stability_correction -= lateral_factor;
     }
 
-    // Yaw rate stability
+    // Articulation angle stability correction - key addition for articulated vehicles
+    if (fabsf(_dynamics_state.articulation_angle_rad) > 0.17f) {  // > 10 degrees
+        // Articulation impacts weight distribution and stability
+        // Large articulation angles shift more load to the outer wheels
+        // Calculate correction factor based on articulation angle
+        float articulation_factor = sinf(_dynamics_state.articulation_angle_rad) * 0.2f;
+
+        // Adjust torque distribution to maintain stability during articulation
+        // Positive articulation angle (turning right) shifts weight to left wheels
+        // For stability, we typically want more torque on the axle with better weight
+        stability_correction += articulation_factor * _stability_gain.get();
+
+        // Limit the articulation correction
+        stability_correction = math::constrain(stability_correction, -0.3f, 0.3f);
+        PX4_DEBUG("Applied articulation correction: %.3f", (double)articulation_factor);
+    }
+
+    // Yaw stability - for articulated vehicles with front steering
     if (fabsf(_dynamics_state.yaw_rate_rad_s) > 0.3f) {
-        // Reduce torque to spinning axle
-        if (_dynamics_state.yaw_rate_rad_s > 0) {
-            stability_correction -= 0.05f; // Reduce front torque for left turn
-        } else {
-            stability_correction += 0.05f; // Reduce rear torque for right turn
+        // During rapid turns, maintain steering authority by ensuring front wheels have adequate traction
+        // but prevent over-torquing which can cause understeer
+        float yaw_factor = (_dynamics_state.yaw_rate_rad_s / 1.0f) * 0.03f; // Normalize to typical max yaw rate
+
+        // For articulated wheel loader: slight front bias helps maintain steering control
+        if (fabsf(_dynamics_state.yaw_rate_rad_s) > 0.5f) {
+            stability_correction += 0.05f; // Small front bias for steering authority
         }
     }
+
+    // Prevent excessive correction
+    stability_correction = math::constrain(stability_correction, -0.4f, 0.4f);
 
     _torque_distribution.stability_correction = stability_correction;
 }
@@ -307,32 +413,38 @@ void LoadAwareTorqueDistribution::apply_terrain_adaptations()
 {
     float terrain_adjustment = 0.0f;
 
-    // Terrain-specific adjustments
+    // Terrain-specific adjustments for articulated wheel loader
+    // Note: Positive values increase front torque ratio, negative values increase rear ratio
     switch (_traction_state.surface_type) {
         case 0: // Asphalt
-            terrain_adjustment = 0.0f; // No adjustment needed
+            terrain_adjustment = 0.0f; // No adjustment needed - use weight-based distribution
             break;
         case 1: // Gravel
-            terrain_adjustment = 0.05f; // Slightly more front bias for steering
+            terrain_adjustment = 0.05f; // Slightly more front bias for steering control
             break;
         case 2: // Mud
-            terrain_adjustment = -0.1f; // More rear bias for pushing power
+            // In mud, rear wheels provide pushing power while front steers
+            // But for loaded wheel loader, front axle is heavier and provides better traction
+            terrain_adjustment = 0.0f; // Let weight distribution dominate
             break;
         case 3: // Sand
-            terrain_adjustment = -0.15f; // Significant rear bias
+            // Sand requires balanced approach - avoid spinning either axle
+            terrain_adjustment = -0.05f; // Slight rear bias to prevent front wheel digging
             break;
         case 4: // Snow
-            terrain_adjustment = 0.1f; // Front bias for control
+            terrain_adjustment = 0.1f; // Front bias for steering control and flotation
             break;
         case 5: // Ice
-            terrain_adjustment = 0.15f; // Maximum front bias for steering
+            terrain_adjustment = 0.15f; // Maximum front bias for steering authority
             break;
         default:
             terrain_adjustment = 0.0f;
     }
 
-    // Adjust based on surface roughness
-    terrain_adjustment += _traction_state.surface_roughness * 0.05f;
+    // Adjust based on surface roughness - rough terrain benefits from weight-matched distribution
+    // Reduce terrain bias on very rough surfaces to let weight distribution dominate
+    float roughness_factor = math::constrain(_traction_state.surface_roughness, 0.0f, 1.0f);
+    terrain_adjustment *= (1.0f - roughness_factor * 0.5f);
 
     // Apply terrain gain parameter
     terrain_adjustment *= _terrain_gain.get();
@@ -415,13 +527,15 @@ void LoadAwareTorqueDistribution::publish_torque_commands()
     uint64_t timestamp = hrt_absolute_time();
 
     // Get total torque request
+    float total_torque_request = 0.0f;
     if (_wheel_speeds_sub.updated()) {
         wheel_speeds_setpoint_s speeds;
         _wheel_speeds_sub.copy(&speeds);
-        _torque_distribution.total_torque_request_nm = speeds.max_torque_nm;
+        total_torque_request = speeds.max_torque_nm;
     }
+    _torque_distribution.total_torque_request_nm = total_torque_request;
 
-    // Calculate individual axle torques
+    // Calculate individual axle torques based on distribution ratios
     _torque_distribution.front_torque_nm =
         _torque_distribution.total_torque_request_nm * _torque_distribution.front_torque_ratio;
     _torque_distribution.rear_torque_nm =
@@ -436,18 +550,25 @@ void LoadAwareTorqueDistribution::publish_torque_commands()
     _torque_output.optimal_rear_torque_nm = _torque_distribution.rear_torque_nm;
     _torque_output.weight_distribution_ratio = _torque_distribution.front_torque_ratio;
     _torque_output.stability_margin = _performance.stability_margin;
+    _torque_output.articulation_angle_rad = _dynamics_state.articulation_angle_rad; // Add articulation angle
     _torque_output.redistribution_active =
         fabsf(_torque_distribution.final_distribution - 0.5f) > 0.05f;
 
     _load_aware_torque_pub.publish(_torque_output);
 
-    // Publish updated wheel speed setpoints with torque distribution
+    // Publish updated wheel speed setpoints with proper torque distribution
+    // CRITICAL FIX: Send actual calculated torques to wheel controllers
     wheel_speeds_setpoint_s wheel_speeds{};
     wheel_speeds.timestamp = timestamp;
     wheel_speeds.front_wheel_speed_rpm = 0.0f; // Will be set by speed controller
     wheel_speeds.rear_wheel_speed_rpm = 0.0f;  // Will be set by speed controller
-    wheel_speeds.max_torque_nm = _torque_distribution.total_torque_request_nm;
+
+    // FIXED: Send distributed torques instead of total torque
+    wheel_speeds.front_max_torque_nm = _torque_distribution.front_torque_nm;
+    wheel_speeds.rear_max_torque_nm = _torque_distribution.rear_torque_nm;
+    wheel_speeds.max_torque_nm = _torque_distribution.total_torque_request_nm; // Keep total for reference
     wheel_speeds.control_mode = 1; // Torque control mode
+    wheel_speeds.torque_distribution_active = true; // Flag that distribution is active
 
     _wheel_speeds_pub.publish(wheel_speeds);
 
@@ -503,6 +624,9 @@ int LoadAwareTorqueDistribution::print_status()
     PX4_INFO("  Total Mass: %.0f kg", (double)_load_state.total_mass_kg);
     PX4_INFO("  COG Position: X=%.2f m, Z=%.2f m",
              (double)_load_state.cog_x_m, (double)_load_state.cog_z_m);
+    PX4_INFO("  Articulation Angle: %.2f rad (%.1f degrees)",
+             (double)_dynamics_state.articulation_angle_rad,
+             (double)math::degrees(_dynamics_state.articulation_angle_rad));
     PX4_INFO("  Weight Distribution:");
     PX4_INFO("    Front Axle: %.0f kg", (double)_load_state.front_axle_load_kg);
     PX4_INFO("    Rear Axle: %.0f kg", (double)_load_state.rear_axle_load_kg);

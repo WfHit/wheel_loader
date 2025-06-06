@@ -11,6 +11,7 @@ float32 center_of_gravity_z   # CoG z-position relative to ground
 float32 front_axle_load_n     # Force on front axle in N
 float32 rear_axle_load_n      # Force on rear axle in N
 float32 weight_distribution   # Weight distribution factor [-1=rear, 1=front]
+float32 articulation_angle_rad # Articulation angle between front and rear chassis (radians)
 
 float32 optimal_torque_split  # Optimal torque split ratio [0=rear, 1=front]
 float32 traction_limit_front  # Front wheel traction limit in Nm

@@ -30,7 +30,7 @@ hmc5883l -I start
 gps start -d /dev/ttyS0 -p ubx
 
 # Start second GPS on UART2 (GPS2) for RTK
-gps start -d /dev/ttyS1 -p ubx -g 1
+# gps start -d /dev/ttyS1 -p ubx -g 1
 
 # Safety button
 safety_button start
@@ -42,7 +42,7 @@ rgbled_pwm start
 tone_alarm start
 
 # ADC for battery monitoring
-adc start
+# adc start
 
 # Battery monitoring with dual battery support
 battery_status start

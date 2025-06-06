@@ -1,4 +1,3 @@
-
 #include "SafetyManager.hpp"
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
@@ -92,6 +91,13 @@ void SafetyManager::run()
     monitor_hardware_health();
     monitor_sensor_validity();
     monitor_terrain_conditions();
+    monitor_hydraulic_systems();
+    monitor_boom_operations();
+    monitor_bucket_operations();
+    monitor_articulation_system();
+    monitor_power_systems();
+    monitor_thermal_conditions();
+    monitor_operator_interface();
 
     // Assess overall safety situation
     assess_overall_safety();
@@ -130,6 +136,56 @@ void SafetyManager::run()
     safety_status.error_count = _safety_state.safety_violation_count;
 
     _safety_status_pub.publish(safety_status);
+
+    // Publish comprehensive system safety status
+    system_safety_s system_safety{};
+    system_safety.timestamp = hrt_absolute_time();
+
+    // Overall safety status
+    system_safety.safety_level = static_cast<uint8_t>(_safety_state.current_level);
+    system_safety.overall_risk_factor = _safety_state.overall_risk_factor;
+    system_safety.emergency_active = _emergency_response.emergency_stop_commanded;
+    system_safety.safety_override_active = _safety_state.safety_override_active;
+
+    // System fault status
+    system_safety.active_faults = _safety_state.active_faults;
+    system_safety.fault_history = _safety_state.fault_history;
+    system_safety.last_fault_time = _safety_state.last_fault_time;
+    system_safety.safety_violation_count = _safety_state.safety_violation_count;
+
+    // Safety permits
+    system_safety.motion_permitted = _safety_permits.motion_permitted;
+    system_safety.steering_permitted = _safety_permits.steering_permitted;
+    system_safety.autonomous_permitted = _safety_permits.autonomous_permitted;
+    system_safety.hydraulic_operation_permitted = _safety_permits.hydraulic_operation_permitted;
+    system_safety.boom_operation_permitted = _safety_permits.boom_operation_permitted;
+    system_safety.bucket_operation_permitted = _safety_permits.bucket_operation_permitted;
+    system_safety.articulation_permitted = _safety_permits.articulation_permitted;
+    system_safety.engine_start_permitted = _safety_permits.engine_start_permitted;
+    system_safety.emergency_override_active = _safety_permits.emergency_override_permitted;
+
+    // System monitoring status
+    system_safety.chassis_safe = (_safety_state.active_faults & (FAULT_SPEED_LIMIT | FAULT_STEERING_LIMIT | FAULT_STABILITY)) == 0;
+    system_safety.hydraulic_safe = (_safety_state.active_faults & FAULT_HYDRAULIC) == 0;
+    system_safety.sensor_safe = (_safety_state.active_faults & FAULT_SENSOR) == 0;
+    system_safety.communication_safe = (_safety_state.active_faults & FAULT_COMMUNICATION) == 0;
+    system_safety.power_safe = (_safety_state.active_faults & FAULT_POWER) == 0;
+    system_safety.thermal_safe = (_safety_state.active_faults & FAULT_THERMAL) == 0;
+
+    // Emergency response
+    system_safety.emergency_stop_commanded = _emergency_response.emergency_stop_commanded;
+    system_safety.controlled_stop_active = _emergency_response.controlled_stop_active;
+    system_safety.emergency_shutdown_active = _emergency_response.emergency_shutdown_active;
+    system_safety.backup_systems_active = _emergency_response.backup_systems_active;
+
+    // Performance metrics
+    system_safety.safety_check_frequency_hz = SAFETY_CHECK_RATE_HZ;
+    system_safety.intervention_response_time_ms = _safety_performance.safety_check_time_ms;
+    system_safety.safety_system_availability = (_safety_state.current_level != SAFETY_EMERGENCY) ? 1.0f : 0.0f;
+    system_safety.total_safety_checks = _safety_performance.total_safety_checks;
+    system_safety.safety_interventions = _safety_performance.safety_interventions;
+
+    _system_safety_pub.publish(system_safety);
 }
 
 void SafetyManager::monitor_speed_limits()
@@ -504,6 +560,274 @@ void SafetyManager::monitor_terrain_conditions()
     }
 }
 
+void SafetyManager::monitor_hydraulic_systems()
+{
+    boom_status_s boom_status;
+    bucket_status_s bucket_status;
+    wheel_loader_status_s loader_status;
+
+    // Monitor boom hydraulic system
+    if (_boom_status_sub.update(&boom_status)) {
+        _hydraulic_monitor.system_pressure_bar = boom_status.hydraulic_pressure_bar;
+        _hydraulic_monitor.hydraulic_temperature_c = boom_status.hydraulic_temperature_c;
+
+        // Check pressure limits
+        if (_hydraulic_monitor.system_pressure_bar > _hydraulic_monitor.max_safe_pressure_bar) {
+            _hydraulic_monitor.pressure_fault = true;
+            _hydraulic_monitor.hydraulic_violations++;
+            _safety_state.active_faults |= FAULT_HYDRAULIC;
+            PX4_WARN("Hydraulic pressure fault: %.1f bar", (double)_hydraulic_monitor.system_pressure_bar);
+        } else {
+            _hydraulic_monitor.pressure_fault = false;
+        }
+
+        // Check temperature limits
+        if (_hydraulic_monitor.hydraulic_temperature_c > _hydraulic_monitor.max_safe_temperature_c) {
+            _hydraulic_monitor.temperature_fault = true;
+            _hydraulic_monitor.hydraulic_violations++;
+            _safety_state.active_faults |= FAULT_THERMAL;
+            PX4_WARN("Hydraulic temperature fault: %.1f°C", (double)_hydraulic_monitor.hydraulic_temperature_c);
+        } else {
+            _hydraulic_monitor.temperature_fault = false;
+        }
+
+        // Update hydraulic health score
+        float pressure_factor = 1.0f - math::constrain(_hydraulic_monitor.system_pressure_bar / _hydraulic_monitor.max_safe_pressure_bar, 0.0f, 1.0f);
+        float temp_factor = 1.0f - math::constrain(_hydraulic_monitor.hydraulic_temperature_c / _hydraulic_monitor.max_safe_temperature_c, 0.0f, 1.0f);
+        _hydraulic_monitor.hydraulic_health_score = (pressure_factor + temp_factor) / 2.0f;
+    }
+
+    // Check for hydraulic pump and reservoir status
+    if (_wheel_loader_status_sub.update(&loader_status)) {
+        // Assume wheel loader status includes hydraulic system health
+        _hydraulic_monitor.pump_fault = (loader_status.system_health > 1); // WARNING or higher
+        _hydraulic_monitor.reservoir_low = (loader_status.supply_voltage < 22.0f); // Indirect indicator
+    }
+}
+
+void SafetyManager::monitor_boom_operations()
+{
+    boom_status_s boom_status;
+
+    if (_boom_status_sub.update(&boom_status)) {
+        _boom_monitor.boom_angle_rad = boom_status.boom_angle_rad;
+        _boom_monitor.boom_pressure_bar = boom_status.hydraulic_pressure_bar;
+
+        // Check boom angle limits
+        if (fabsf(_boom_monitor.boom_angle_rad) > _boom_monitor.max_safe_boom_angle_rad) {
+            _boom_monitor.boom_limit_exceeded = true;
+            _boom_monitor.boom_violations++;
+            _safety_state.active_faults |= FAULT_BOOM;
+            PX4_WARN("Boom angle limit exceeded: %.2f rad", (double)_boom_monitor.boom_angle_rad);
+        } else {
+            _boom_monitor.boom_limit_exceeded = false;
+            _safety_state.active_faults &= ~FAULT_BOOM;
+        }
+
+        // Check boom hydraulic health
+        _boom_monitor.boom_hydraulic_fault = boom_status.hydraulic_fault;
+        _boom_monitor.boom_encoder_fault = boom_status.encoder_fault;
+
+        if (_boom_monitor.boom_hydraulic_fault || _boom_monitor.boom_encoder_fault) {
+            _safety_state.active_faults |= FAULT_BOOM;
+        }
+    }
+}
+
+void SafetyManager::monitor_bucket_operations()
+{
+    bucket_status_s bucket_status;
+
+    if (_bucket_status_sub.update(&bucket_status)) {
+        _bucket_monitor.bucket_angle_rad = bucket_status.bucket_angle_rad;
+        _bucket_monitor.bucket_pressure_bar = bucket_status.hydraulic_pressure_bar;
+
+        // Check bucket angle limits
+        if (fabsf(_bucket_monitor.bucket_angle_rad) > _bucket_monitor.max_safe_bucket_angle_rad) {
+            _bucket_monitor.bucket_limit_exceeded = true;
+            _bucket_monitor.bucket_violations++;
+            _safety_state.active_faults |= FAULT_BUCKET;
+            PX4_WARN("Bucket angle limit exceeded: %.2f rad", (double)_bucket_monitor.bucket_angle_rad);
+        } else {
+            _bucket_monitor.bucket_limit_exceeded = false;
+            _safety_state.active_faults &= ~FAULT_BUCKET;
+        }
+
+        // Check bucket hydraulic health
+        _bucket_monitor.bucket_hydraulic_fault = bucket_status.hydraulic_fault;
+        _bucket_monitor.bucket_encoder_fault = bucket_status.encoder_fault;
+
+        if (_bucket_monitor.bucket_hydraulic_fault || _bucket_monitor.bucket_encoder_fault) {
+            _safety_state.active_faults |= FAULT_BUCKET;
+        }
+    }
+}
+
+void SafetyManager::monitor_articulation_system()
+{
+    wheel_loader_status_s loader_status;
+
+    if (_wheel_loader_status_sub.update(&loader_status)) {
+        _articulation_monitor.articulation_angle_rad = loader_status.articulation_angle_feedback;
+
+        // Calculate articulation rate (simple derivative)
+        static float prev_angle = 0.0f;
+        static uint64_t prev_time = 0;
+        uint64_t current_time = hrt_absolute_time();
+
+        if (prev_time > 0) {
+            float dt = (current_time - prev_time) / 1e6f;
+            if (dt > 0.001f) { // Avoid division by very small numbers
+                _articulation_monitor.articulation_rate_rads =
+                    (_articulation_monitor.articulation_angle_rad - prev_angle) / dt;
+            }
+        }
+        prev_angle = _articulation_monitor.articulation_angle_rad;
+        prev_time = current_time;
+
+        // Check articulation angle limits
+        if (fabsf(_articulation_monitor.articulation_angle_rad) > _articulation_monitor.max_safe_articulation_angle_rad) {
+            _articulation_monitor.angle_limit_exceeded = true;
+            _articulation_monitor.articulation_violations++;
+            _safety_state.active_faults |= FAULT_ARTICULATION;
+            PX4_WARN("Articulation angle limit exceeded: %.2f rad", (double)_articulation_monitor.articulation_angle_rad);
+        } else {
+            _articulation_monitor.angle_limit_exceeded = false;
+        }
+
+        // Check articulation rate limits
+        if (fabsf(_articulation_monitor.articulation_rate_rads) > _articulation_monitor.max_safe_articulation_rate_rads) {
+            _articulation_monitor.rate_limit_exceeded = true;
+            _articulation_monitor.articulation_violations++;
+            _safety_state.active_faults |= FAULT_ARTICULATION;
+            PX4_WARN("Articulation rate limit exceeded: %.2f rad/s", (double)_articulation_monitor.articulation_rate_rads);
+        } else {
+            _articulation_monitor.rate_limit_exceeded = false;
+        }
+
+        // Update overall articulation fault status
+        if (!_articulation_monitor.angle_limit_exceeded && !_articulation_monitor.rate_limit_exceeded) {
+            _safety_state.active_faults &= ~FAULT_ARTICULATION;
+        }
+
+        // Check for articulation system faults
+        _articulation_monitor.articulation_fault = (loader_status.system_health > 2); // ERROR or CRITICAL
+    }
+}
+
+void SafetyManager::monitor_power_systems()
+{
+    wheel_loader_status_s loader_status;
+
+    if (_wheel_loader_status_sub.update(&loader_status)) {
+        _power_monitor.battery_voltage_v = loader_status.supply_voltage;
+        _power_monitor.system_current_a = loader_status.front_motor_current + loader_status.rear_motor_current;
+        _power_monitor.power_consumption_w = loader_status.power_consumption;
+
+        // Check voltage limits
+        if (_power_monitor.battery_voltage_v < _power_monitor.min_safe_voltage_v) {
+            _power_monitor.voltage_fault = true;
+            _power_monitor.power_violations++;
+            _safety_state.active_faults |= FAULT_POWER;
+            PX4_WARN("Low battery voltage: %.1f V", (double)_power_monitor.battery_voltage_v);
+        } else {
+            _power_monitor.voltage_fault = false;
+        }
+
+        // Check current limits
+        if (_power_monitor.system_current_a > _power_monitor.max_safe_current_a) {
+            _power_monitor.current_fault = true;
+            _power_monitor.power_violations++;
+            _safety_state.active_faults |= FAULT_POWER;
+            PX4_WARN("High system current: %.1f A", (double)_power_monitor.system_current_a);
+        } else {
+            _power_monitor.current_fault = false;
+        }
+
+        // Update overall power fault status
+        _power_monitor.power_fault = _power_monitor.voltage_fault || _power_monitor.current_fault;
+
+        if (!_power_monitor.power_fault) {
+            _safety_state.active_faults &= ~FAULT_POWER;
+        }
+    }
+}
+
+void SafetyManager::monitor_thermal_conditions()
+{
+    wheel_loader_status_s loader_status;
+
+    if (_wheel_loader_status_sub.update(&loader_status)) {
+        _thermal_monitor.engine_temperature_c = loader_status.motor_temperature;
+        _thermal_monitor.hydraulic_temperature_c = loader_status.controller_temperature;
+        // Note: Assuming controller temperature as proxy for hydraulic temp
+        // In real implementation, would have dedicated hydraulic temp sensor
+
+        // Check engine temperature
+        if (_thermal_monitor.engine_temperature_c > _thermal_monitor.max_safe_engine_temp_c) {
+            _thermal_monitor.engine_overheat = true;
+            _thermal_monitor.thermal_violations++;
+            _safety_state.active_faults |= FAULT_THERMAL;
+            PX4_WARN("Engine overheat: %.1f°C", (double)_thermal_monitor.engine_temperature_c);
+        } else {
+            _thermal_monitor.engine_overheat = false;
+        }
+
+        // Check hydraulic temperature
+        if (_thermal_monitor.hydraulic_temperature_c > _thermal_monitor.max_safe_hydraulic_temp_c) {
+            _thermal_monitor.hydraulic_overheat = true;
+            _thermal_monitor.thermal_violations++;
+            _safety_state.active_faults |= FAULT_THERMAL;
+            PX4_WARN("Hydraulic overheat: %.1f°C", (double)_thermal_monitor.hydraulic_temperature_c);
+        } else {
+            _thermal_monitor.hydraulic_overheat = false;
+        }
+
+        // Update cooling fault status
+        _thermal_monitor.cooling_fault = _thermal_monitor.engine_overheat || _thermal_monitor.hydraulic_overheat;
+
+        if (!_thermal_monitor.cooling_fault) {
+            _safety_state.active_faults &= ~FAULT_THERMAL;
+        }
+    }
+}
+
+void SafetyManager::monitor_operator_interface()
+{
+    // Monitor manual control input for operator presence and validity
+    manual_control_input_s manual_input;
+
+    if (_manual_control_sub.update(&manual_input)) {
+        static uint64_t last_manual_time = 0;
+        uint64_t current_time = hrt_absolute_time();
+
+        // Check for operator input timeout
+        if (current_time - last_manual_time > 5_s) {
+            // No operator input for 5 seconds
+            _safety_permits.manual_override_active = false;
+            PX4_DEBUG("Operator input timeout detected");
+        } else {
+            _safety_permits.manual_override_active = true;
+        }
+
+        last_manual_time = current_time;
+
+        // Validate input signals
+        bool inputs_valid = (manual_input.timestamp > 0) &&
+                           (fabsf(manual_input.roll) <= 1.0f) &&
+                           (fabsf(manual_input.pitch) <= 1.0f) &&
+                           (fabsf(manual_input.yaw) <= 1.0f) &&
+                           (fabsf(manual_input.throttle) <= 1.0f);
+
+        if (!inputs_valid) {
+            _safety_state.active_faults |= FAULT_COMMUNICATION;
+            PX4_WARN("Invalid operator interface signals");
+        } else {
+            _safety_state.active_faults &= ~FAULT_COMMUNICATION;
+        }
+    }
+}
+
 void SafetyManager::assess_overall_safety()
 {
     // Calculate overall risk factor
@@ -608,6 +932,14 @@ void SafetyManager::check_safety_interlocks()
     _safety_permits.load_operation_permitted = check_load_operation_permit();
     _safety_permits.high_speed_permitted = (_safety_state.current_level <= SAFETY_CAUTION);
 
+    // Check system-level permits
+    _safety_permits.hydraulic_operation_permitted = check_hydraulic_operation_permit();
+    _safety_permits.boom_operation_permitted = check_boom_operation_permit();
+    _safety_permits.bucket_operation_permitted = check_bucket_operation_permit();
+    _safety_permits.articulation_permitted = check_articulation_permit();
+    _safety_permits.engine_start_permitted = check_engine_start_permit();
+    _safety_permits.emergency_override_permitted = check_emergency_override_permit();
+
     _safety_permits.permit_update_time = hrt_absolute_time();
 }
 
@@ -670,6 +1002,102 @@ bool SafetyManager::check_load_operation_permit()
     if (_load_monitor.unsafe_load_distribution) return false;
     if (_stability_monitor.stability_warning) return false;
     if (_terrain_monitor.slope_limit_exceeded) return false;
+
+    return true;
+}
+
+bool SafetyManager::check_hydraulic_operation_permit()
+{
+    // Hydraulic operations not permitted if:
+    // - Hydraulic system faults
+    // - Overheating conditions
+    // - Low pressure conditions
+    // - Emergency conditions
+
+    if (_hydraulic_monitor.pressure_fault || _hydraulic_monitor.temperature_fault) return false;
+    if (_hydraulic_monitor.pump_fault || _hydraulic_monitor.reservoir_low) return false;
+    if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
+    if (_hydraulic_monitor.hydraulic_health_score < 0.5f) return false;
+
+    return true;
+}
+
+bool SafetyManager::check_boom_operation_permit()
+{
+    // Boom operations not permitted if:
+    // - Boom system faults
+    // - Boom angle limits exceeded
+    // - Hydraulic system issues
+    // - Unstable conditions
+
+    if (_boom_monitor.boom_hydraulic_fault || _boom_monitor.boom_encoder_fault) return false;
+    if (_boom_monitor.boom_limit_exceeded) return false;
+    if (!check_hydraulic_operation_permit()) return false;
+    if (_stability_monitor.stability_warning) return false;
+    if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
+
+    return true;
+}
+
+bool SafetyManager::check_bucket_operation_permit()
+{
+    // Bucket operations not permitted if:
+    // - Bucket system faults
+    // - Bucket angle limits exceeded
+    // - Hydraulic system issues
+    // - Unstable conditions
+
+    if (_bucket_monitor.bucket_hydraulic_fault || _bucket_monitor.bucket_encoder_fault) return false;
+    if (_bucket_monitor.bucket_limit_exceeded) return false;
+    if (!check_hydraulic_operation_permit()) return false;
+    if (_stability_monitor.stability_warning) return false;
+    if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
+
+    return true;
+}
+
+bool SafetyManager::check_articulation_permit()
+{
+    // Articulation not permitted if:
+    // - Articulation system faults
+    // - Angle or rate limits exceeded
+    // - High speed conditions
+    // - Unstable terrain
+
+    if (_articulation_monitor.articulation_fault) return false;
+    if (_articulation_monitor.angle_limit_exceeded || _articulation_monitor.rate_limit_exceeded) return false;
+    if (_speed_monitor.current_speed_ms > 2.0f) return false; // No articulation at high speed
+    if (_terrain_monitor.slope_limit_exceeded) return false;
+    if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
+
+    return true;
+}
+
+bool SafetyManager::check_engine_start_permit()
+{
+    // Engine start not permitted if:
+    // - Critical hardware faults
+    // - Emergency conditions active
+    // - Power system faults
+    // - Operator interface issues
+
+    if (_hardware_monitor.critical_failures > 0) return false;
+    if (_safety_state.current_level == SAFETY_EMERGENCY) return false;
+    if (_power_monitor.power_fault) return false;
+    if (!_safety_permits.manual_override_active) return false; // Require operator presence
+
+    return true;
+}
+
+bool SafetyManager::check_emergency_override_permit()
+{
+    // Emergency override permit always allowed if:
+    // - Operator is actively present
+    // - Communication is functional
+    // - Manual control inputs are valid
+
+    if (!_safety_permits.manual_override_active) return false;
+    if (_comm_monitor.communication_quality < 0.5f) return false;
 
     return true;
 }

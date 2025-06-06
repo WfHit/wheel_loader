@@ -4,7 +4,7 @@
 # Front wheel and bucket control board
 #------------------------------------------------------------------------------
 
-board_adc start
+# board_adc start
 
 # Internal SPI bus BMI088 accel/gyro
 bmi088 -s -b 1 -A -R 2 start
@@ -15,9 +15,6 @@ bmi088 -s -b 4 -G -R 2 start
 
 # internal baro
 spl06 -X -a 0x77 start
-
-# Start quad encoder driver for front wheel odometry
-quad_encoder start
 
 # Start magnetic encoder for bucket position feedback
 if param compare SENS_EN_AS5600 1

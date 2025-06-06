@@ -42,7 +42,6 @@ add_subdirectory(predictive_traction)
 add_subdirectory(load_aware_torque)
 add_subdirectory(terrain_adaptation)
 add_subdirectory(chassis_controller)
-add_subdirectory(safety_manager)
 
 # Common articulated chassis parameters
 px4_add_library(articulated_chassis_parameters

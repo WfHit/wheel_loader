@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# System-level initialization script for wheel loader
+# This script starts system-wide modules that oversee all vehicle operations
+#
+
+echo "Starting system-level modules..."
+
+# Start the system-level Safety Manager
+# This must start early to oversee all other systems
+safety_manager start
+if [ $? -eq 0 ]; then
+    echo "System Safety Manager started successfully"
+else
+    echo "ERROR: Failed to start System Safety Manager"
+    exit 1
+fi
+
+# Start data logger for system events
+logger start -t -b 200
+
+# Start battery monitoring
+battery_status start
+
+# Start load monitoring
+load_mon start
+
+echo "System-level modules initialization complete"
