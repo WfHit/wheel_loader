@@ -7,6 +7,7 @@
 #include <uORB/topics/WheelLoaderStatus.h>
 #include <drivers/drv_hrt.h>
 #include <mathlib/mathlib.h>
+#include <module_constants/module_constants.h>
 
 SteeringController::SteeringController() :
     ModuleBase(MODULE_NAME, px4::wq_configurations::hp_default)
