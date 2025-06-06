@@ -1,0 +1,5 @@
+menuconfig MODULES_PREDICTIVE_TRACTION
+	bool "predictive_traction"
+	default n
+	---help---
+		Enable support for predictive_traction

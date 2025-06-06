@@ -1,0 +1,5 @@
+menuconfig MODULES_STEERING_CONTROLLER
+	bool "steering_controller"
+	default n
+	---help---
+		Enable support for steering_controller

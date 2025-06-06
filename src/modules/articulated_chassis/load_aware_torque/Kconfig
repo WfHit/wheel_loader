@@ -1,0 +1,5 @@
+menuconfig MODULES_LOAD_AWARE_TORQUE
+	bool "load_aware_torque"
+	default n
+	---help---
+		Enable support for load_aware_torque

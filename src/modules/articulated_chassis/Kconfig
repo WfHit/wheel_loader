@@ -1,0 +1,67 @@
+menuconfig MODULES_ARTICULATED_CHASSIS
+	bool "articulated_chassis"
+	default n
+	help
+		Enable support for articulated chassis control system for wheel loaders.
+		This includes wheel control, steering, traction management, safety monitoring,
+		and advanced terrain adaptation capabilities.
+
+if MODULES_ARTICULATED_CHASSIS
+
+config ARTICULATED_CHASSIS_WHEEL_CONTROLLER
+	bool "Enable wheel controller"
+	default y
+	help
+		Unified wheel controller for front and rear wheel velocity control
+		with PID feedback and quad encoder integration.
+
+config ARTICULATED_CHASSIS_STEERING_CONTROLLER
+	bool "Enable steering controller"
+	default y
+	help
+		Articulated chassis steering controller with PID position control
+		and servo PWM output for hydraulic steering systems.
+
+config ARTICULATED_CHASSIS_SLIP_ESTIMATOR
+	bool "Enable slip estimator"
+	default y
+	help
+		Advanced slip estimation using Extended Kalman Filter (EKF)
+		for improved traction control performance.
+
+config ARTICULATED_CHASSIS_PREDICTIVE_TRACTION
+	bool "Enable predictive traction control"
+	default y
+	help
+		Model Predictive Control (MPC) based traction management
+		with slip prediction and terrain adaptation.
+
+config ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
+	bool "Enable load-aware torque distribution"
+	default y
+	help
+		Dynamic torque distribution based on load sensing
+		and weight distribution for optimal traction.
+
+config ARTICULATED_CHASSIS_TERRAIN_ADAPTATION
+	bool "Enable terrain adaptation"
+	default y
+	help
+		Intelligent terrain classification and adaptation system
+		for optimized performance across different surface types.
+
+config ARTICULATED_CHASSIS_SAFETY_MANAGER
+	bool "Enable safety manager"
+	default y
+	help
+		Comprehensive safety monitoring system with emergency stop,
+		watchdog timers, and fault detection capabilities.
+
+config ARTICULATED_CHASSIS_CHASSIS_CONTROLLER
+	bool "Enable main chassis controller"
+	default y
+	help
+		Main coordinator module for the articulated chassis system.
+		Integrates all subsystems and provides unified control interface.
+
+endif # MODULES_ARTICULATED_CHASSIS

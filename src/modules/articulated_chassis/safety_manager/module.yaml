@@ -1,0 +1,201 @@
+module_name: Safety Manager
+serial_config:
+    - command: safety_manager start
+      port_config_param:
+        name: SM_SER_CFG
+        group: Safety Manager
+
+parameters:
+    - group: Safety Manager
+      definitions:
+        SM_MAX_SPEED:
+            description:
+                short: Maximum vehicle speed
+                long: |
+                    Maximum allowed vehicle speed for safety monitoring.
+            type: float
+            unit: m/s
+            min: 0.5
+            max: 20.0
+            default: 8.0
+            decimal: 1
+
+        SM_MAX_ACCEL:
+            description:
+                short: Maximum acceleration
+                long: |
+                    Maximum allowed acceleration for safety monitoring.
+            type: float
+            unit: m/s^2
+            min: 0.5
+            max: 10.0
+            default: 3.0
+            decimal: 1
+
+        SM_MAX_STEER_ANGLE:
+            description:
+                short: Maximum steering angle
+                long: |
+                    Maximum allowed steering angle in radians.
+            type: float
+            unit: rad
+            min: 0.1
+            max: 1.57
+            default: 0.785
+            decimal: 3
+
+        SM_MAX_STEER_RATE:
+            description:
+                short: Maximum steering rate
+                long: |
+                    Maximum allowed steering rate in radians per second.
+            type: float
+            unit: rad/s
+            min: 0.1
+            max: 2.0
+            default: 0.524
+            decimal: 3
+
+        SM_MAX_ROLL_ANGLE:
+            description:
+                short: Maximum roll angle
+                long: |
+                    Maximum allowed roll angle before safety intervention.
+            type: float
+            unit: rad
+            min: 0.1
+            max: 0.785
+            default: 0.349
+            decimal: 3
+
+        SM_MAX_PITCH_ANGLE:
+            description:
+                short: Maximum pitch angle
+                long: |
+                    Maximum allowed pitch angle before safety intervention.
+            type: float
+            unit: rad
+            min: 0.1
+            max: 0.785
+            default: 0.349
+            decimal: 3
+
+        SM_MAX_PAYLOAD:
+            description:
+                short: Maximum payload weight
+                long: |
+                    Maximum allowed payload weight in kilograms.
+            type: float
+            unit: kg
+            min: 0
+            max: 20000
+            default: 8000
+            decimal: 0
+
+        SM_MAX_CG_OFFSET:
+            description:
+                short: Maximum CG offset
+                long: |
+                    Maximum allowed center of gravity offset from nominal.
+            type: float
+            unit: m
+            min: 0.1
+            max: 2.0
+            default: 1.0
+            decimal: 2
+
+        SM_MAX_SLOPE:
+            description:
+                short: Maximum slope angle
+                long: |
+                    Maximum allowed slope angle for vehicle operation.
+            type: float
+            unit: rad
+            min: 0.1
+            max: 0.785
+            default: 0.349
+            decimal: 3
+
+        SM_COMM_TIMEOUT:
+            description:
+                short: Communication timeout
+                long: |
+                    Timeout for communication loss before safety intervention.
+            type: float
+            unit: s
+            min: 0.1
+            max: 10.0
+            default: 1.0
+            decimal: 2
+
+        SM_SENSOR_TIMEOUT:
+            description:
+                short: Sensor timeout
+                long: |
+                    Timeout for sensor data loss before safety intervention.
+            type: float
+            unit: s
+            min: 0.1
+            max: 5.0
+            default: 0.5
+            decimal: 2
+
+        SM_EMERGENCY_DECEL:
+            description:
+                short: Emergency deceleration rate
+                long: |
+                    Maximum deceleration rate for emergency stops.
+            type: float
+            unit: m/s^2
+            min: 1.0
+            max: 10.0
+            default: 5.0
+            decimal: 1
+
+        SM_STABILITY_MARGIN:
+            description:
+                short: Stability margin factor
+                long: |
+                    Safety margin factor for stability calculations.
+            type: float
+            min: 1.1
+            max: 3.0
+            default: 1.5
+            decimal: 2
+
+        SM_RISK_THRESHOLD:
+            description:
+                short: Risk assessment threshold
+                long: |
+                    Threshold for risk assessment triggering safety intervention.
+            type: float
+            min: 0.1
+            max: 1.0
+            default: 0.7
+            decimal: 2
+
+        SM_ENABLE_OVERRIDE:
+            description:
+                short: Enable safety override
+                long: |
+                    Enable manual safety override capability.
+            type: bool
+            default: true
+
+        SM_AUTO_RECOVERY:
+            description:
+                short: Enable auto recovery
+                long: |
+                    Enable automatic recovery from safety events.
+            type: bool
+            default: false
+
+        SM_SER_CFG:
+            description:
+                short: Serial Configuration for Safety Manager
+                long: |
+                    Configure on which serial port to run Safety Manager.
+            type: int32
+            min: 0
+            max: 6
+            default: 0
