@@ -1,0 +1,284 @@
+module_name: Wheel Loader Controller
+
+parameters:
+    - group: Wheel Loader Control
+      definitions:
+        WL_CONTROL_MODE:
+            description:
+                short: Default control mode
+                long: Default control mode for wheel loader operations (0=Manual, 1=Semi-Auto, 2=Auto)
+            type: int32
+            min: 0
+            max: 2
+            default: 0
+            reboot_required: false
+
+        WL_SAFE_TIMEOUT:
+            description:
+                short: Safety timeout for autonomous operations
+                long: Maximum time in seconds before triggering emergency stop in autonomous mode
+            type: float
+            min: 1.0
+            max: 30.0
+            default: 10.0
+            unit: s
+            decimal: 1
+
+        WL_CTRL_TIMEOUT:
+            description:
+                short: Control command timeout
+                long: Maximum time in seconds without receiving manual control commands before switching to safety mode
+            type: float
+            min: 0.5
+            max: 5.0
+            default: 2.0
+            unit: s
+            decimal: 1
+
+    - group: Wheel Loader Chassis
+      definitions:
+        WL_MAX_SPEED:
+            description:
+                short: Maximum vehicle speed
+                long: Maximum allowed speed for wheel loader movement in m/s
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 2.0
+            unit: m/s
+            decimal: 1
+
+        WL_MAX_STEER_RATE:
+            description:
+                short: Maximum steering rate
+                long: Maximum allowed steering rate in degrees per second
+            type: float
+            min: 10.0
+            max: 180.0
+            default: 90.0
+            unit: deg/s
+            decimal: 1
+
+        WL_STEER_P_GAIN:
+            description:
+                short: Steering controller P gain
+                long: Proportional gain for steering angle control
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 2.0
+            decimal: 2
+
+        WL_STEER_I_GAIN:
+            description:
+                short: Steering controller I gain
+                long: Integral gain for steering angle control
+            type: float
+            min: 0.0
+            max: 5.0
+            default: 0.1
+            decimal: 3
+
+        WL_STEER_D_GAIN:
+            description:
+                short: Steering controller D gain
+                long: Derivative gain for steering angle control
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.05
+            decimal: 3
+
+    - group: Wheel Loader Boom
+      definitions:
+        WL_BOOM_SPEED:
+            description:
+                short: Default boom movement speed
+                long: Default speed for boom movements in degrees per second
+            type: float
+            min: 1.0
+            max: 45.0
+            default: 15.0
+            unit: deg/s
+            decimal: 1
+
+        WL_BOOM_MIN_ANGLE:
+            description:
+                short: Minimum boom angle
+                long: Minimum allowed boom angle in degrees
+            type: float
+            min: -30.0
+            max: 30.0
+            default: -10.0
+            unit: deg
+            decimal: 1
+
+        WL_BOOM_MAX_ANGLE:
+            description:
+                short: Maximum boom angle
+                long: Maximum allowed boom angle in degrees
+            type: float
+            min: 30.0
+            max: 90.0
+            default: 75.0
+            unit: deg
+            decimal: 1
+
+        WL_BOOM_LOAD_ANGLE:
+            description:
+                short: Boom loading position angle
+                long: Boom angle in degrees for material loading operations
+            type: float
+            min: -20.0
+            max: 40.0
+            default: 10.0
+            unit: deg
+            decimal: 1
+
+        WL_BOOM_DUMP_ANGLE:
+            description:
+                short: Boom dumping position angle
+                long: Boom angle in degrees for material dumping operations
+            type: float
+            min: 30.0
+            max: 80.0
+            default: 50.0
+            unit: deg
+            decimal: 1
+
+    - group: Wheel Loader Bucket
+      definitions:
+        WL_BUCKET_SPEED:
+            description:
+                short: Default bucket movement speed
+                long: Default speed for bucket movements in degrees per second
+            type: float
+            min: 1.0
+            max: 90.0
+            default: 30.0
+            unit: deg/s
+            decimal: 1
+
+        WL_BUCKET_MIN_ANGLE:
+            description:
+                short: Minimum bucket angle
+                long: Minimum allowed bucket angle in degrees (curl position)
+            type: float
+            min: -45.0
+            max: 0.0
+            default: -30.0
+            unit: deg
+            decimal: 1
+
+        WL_BUCKET_MAX_ANGLE:
+            description:
+                short: Maximum bucket angle
+                long: Maximum allowed bucket angle in degrees (dump position)
+            type: float
+            min: 45.0
+            max: 120.0
+            default: 90.0
+            unit: deg
+            decimal: 1
+
+        WL_BUCKET_CURL_ANGLE:
+            description:
+                short: Bucket curl position angle
+                long: Bucket angle in degrees for material curling/scooping
+            type: float
+            min: -45.0
+            max: 0.0
+            default: -20.0
+            unit: deg
+            decimal: 1
+
+        WL_BUCKET_DUMP_ANGLE:
+            description:
+                short: Bucket dump position angle
+                long: Bucket angle in degrees for material dumping
+            type: float
+            min: 45.0
+            max: 120.0
+            default: 80.0
+            unit: deg
+            decimal: 1
+
+    - group: Wheel Loader Autonomous
+      definitions:
+        WL_AUTO_APPROACH_DIST:
+            description:
+                short: Autonomous approach distance
+                long: Distance in meters to approach material pile during autonomous loading
+            type: float
+            min: 0.5
+            max: 5.0
+            default: 2.0
+            unit: m
+            decimal: 1
+
+        WL_AUTO_LOAD_TIME:
+            description:
+                short: Autonomous loading time
+                long: Time in seconds to spend loading material in autonomous mode
+            type: float
+            min: 2.0
+            max: 20.0
+            default: 8.0
+            unit: s
+            decimal: 1
+
+        WL_AUTO_DUMP_TIME:
+            description:
+                short: Autonomous dumping time
+                long: Time in seconds to spend dumping material in autonomous mode
+            type: float
+            min: 2.0
+            max: 15.0
+            default: 5.0
+            unit: s
+            decimal: 1
+
+        WL_AUTO_CYCLE_COUNT:
+            description:
+                short: Autonomous cycle count
+                long: Number of load/dump cycles to perform in autonomous mode (0 = infinite)
+            type: int32
+            min: 0
+            max: 100
+            default: 5
+            decimal: 0
+
+    - group: Wheel Loader Safety
+      definitions:
+        WL_EMERG_BRAKE_DECEL:
+            description:
+                short: Emergency brake deceleration
+                long: Maximum deceleration in m/s² during emergency braking
+            type: float
+            min: 1.0
+            max: 10.0
+            default: 3.0
+            unit: m/s²
+            decimal: 1
+
+        WL_MAX_TILT_ANGLE:
+            description:
+                short: Maximum tilt angle
+                long: Maximum allowed vehicle tilt angle in degrees before triggering safety stop
+            type: float
+            min: 10.0
+            max: 45.0
+            default: 25.0
+            unit: deg
+            decimal: 1
+
+        WL_HEALTH_CHECK_FREQ:
+            description:
+                short: Health check frequency
+                long: Frequency in Hz for subsystem health monitoring
+            type: float
+            min: 1.0
+            max: 20.0
+            default: 10.0
+            unit: Hz
+            decimal: 1

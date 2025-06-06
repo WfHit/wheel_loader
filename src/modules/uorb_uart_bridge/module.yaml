@@ -1,0 +1,9 @@
+module_name: uorb_uart_bridge
+serial_config:
+    - command: uorb_uart_bridge start -d ${SERIAL_DEV} -b ${BAUD}
+      port_config_param:
+        name: UART_BRIDGE_DEV
+        group: uORB UART Bridge
+      baudrate_config_param:
+        name: UART_BRIDGE_BAUD
+        group: uORB UART Bridge

@@ -1,0 +1,17 @@
+menuconfig MODULES_WHEEL_LOADER
+	bool "wheel_loader"
+	default n
+	---help---
+		Enable support for Wheel Loader Controller module.
+
+		This module provides unified control for wheel loader vehicles,
+		including front and rear wheel control, hydraulic system management,
+		and articulated chassis coordination. It supports manual, semi-automatic,
+		and fully autonomous operation modes.
+
+menuconfig USER_WHEEL_LOADER
+	bool "wheel_loader running as userspace module"
+	default n
+	depends on BOARD_PROTECTED && MODULES_WHEEL_LOADER
+	---help---
+		Put wheel_loader in userspace memory
