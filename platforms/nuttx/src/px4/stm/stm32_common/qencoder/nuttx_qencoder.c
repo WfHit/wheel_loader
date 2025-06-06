@@ -48,7 +48,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "nxt_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
 #include "stm32_gpio.h"
 
 /****************************************************************************
@@ -56,7 +56,7 @@
  ****************************************************************************/
 
 #define QE_DEBUG 1
-#define CONFIG_NXT_QENCODER_MAX_INSTANCES 8
+#define CONFIG_NUTTX_QENCODER_MAX_INSTANCES 8
 
 #if QE_DEBUG
 #  define qeinfo(format, ...)   syslog(LOG_INFO, format, ##__VA_ARGS__)
@@ -71,13 +71,13 @@
  ****************************************************************************/
 
 /* Lower half driver state structure */
-struct nxt_qe_lowerhalf_s
+struct nuttx_qe_lowerhalf_s
 {
   /* Must be first - standard lower half driver interface */
   struct qe_lowerhalf_s lower;
 
   /* Configuration */
-  struct nxt_qe_config_s config;
+  struct nuttx_qe_config_s config;
 
   /* Instance identification */
   uint8_t instance_id;
@@ -103,20 +103,20 @@ struct nxt_qe_lowerhalf_s
 };
 
 /* Global instance management structure */
-struct nxt_qe_instances_s
+struct nuttx_qe_instances_s
 {
   /* Semaphore for thread-safe access */
   sem_t lock;
 
   /* Instance tracking */
   uint8_t num_instances;
-  struct nxt_qe_lowerhalf_s *instances[CONFIG_NXT_QENCODER_MAX_INSTANCES];
+  struct nuttx_qe_lowerhalf_s *instances[CONFIG_NUTTX_QENCODER_MAX_INSTANCES];
 
   /* Device path tracking */
-  char devpaths[CONFIG_NXT_QENCODER_MAX_INSTANCES][16];
+  char devpaths[CONFIG_NUTTX_QENCODER_MAX_INSTANCES][16];
 
   /* Instance status */
-  bool active[CONFIG_NXT_QENCODER_MAX_INSTANCES];
+  bool active[CONFIG_NUTTX_QENCODER_MAX_INSTANCES];
 };
 
 /****************************************************************************
@@ -131,17 +131,17 @@ static int qe_reset(FAR struct qe_lowerhalf_s *lower);
 static int qe_ioctl(FAR struct qe_lowerhalf_s *lower, int cmd, unsigned long arg);
 
 /* GPIO mode functions */
-static int qe_setup_gpio(FAR struct nxt_qe_lowerhalf_s *priv);
+static int qe_setup_gpio(FAR struct nuttx_qe_lowerhalf_s *priv);
 static int qe_gpio_isr(int irq, FAR void *context, FAR void *arg);
 static int qe_index_isr(int irq, FAR void *context, FAR void *arg);
 
 /* Velocity calculation */
-static void qe_calculate_velocity(FAR struct nxt_qe_lowerhalf_s *priv);
+static void qe_calculate_velocity(FAR struct nuttx_qe_lowerhalf_s *priv);
 
 /* Instance management functions */
 static int qe_alloc_instance(void);
 static int qe_free_instance(uint8_t instance_id);
-static FAR struct nxt_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id);
+static FAR struct nuttx_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id);
 static int qe_init_instance_manager(void);
 
 /****************************************************************************
@@ -149,7 +149,7 @@ static int qe_init_instance_manager(void);
  ****************************************************************************/
 
 /* Global instance manager */
-static struct nxt_qe_instances_s g_qe_instances;
+static struct nuttx_qe_instances_s g_qe_instances;
 static bool g_instance_manager_initialized = false;
 
 /* Lower half operations */
@@ -176,7 +176,7 @@ static const struct qe_ops_s g_qe_ops =
 
 static int qe_gpio_isr(int irq, FAR void *context, FAR void *arg)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)arg;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)arg;
   uint8_t state_a, state_b;
   uint8_t current_state;
   uint8_t last_state;
@@ -239,7 +239,7 @@ static int qe_gpio_isr(int irq, FAR void *context, FAR void *arg)
 
 static int qe_index_isr(int irq, FAR void *context, FAR void *arg)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)arg;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)arg;
 
   /* Record index pulse */
   priv->index_count++;
@@ -261,7 +261,7 @@ static int qe_index_isr(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int qe_setup_gpio(FAR struct nxt_qe_lowerhalf_s *priv)
+static int qe_setup_gpio(FAR struct nuttx_qe_lowerhalf_s *priv)
 {
   int ret;
 
@@ -316,7 +316,7 @@ static int qe_setup_gpio(FAR struct nxt_qe_lowerhalf_s *priv)
  *
  ****************************************************************************/
 
-static void qe_calculate_velocity(FAR struct nxt_qe_lowerhalf_s *priv)
+static void qe_calculate_velocity(FAR struct nuttx_qe_lowerhalf_s *priv)
 {
   uint32_t current_time = clock_systime_ticks();
   int32_t current_position = priv->position;
@@ -353,7 +353,7 @@ static void qe_calculate_velocity(FAR struct nxt_qe_lowerhalf_s *priv)
 
 static int qe_setup(FAR struct qe_lowerhalf_s *lower)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)lower;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)lower;
   int ret;
 
   qeinfo("Setup GPIO encoder\n");
@@ -373,7 +373,7 @@ static int qe_setup(FAR struct qe_lowerhalf_s *lower)
 
 static int qe_shutdown(FAR struct qe_lowerhalf_s *lower)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)lower;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)lower;
 
   qeinfo("Shutdown encoder\n");
 
@@ -397,7 +397,7 @@ static int qe_shutdown(FAR struct qe_lowerhalf_s *lower)
 
 static int qe_position(FAR struct qe_lowerhalf_s *lower, FAR int32_t *pos)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)lower;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)lower;
 
   if (!pos)
     {
@@ -422,7 +422,7 @@ static int qe_position(FAR struct qe_lowerhalf_s *lower, FAR int32_t *pos)
 
 static int qe_reset(FAR struct qe_lowerhalf_s *lower)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)lower;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)lower;
   irqstate_t flags;
 
   qeinfo("Reset encoder position\n");
@@ -456,7 +456,7 @@ static int qe_reset(FAR struct qe_lowerhalf_s *lower)
 
 static int qe_ioctl(FAR struct qe_lowerhalf_s *lower, int cmd, unsigned long arg)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = (FAR struct nxt_qe_lowerhalf_s *)lower;
+  FAR struct nuttx_qe_lowerhalf_s *priv = (FAR struct nuttx_qe_lowerhalf_s *)lower;
   int ret = OK;
 
   switch (cmd)
@@ -527,35 +527,35 @@ static int qe_ioctl(FAR struct qe_lowerhalf_s *lower, int cmd, unsigned long arg
 }
 
 /****************************************************************************
- * Name: nxt_qencoder_initialize
+ * Name: nuttx_qencoder_initialize
  *
  * Description:
  *   Initialize quadrature encoder and register as a character device.
  *
  ****************************************************************************/
 
-int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
-                           FAR const char *devpath)
+int nuttx_qencoder_initialize(FAR const struct nuttx_qe_config_s *config,
+                             FAR const char *devpath)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv;
+  FAR struct nuttx_qe_lowerhalf_s *priv;
   int ret;
 
   qeinfo("Initializing encoder at %s\n", devpath);
 
   /* Allocate the lower half structure */
-  priv = (FAR struct nxt_qe_lowerhalf_s *)kmm_zalloc(sizeof(struct nxt_qe_lowerhalf_s));
+  priv = (FAR struct nuttx_qe_lowerhalf_s *)kmm_zalloc(sizeof(struct nuttx_qe_lowerhalf_s));
   if (!priv)
     {
       return -ENOMEM;
     }
 
   /* Initialize instance fields */
-  priv->instance_id = CONFIG_NXT_QENCODER_MAX_INSTANCES;
+  priv->instance_id = CONFIG_NUTTX_QENCODER_MAX_INSTANCES;
   strncpy(priv->devpath, devpath, sizeof(priv->devpath) - 1);
   priv->devpath[sizeof(priv->devpath) - 1] = '\0';
 
   /* Copy configuration */
-  memcpy(&priv->config, config, sizeof(struct nxt_qe_config_s));
+  memcpy(&priv->config, config, sizeof(struct nuttx_qe_config_s));
 
   /* Setup lower half interface */
   priv->lower.ops = &g_qe_ops;
@@ -596,7 +596,7 @@ int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
 }
 
 /****************************************************************************
- * Name: nxt_qencoder_uninitialize
+ * Name: nuttx_qencoder_uninitialize
  *
  * Description:
  *   Uninitialize a specific quadrature encoder instance
@@ -609,9 +609,9 @@ int nxt_qencoder_initialize(FAR const struct nxt_qe_config_s *config,
  *
  ****************************************************************************/
 
-int nxt_qencoder_uninitialize(uint8_t instance_id)
+int nuttx_qencoder_uninitialize(uint8_t instance_id)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv;
+  FAR struct nuttx_qe_lowerhalf_s *priv;
   int ret;
 
   qeinfo("Uninitializing encoder instance %d\n", instance_id);
@@ -651,7 +651,7 @@ int nxt_qencoder_uninitialize(uint8_t instance_id)
 }
 
 /****************************************************************************
- * Name: nxt_qencoder_uninitialize_all
+ * Name: nuttx_qencoder_uninitialize_all
  *
  * Description:
  *   Uninitialize all active quadrature encoder instances
@@ -661,7 +661,7 @@ int nxt_qencoder_uninitialize(uint8_t instance_id)
  *
  ****************************************************************************/
 
-int nxt_qencoder_uninitialize_all(void)
+int nuttx_qencoder_uninitialize_all(void)
 {
   int ret = OK;
   int total_errors = 0;
@@ -682,14 +682,14 @@ int nxt_qencoder_uninitialize_all(void)
     }
 
   /* Uninitialize all active instances */
-  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES; i++)
+  for (int i = 0; i < CONFIG_NUTTX_QENCODER_MAX_INSTANCES; i++)
     {
       if (g_qe_instances.active[i] && g_qe_instances.instances[i])
         {
           /* Unlock before calling uninitialize (it will lock again) */
           nxsem_post(&g_qe_instances.lock);
 
-          ret = nxt_qencoder_uninitialize(i);
+          ret = nuttx_qencoder_uninitialize(i);
           if (ret < 0)
             {
               qeerr("ERROR: Failed to uninitialize instance %d: %d\n", i, ret);
@@ -717,7 +717,7 @@ int nxt_qencoder_uninitialize_all(void)
 }
 
 /****************************************************************************
- * Name: nxt_qencoder_get_instance_count
+ * Name: nuttx_qencoder_get_instance_count
  *
  * Description:
  *   Get number of active encoder instances
@@ -727,7 +727,7 @@ int nxt_qencoder_uninitialize_all(void)
  *
  ****************************************************************************/
 
-int nxt_qencoder_get_instance_count(void)
+int nuttx_qencoder_get_instance_count(void)
 {
   int ret;
   uint8_t count;
@@ -750,7 +750,7 @@ int nxt_qencoder_get_instance_count(void)
 }
 
 /****************************************************************************
- * Name: nxt_qencoder_list_instances
+ * Name: nuttx_qencoder_list_instances
  *
  * Description:
  *   List all active encoder instances
@@ -764,8 +764,8 @@ int nxt_qencoder_get_instance_count(void)
  *
  ****************************************************************************/
 
-int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
-                               uint8_t max_count)
+int nuttx_qencoder_list_instances(FAR struct nuttx_qe_instance_info_s *instances,
+                                 uint8_t max_count)
 {
   int ret;
   uint8_t count = 0;
@@ -786,7 +786,7 @@ int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
       return ret;
     }
 
-  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES && count < max_count; i++)
+  for (int i = 0; i < CONFIG_NUTTX_QENCODER_MAX_INSTANCES && count < max_count; i++)
     {
       if (g_qe_instances.active[i] && g_qe_instances.instances[i])
         {
@@ -796,7 +796,7 @@ int nxt_qencoder_list_instances(FAR struct nxt_qe_instance_info_s *instances,
                   sizeof(instances[count].devpath) - 1);
           instances[count].devpath[sizeof(instances[count].devpath) - 1] = '\0';
           memcpy(&instances[count].config, &g_qe_instances.instances[i]->config,
-                 sizeof(struct nxt_qe_config_s));
+                 sizeof(struct nuttx_qe_config_s));
           count++;
         }
     }
@@ -875,7 +875,7 @@ static int qe_alloc_instance(void)
     }
 
   /* Find available instance slot */
-  for (int i = 0; i < CONFIG_NXT_QENCODER_MAX_INSTANCES; i++)
+  for (int i = 0; i < CONFIG_NUTTX_QENCODER_MAX_INSTANCES; i++)
     {
       if (!g_qe_instances.active[i])
         {
@@ -891,7 +891,7 @@ static int qe_alloc_instance(void)
   if (instance_id < 0)
     {
       qeerr("ERROR: No available instance slots (max: %d)\n",
-            CONFIG_NXT_QENCODER_MAX_INSTANCES);
+            CONFIG_NUTTX_QENCODER_MAX_INSTANCES);
       return -ENOMEM;
     }
 
@@ -922,7 +922,7 @@ static int qe_free_instance(uint8_t instance_id)
       return -ENOTTY;
     }
 
-  if (instance_id >= CONFIG_NXT_QENCODER_MAX_INSTANCES)
+  if (instance_id >= CONFIG_NUTTX_QENCODER_MAX_INSTANCES)
     {
       return -EINVAL;
     }
@@ -969,9 +969,9 @@ static int qe_free_instance(uint8_t instance_id)
  *
  ****************************************************************************/
 
-static FAR struct nxt_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id)
+static FAR struct nuttx_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id)
 {
-  FAR struct nxt_qe_lowerhalf_s *priv = NULL;
+  FAR struct nuttx_qe_lowerhalf_s *priv = NULL;
   int ret;
 
   if (!g_instance_manager_initialized)
@@ -979,7 +979,7 @@ static FAR struct nxt_qe_lowerhalf_s *qe_find_instance(uint8_t instance_id)
       return NULL;
     }
 
-  if (instance_id >= CONFIG_NXT_QENCODER_MAX_INSTANCES)
+  if (instance_id >= CONFIG_NUTTX_QENCODER_MAX_INSTANCES)
     {
       return NULL;
     }

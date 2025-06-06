@@ -39,7 +39,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include "nxt_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
 
 /****************************************************************************
  * Public Function Prototypes
@@ -82,7 +82,7 @@ int board_qencoder_initialize(void);
  ****************************************************************************/
 
 int board_qencoder_get_config(int encoder_id,
-                             FAR struct nxt_qe_config_s *config);
+                             FAR struct nuttx_qe_config_s *config);
 
 /****************************************************************************
  * Name: board_qencoder_get_count

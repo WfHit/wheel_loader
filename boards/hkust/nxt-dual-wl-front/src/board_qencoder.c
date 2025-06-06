@@ -40,29 +40,13 @@
 #include <syslog.h>
 #include <errno.h>
 
-#include "nxt_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
 #include "stm32_gpio.h"
+#include "board_config.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/* GPIO pin definitions for encoders */
-#define ENCODER_FL_A_GPIO    (GPIO_PORTB | GPIO_PIN0)  /* PB0 */
-#define ENCODER_FL_B_GPIO    (GPIO_PORTB | GPIO_PIN1)  /* PB1 */
-#define ENCODER_FL_IDX_GPIO  (GPIO_PORTB | GPIO_PIN2)  /* PB2 - Index */
-
-#define ENCODER_FR_A_GPIO    (GPIO_PORTB | GPIO_PIN4)  /* PB4 */
-#define ENCODER_FR_B_GPIO    (GPIO_PORTB | GPIO_PIN5)  /* PB5 */
-#define ENCODER_FR_IDX_GPIO  (GPIO_PORTB | GPIO_PIN3)  /* PB3 - Index */
-
-#define ENCODER_RL_A_GPIO    (GPIO_PORTC | GPIO_PIN6)  /* PC6 */
-#define ENCODER_RL_B_GPIO    (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
-#define ENCODER_RL_IDX_GPIO  (GPIO_PORTC | GPIO_PIN8)  /* PC8 - Index */
-
-#define ENCODER_RR_A_GPIO    (GPIO_PORTA | GPIO_PIN0)  /* PA0 */
-#define ENCODER_RR_B_GPIO    (GPIO_PORTA | GPIO_PIN1)  /* PA1 */
-#define ENCODER_RR_IDX_GPIO  (GPIO_PORTA | GPIO_PIN2)  /* PA2 - Index */
 
 /****************************************************************************
  * Private Data
@@ -70,76 +54,37 @@
 
 #ifdef CONFIG_BOARD_NXT_QENCODER
 
-/* Encoder configurations for wheel loader */
-static const struct nxt_qe_config_s g_wheel_encoders[] =
+/* Encoder configurations for nxt-dual-wl-front motor encoders */
+static const struct nuttx_qe_config_s g_motor_encoders[] =
 {
-  /* Front Left Wheel - GPIO mode */
+  /* Motor Encoder 1 - GPIO mode */
   {
     .gpio = {
-      .phase_a = ENCODER_FL_A_GPIO,
-      .phase_b = ENCODER_FL_B_GPIO,
-      .index = ENCODER_FL_IDX_GPIO,
+      .phase_a = QENCODER1_A_GPIO_RAW,
+      .phase_b = QENCODER1_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
     },
     .resolution = 1024,    /* 1024 CPR encoder */
-    .use_index = true,
-    .x4_mode = true,       /* 4x counting mode */
+    .use_index = false,    /* No index signal for motor encoders */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
     .invert_dir = false,
   },
 
-  /* Front Right Wheel - GPIO mode */
+  /* Motor Encoder 2 - GPIO mode */
   {
     .gpio = {
-      .phase_a = ENCODER_FR_A_GPIO,
-      .phase_b = ENCODER_FR_B_GPIO,
-      .index = ENCODER_FR_IDX_GPIO,
+      .phase_a = QENCODER2_A_GPIO_RAW,
+      .phase_b = QENCODER2_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
     },
-    .resolution = 1024,
-    .use_index = true,
-    .x4_mode = true,
-    .invert_dir = true,    /* Right side inverted */
-  },
-
-  /* Rear Left Wheel - GPIO mode */
-  {
-    .gpio = {
-      .phase_a = ENCODER_RL_A_GPIO,
-      .phase_b = ENCODER_RL_B_GPIO,
-      .index = ENCODER_RL_IDX_GPIO,
-    },
-    .resolution = 1024,
-    .use_index = true,
-    .x4_mode = true,
-    .invert_dir = false,
-  },
-
-  /* Rear Right Wheel - GPIO mode */
-  {
-    .gpio = {
-      .phase_a = ENCODER_RR_A_GPIO,
-      .phase_b = ENCODER_RR_B_GPIO,
-      .index = ENCODER_RR_IDX_GPIO,
-    },
-    .resolution = 1024,
-    .use_index = true,
-    .x4_mode = true,
-    .invert_dir = true,    /* Right side inverted */
-  },
-
-  /* Additional encoder for auxiliary system - GPIO mode */
-  {
-    .gpio = {
-      .phase_a = GPIO_PORTD | GPIO_PIN12,  /* PD12 */
-      .phase_b = GPIO_PORTD | GPIO_PIN13,  /* PD13 */
-      .index = GPIO_PORTD | GPIO_PIN14,    /* PD14 */
-    },
-    .resolution = 512,     /* 512 CPR encoder */
-    .use_index = true,
-    .x4_mode = true,
+    .resolution = 1024,    /* 1024 CPR encoder */
+    .use_index = false,    /* No index signal for motor encoders */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
     .invert_dir = false,
   },
 };
 
-#define NUM_ENCODERS (sizeof(g_wheel_encoders) / sizeof(g_wheel_encoders[0]))
+#define NUM_ENCODERS (sizeof(g_motor_encoders) / sizeof(g_motor_encoders[0]))
 
 #endif /* CONFIG_BOARD_NXT_QENCODER */
 
@@ -161,11 +106,11 @@ static void board_qencoder_gpio_config(void)
   /* Configure index pins as GPIO inputs for encoders */
   for (int i = 0; i < NUM_ENCODERS; i++)
     {
-      if (g_wheel_encoders[i].use_index &&
-          g_wheel_encoders[i].gpio.index != 0)
+      if (g_motor_encoders[i].use_index &&
+          g_motor_encoders[i].gpio.index != 0)
         {
           /* Configure index pin as input with pull-up */
-          stm32_configgpio(g_wheel_encoders[i].gpio.index |
+          stm32_configgpio(g_motor_encoders[i].gpio.index |
                           GPIO_INPUT | GPIO_PULLUP);
         }
     }
@@ -200,7 +145,7 @@ int board_qencoder_initialize(void)
     {
       snprintf(devpath, sizeof(devpath), "/dev/qe%d", i);
 
-      ret = nxt_qencoder_initialize(&g_wheel_encoders[i], devpath);
+      ret = nuttx_qencoder_initialize(&g_motor_encoders[i], devpath);
       if (ret < 0)
         {
           syslog(LOG_ERR, "ERROR: Failed to initialize encoder %s: %d\n",
@@ -211,7 +156,7 @@ int board_qencoder_initialize(void)
       syslog(LOG_INFO, "Initialized encoder %s (mode=%s, resolution=%d)\n",
              devpath,
              "GPIO",
-             g_wheel_encoders[i].resolution);
+             g_motor_encoders[i].resolution);
     }
 
   syslog(LOG_INFO, "All encoders initialized successfully\n");
@@ -232,7 +177,7 @@ int board_qencoder_initialize(void)
  ****************************************************************************/
 
 int board_qencoder_get_config(int encoder_id,
-                             FAR struct nxt_qe_config_s *config)
+                             FAR struct nuttx_qe_config_s *config)
 {
 #ifdef CONFIG_BOARD_NXT_QENCODER
   if (encoder_id < 0 || encoder_id >= NUM_ENCODERS || !config)
@@ -240,7 +185,7 @@ int board_qencoder_get_config(int encoder_id,
       return -EINVAL;
     }
 
-  memcpy(config, &g_wheel_encoders[encoder_id], sizeof(struct nxt_qe_config_s));
+  memcpy(config, &g_motor_encoders[encoder_id], sizeof(struct nuttx_qe_config_s));
   return OK;
 #else
   return -ENOTSUP;

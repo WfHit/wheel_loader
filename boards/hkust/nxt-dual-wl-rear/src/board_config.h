@@ -179,6 +179,10 @@
 #define QENCODER_A_GPIO                    /* PC6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN6)
 #define QENCODER_B_GPIO                    /* PC7 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN7)
 
+/* Raw GPIO definitions for QEncoder driver (without flags) */
+#define QENCODER_A_GPIO_RAW                (GPIO_PORTC | GPIO_PIN6)  /* PC6 */
+#define QENCODER_B_GPIO_RAW                (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
+
 /* ST3125 Servo Serial Port */
 #define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
 
@@ -205,6 +209,8 @@
 #define BOARD_HAS_ON_RESET 1
 
 /* Quadrature Encoder Support */
+#define CONFIG_BOARD_NXT_QENCODER 1
+#define BOARD_HAS_QENCODER 1
 #define CONFIG_BOARD_NXT_QENCODER 1
 #define BOARD_HAS_QENCODER 1
 
