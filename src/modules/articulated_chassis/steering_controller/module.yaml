@@ -1,155 +1,147 @@
+# Simplified Steering Controller for ST3125 Servo
+# Handles articulated wheel loader steering with slip compensation
+
 module_name: Steering Controller
-serial_config:
-    - command: steering_controller start
-      port_config_param:
-        name: STEER_SER_CFG
-        group: Steering Controller
 
 parameters:
-    - group: Steering Controller
+    # Basic control parameters
+    - group: Basic Control
       definitions:
-        STEER_P_GAIN:
-            description:
-                short: Steering position P gain
-                long: |
-                    Proportional gain for steering position control.
-            type: float
-            min: 0.0
-            max: 10.0
-            default: 2.0
-            decimal: 2
-
-        STEER_I_GAIN:
-            description:
-                short: Steering position I gain
-                long: |
-                    Integral gain for steering position control.
-            type: float
-            min: 0.0
-            max: 5.0
-            default: 0.1
-            decimal: 3
-
-        STEER_D_GAIN:
-            description:
-                short: Steering position D gain
-                long: |
-                    Derivative gain for steering position control.
-            type: float
-            min: 0.0
-            max: 1.0
-            default: 0.05
-            decimal: 3
-
-        STEER_I_MAX:
-            description:
-                short: Steering I term maximum
-                long: |
-                    Maximum integral term value for steering control.
-            type: float
-            min: 0.0
-            max: 1000.0
-            default: 100.0
-            decimal: 1
-
         STEER_MAX_ANGLE:
             description:
                 short: Maximum steering angle
-                long: |
-                    Maximum steering angle in degrees.
+                long: Maximum allowed steering angle in radians (±45° = ±0.785 rad)
             type: float
-            unit: deg
-            min: 10.0
-            max: 60.0
-            default: 45.0
-            decimal: 1
+            default: 0.785398
+            min: 0.1
+            max: 1.57
+            unit: rad
+            decimal: 3
 
         STEER_MAX_RATE:
             description:
                 short: Maximum steering rate
-                long: |
-                    Maximum steering rate in degrees per second.
+                long: Maximum steering angular velocity in rad/s (60°/s = 1.047 rad/s)
             type: float
-            unit: deg/s
-            min: 5.0
-            max: 60.0
-            default: 30.0
-            decimal: 1
+            default: 1.047198
+            min: 0.1
+            max: 3.14
+            unit: rad/s
+            decimal: 3
 
         STEER_DEADBAND:
             description:
                 short: Steering deadband
-                long: |
-                    Deadband around target angle to avoid oscillation.
+                long: Deadband around target position to reduce jitter
             type: float
-            unit: deg
-            min: 0.1
-            max: 5.0
-            default: 0.5
-            decimal: 2
-
-        STEER_PWM_MIN:
-            description:
-                short: Minimum servo PWM
-                long: |
-                    Minimum PWM value for steering servo.
-            type: float
-            unit: us
-            min: 800
-            max: 1400
-            default: 1000
-            decimal: 0
-
-        STEER_PWM_MAX:
-            description:
-                short: Maximum servo PWM
-                long: |
-                    Maximum PWM value for steering servo.
-            type: float
-            unit: us
-            min: 1600
-            max: 2200
-            default: 2000
-            decimal: 0
+            default: 0.00873
+            min: 0.0
+            max: 0.1
+            unit: rad
+            decimal: 5
 
         STEER_TRIM:
             description:
-                short: Steering trim
-                long: |
-                    Trim offset for steering servo center position.
+                short: Steering trim offset
+                long: Constant offset added to steering commands for calibration
             type: float
-            unit: deg
-            min: -10.0
-            max: 10.0
             default: 0.0
-            decimal: 2
+            min: -0.2
+            max: 0.2
+            unit: rad
+            decimal: 4
 
         STEER_REVERSE:
             description:
                 short: Reverse steering direction
-                long: |
-                    Reverse the steering direction if needed.
+                long: Invert steering direction if servo is mounted backwards
             type: bool
             default: false
+
+    # Slip compensation parameters
+    - group: Slip Compensation
+      definitions:
+        STEER_SLIP_COMP_EN:
+            description:
+                short: Enable slip compensation
+                long: Use PredictiveTraction data for slip-based steering compensation
+            type: bool
+            default: true
+
+        STEER_SLIP_COMP_GAIN:
+            description:
+                short: Slip compensation gain
+                long: Gain for slip-based steering compensation
+            type: float
+            default: 0.5
+            min: 0.0
+            max: 2.0
+            decimal: 2
+
+        STEER_SLIP_COMP_MAX:
+            description:
+                short: Maximum slip compensation
+                long: Maximum slip compensation angle in radians
+            type: float
+            default: 0.174533
+            min: 0.0
+            max: 0.5
+            unit: rad
+            decimal: 4
+
+    # Feedforward control parameters
+    - group: Feedforward Control
+      definitions:
+        STEER_FF_GAIN:
+            description:
+                short: Feedforward gain
+                long: Feedforward gain for improved dynamic response
+            type: float
+            default: 0.2
+            min: 0.0
+            max: 1.0
+            decimal: 2
+
+        STEER_FF_SPEED_SCALE:
+            description:
+                short: Speed-dependent feedforward scaling
+                long: Scaling factor for speed-dependent feedforward control
+            type: float
+            default: 0.1
+            min: 0.0
+            max: 0.5
+            decimal: 2
+
+    # ST3125 servo parameters
+    - group: ST3125 Servo
+      definitions:
+        STEER_PWM_MIN:
+            description:
+                short: Servo minimum PWM
+                long: Minimum PWM value for servo (deprecated - kept for compatibility)
+            type: float
+            default: 1000.0
+            min: 500.0
+            max: 1500.0
+            unit: us
+
+        STEER_PWM_MAX:
+            description:
+                short: Servo maximum PWM
+                long: Maximum PWM value for servo (deprecated - kept for compatibility)
+            type: float
+            default: 2000.0
+            min: 1500.0
+            max: 2500.0
+            unit: us
 
         STEER_CURR_LIMIT:
             description:
                 short: Servo current limit
-                long: |
-                    Maximum servo current in milliamps.
+                long: Maximum current limit for ST3125 servo
             type: float
-            unit: mA
-            min: 500
-            max: 5000
-            default: 2000
-            decimal: 0
-
-        STEER_SER_CFG:
-            description:
-                short: Serial Configuration for Steering Controller
-                long: |
-                    Configure on which serial port to run Steering Controller.
-            type: int32
-            min: 0
-            max: 6
-            default: 0
+            default: 2.0
+            min: 0.5
+            max: 5.0
+            unit: A
+            decimal: 1

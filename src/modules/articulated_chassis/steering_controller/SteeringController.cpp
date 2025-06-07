@@ -2,26 +2,16 @@
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
-#include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/WheelLoaderSetpoint.h>
-#include <uORB/topics/WheelLoaderStatus.h>
 #include <drivers/drv_hrt.h>
 #include <mathlib/mathlib.h>
-#include <module_constants/module_constants.h>
 
 SteeringController::SteeringController() :
     ModuleBase(MODULE_NAME, px4::wq_configurations::hp_default)
 {
-    // Initialize PID controller for position control
-    pid_init(&_position_pid, PID_MODE_DERIVATIV_CALC, 0.02f);
-
-    // Initialize controller status
-    _status = {};
-    _status.module_id = MODULE_ID_STEERING;
-    _status.timestamp = hrt_absolute_time();
-
-    // Initialize steering status
-    _steering_status = {};
+    // Initialize angle history for moving average
+    for (int i = 0; i < FILTER_SIZE; i++) {
+        _angle_history[i] = 0.0f;
+    }
 }
 
 int SteeringController::task_spawn(int argc, char *argv[])
@@ -43,20 +33,10 @@ int SteeringController::task_spawn(int argc, char *argv[])
 
 bool SteeringController::init()
 {
-    // Update PID parameters from PX4 parameters
-    _position_pid.kp = _position_p_gain.get();
-    _position_pid.ki = _position_i_gain.get();
-    _position_pid.kd = _position_d_gain.get();
-    _position_pid.integral_max = _position_i_max.get();
-
-    // Calculate maximum rate per control cycle
-    _max_rate_deg_per_cycle = _max_steering_rate.get() * (CONTROL_INTERVAL_US / 1e6f);
-
-    PX4_INFO("Steering controller initialized");
-    PX4_INFO("PID gains: P=%.3f, I=%.3f, D=%.3f",
-             (double)_position_pid.kp, (double)_position_pid.ki, (double)_position_pid.kd);
+    PX4_INFO("Simplified Steering Controller initialized for ST3125");
     PX4_INFO("Max angle: ±%.1f°, Max rate: %.1f°/s",
-             (double)_max_steering_angle.get(), (double)_max_steering_rate.get());
+             (double)math::degrees(_max_steering_angle.get()), (double)math::degrees(_max_steering_rate.get()));
+    PX4_INFO("ST3125 Servo ID: %d, Current limit: %.1fA", ST3125_SERVO_ID, (double)ST3125_CURRENT_LIMIT_A);
 
     return true;
 }
@@ -68,310 +48,295 @@ void SteeringController::run()
         return;
     }
 
-    // Main control loop
     while (!should_exit()) {
-
-        // Check for parameter updates
-        if (_parameter_update_sub.updated()) {
-            parameter_update_s param_update;
-            _parameter_update_sub.copy(&param_update);
-            updateParams();
-
-            // Update PID gains
-            _position_pid.kp = _position_p_gain.get();
-            _position_pid.ki = _position_i_gain.get();
-            _position_pid.kd = _position_d_gain.get();
-            _position_pid.integral_max = _position_i_max.get();
-
-            // Update rate limit
-            _max_rate_deg_per_cycle = _max_steering_rate.get() * (CONTROL_INTERVAL_US / 1e6f);
-        }
-
-        // Process position feedback
-        process_position_feedback();
-
-        // Update steering control
-        update_steering_control();
-
-        // Apply rate limiting
-        apply_rate_limiting();
-
-        // Safety checks
-        check_safety_limits();
-
-        // Communicate with servo
-        communicate_with_servo();
-
-        // Update controller status
-        update_controller_status();
-
-        // Sleep until next control cycle
         px4_usleep(CONTROL_INTERVAL_US);
+
+        const hrt_abstime now = hrt_absolute_time();
+        _dt = (now - _last_update_time) * 1e-6f;
+        _last_update_time = now;
+
+        // Process servo feedback first
+        process_servo_feedback();
+
+        // Main control pipeline
+        process_steering_command();
+
+        // Safety check
+        check_command_timeout();
+
+        // Send servo command to ST3125
+        send_servo_command(_commanded_angle_rad, _max_steering_rate.get());
+
+        // Update status and performance metrics
+        update_status();
     }
 }
 
-void SteeringController::update_steering_control()
+void SteeringController::process_steering_command()
 {
-    // Get wheel loader setpoint for articulation angle
-    if (_wheel_loader_setpoint_sub.updated()) {
-        wheel_loader_setpoint_s setpoint;
-        _wheel_loader_setpoint_sub.copy(&setpoint);
-
-        // Convert articulation angle from radians to degrees for internal use
-        _target_angle_deg = math::degrees(setpoint.articulation_angle_setpoint);
+    // Get steering setpoint
+    wheel_loader_setpoint_s setpoint{};
+    if (_wheel_loader_setpoint_sub.update(&setpoint)) {
+        _target_angle_rad = setpoint.articulation_angle_setpoint;
+        _vehicle_speed_mps = setpoint.forward_speed_mps;
         _last_command_time = hrt_absolute_time();
-    }
 
-    // Check command timeout
-    if (hrt_elapsed_time(&_last_command_time) > WATCHDOG_TIMEOUT_US) {
-        _target_angle_deg = 0.0f; // Return to center
-        _performance.command_timeouts++;
-        PX4_WARN_THROTTLE(1000, "Steering: Command timeout, returning to center");
-    }
+        // Apply basic limits and adjustments
+        _target_angle_rad = math::constrain(_target_angle_rad,
+                                           -_max_steering_angle.get(),
+                                           _max_steering_angle.get());
 
-    // Clamp target angle to limits
-    float max_angle = _max_steering_angle.get();
-    _target_angle_deg = math::constrain(_target_angle_deg, -max_angle, max_angle);
+        // Apply trim
+        _target_angle_rad += _steering_trim.get();
 
-    // Apply trim offset
-    _target_angle_deg += _steering_trim.get();
-
-    // Apply steering reverse if configured
-    if (_steering_reverse.get()) {
-        _target_angle_deg = -_target_angle_deg;
-    }
-}
-
-void SteeringController::apply_rate_limiting()
-{
-    // Calculate desired change
-    float angle_change = _target_angle_deg - _rate_limited_target_deg;
-
-    // Limit rate of change
-    if (fabsf(angle_change) > _max_rate_deg_per_cycle) {
-        _rate_limited_target_deg += copysignf(_max_rate_deg_per_cycle, angle_change);
-    } else {
-        _rate_limited_target_deg = _target_angle_deg;
-    }
-
-    // Calculate PID output
-    float position_error = _rate_limited_target_deg - _current_angle_deg;
-
-    // Apply deadband
-    if (fabsf(position_error) < _steering_deadband.get()) {
-        position_error = 0.0f;
-    }
-
-    float dt = CONTROL_INTERVAL_US / 1e6f;
-    float pid_output = pid_calculate(&_position_pid, position_error, dt);
-
-    // Convert PID output to servo PWM
-    _servo_pwm_us = angle_to_pwm(_current_angle_deg + pid_output);
-
-    // Update performance metrics
-    _performance.position_error_rms = 0.99f * _performance.position_error_rms +
-                                      0.01f * position_error * position_error;
-
-    float tracking_error = fabsf(_target_angle_deg - _current_angle_deg);
-    if (tracking_error > _performance.tracking_error_max) {
-        _performance.tracking_error_max = tracking_error;
-    }
-}
-
-void SteeringController::process_position_feedback()
-{
-    // Get articulation angle from sensor
-    _current_angle_deg = get_articulation_angle_deg();
-    _position_feedback_valid = true; // Set based on actual sensor validity
-
-    uint64_t current_time = hrt_absolute_time();
-    _last_position_time = current_time;
-
-    // Update response time performance metric
-    static uint64_t command_start_time = 0;
-    if (fabsf(_target_angle_deg - _previous_target_deg) > 1.0f) {
-        command_start_time = current_time;
-    }
-
-    if (command_start_time > 0 &&
-        fabsf(_current_angle_deg - _target_angle_deg) < _steering_deadband.get()) {
-        float response_time = (current_time - command_start_time) / 1e6f;
-        _performance.response_time_avg = 0.9f * _performance.response_time_avg +
-                                         0.1f * response_time;
-        command_start_time = 0;
-    }
-
-    _previous_target_deg = _target_angle_deg;
-}
-
-float SteeringController::get_articulation_angle_deg()
-{
-    // TODO: Read actual articulation angle from sensor
-    // This could be from:
-    // - Rotary encoder on steering mechanism
-    // - Potentiometer feedback
-    // - Hall sensor
-    // - Calculated from servo position
-
-    // For now, simulate feedback based on servo position
-    return pwm_to_angle(_servo_pwm_us);
-}
-
-void SteeringController::check_safety_limits()
-{
-    bool safety_violation = false;
-
-    // Check emergency stop
-    _emergency_stop = is_emergency_stop_active();
-
-    // Check position error
-    float position_error = fabsf(_rate_limited_target_deg - _current_angle_deg);
-    if (position_error > MAX_POSITION_ERROR_DEG) {
-        PX4_WARN_THROTTLE(1000, "Steering: Excessive position error %.1f°",
-                          (double)position_error);
-        safety_violation = true;
-    }
-
-    // Check servo current
-    if (_servo_current_ma > _servo_current_limit.get()) {
-        PX4_WARN_THROTTLE(1000, "Steering: Servo overcurrent %.0f mA",
-                          (double)_servo_current_ma);
-        safety_violation = true;
-    }
-
-    // Check position feedback validity
-    if (!_position_feedback_valid) {
-        PX4_WARN_THROTTLE(1000, "Steering: Invalid position feedback");
-        safety_violation = true;
-    }
-
-    // Emergency stop or safety violation
-    if (_emergency_stop || safety_violation) {
-        _servo_pwm_us = SERVO_PWM_CENTER; // Return to center
-        _rate_limited_target_deg = 0.0f;
-        _target_angle_deg = 0.0f;
-        pid_reset_integral(&_position_pid);
-
-        if (safety_violation) {
-            _performance.safety_violations++;
+        // Reverse if configured
+        if (_steering_reverse.get()) {
+            _target_angle_rad = -_target_angle_rad;
         }
     }
 
-    _module_healthy = !(_emergency_stop || safety_violation);
-}
-
-void SteeringController::communicate_with_servo()
-{
-    // TODO: Implement actual ST3125 servo communication
-    // This is a placeholder for hardware interface
-
-    // Clamp PWM to configured limits
-    float pwm_min = _servo_pwm_min.get();
-    float pwm_max = _servo_pwm_max.get();
-    _servo_pwm_us = math::constrain(_servo_pwm_us, pwm_min, pwm_max);
-
-    // Send PWM command to ST3125 (placeholder)
-    // st3125_set_servo_pwm(STEERING_SERVO_ID, _servo_pwm_us);
-
-    // Read servo current (placeholder)
-    // _servo_current_ma = st3125_get_servo_current(STEERING_SERVO_ID);
-    _servo_current_ma = fabsf(_servo_pwm_us - SERVO_PWM_CENTER) / SERVO_PWM_RANGE * 1500.0f; // Simulated
-}
-
-void SteeringController::update_controller_status()
-{
-    uint64_t timestamp = hrt_absolute_time();
-
-    // Update controller status
-    _status.timestamp = timestamp;
-    _status.module_id = MODULE_ID_STEERING;
-    _status.health_status = _module_healthy ? MODULE_HEALTH_OK : MODULE_HEALTH_ERROR;
-    _status.operational_status = _emergency_stop ? MODULE_OP_EMERGENCY_STOP : MODULE_OP_NORMAL;
-
-    // Status data
-    _status.data[0] = _current_angle_deg;          // Current angle
-    _status.data[1] = _target_angle_deg;           // Target angle
-    _status.data[2] = _rate_limited_target_deg;    // Rate limited target
-    _status.data[3] = _servo_pwm_us;               // Servo PWM
-    _status.data[4] = _servo_current_ma;           // Servo current
-    _status.data[5] = _performance.position_error_rms; // RMS position error
-
-    _module_status_pub.publish(_status);
-
-    // Update steering status (legacy)
-    _steering_status.timestamp = timestamp;
-    _steering_status.angle_deg = _current_angle_deg;
-    _steering_status.angle_setpoint_deg = _rate_limited_target_deg;
-    _steering_status.angular_velocity_deg_s = 0.0f; // TODO: Calculate from position derivative
-    _steering_status.servo_pwm_us = _servo_pwm_us;
-    _steering_status.position_error_deg = _rate_limited_target_deg - _current_angle_deg;
-    _steering_status.servo_current_ma = _servo_current_ma;
-    _steering_status.feedback_valid = _position_feedback_valid;
-    _steering_status.safety_ok = _module_healthy;
-
-    _steering_status_pub.publish(_steering_status);
-
-    // Update wheel loader status with articulation angle feedback
-    _wheel_loader_status.timestamp = timestamp;
-    // Convert current angle from degrees to radians for the message
-    _wheel_loader_status.articulation_angle_feedback = math::radians(_current_angle_deg);
-    // Note: Other fields in wheel loader status should be updated by other modules
-    // We only update the articulation angle feedback here
-
-    _wheel_loader_status_pub.publish(_wheel_loader_status);
-}
-
-float SteeringController::angle_to_pwm(float angle_deg)
-{
-    // Convert angle to PWM microseconds
-    // Assumes linear relationship between angle and PWM
-    float normalized_angle = angle_deg / _max_steering_angle.get();
-    return SERVO_PWM_CENTER + normalized_angle * SERVO_PWM_RANGE;
-}
-
-float SteeringController::pwm_to_angle(float pwm_us)
-{
-    // Convert PWM microseconds to angle
-    float normalized_pwm = (pwm_us - SERVO_PWM_CENTER) / SERVO_PWM_RANGE;
-    return normalized_pwm * _max_steering_angle.get();
-}
-
-float SteeringController::normalize_angle(float angle_deg)
-{
-    // Normalize angle to [-180, 180] range
-    while (angle_deg > 180.0f) angle_deg -= 360.0f;
-    while (angle_deg < -180.0f) angle_deg += 360.0f;
-    return angle_deg;
-}
-
-bool SteeringController::is_emergency_stop_active()
-{
-    if (_vehicle_status_sub.updated()) {
-        vehicle_status_s vehicle_status;
-        _vehicle_status_sub.copy(&vehicle_status);
-        return vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_STANDBY;
+    // Get slip data from predictive traction
+    predictive_traction_s traction{};
+    if (_predictive_traction_sub.update(&traction)) {
+        _slip_state.slip_front = traction.predicted_slip_front;
+        _slip_state.slip_rear = traction.predicted_slip_rear;
+        _slip_state.slip_error = traction.slip_tracking_error;
+        _slip_state.traction_active = traction.predictive_active;
+        _slip_state.last_update = traction.timestamp;
     }
-    return false;
+
+    // Apply slip compensation if enabled and data is recent
+    float compensated_angle = _target_angle_rad;
+    if (_slip_comp_enabled.get() &&
+        (hrt_absolute_time() - _slip_state.last_update) < 100_ms) {
+        compensated_angle = apply_slip_compensation(_target_angle_rad);
+    }
+
+    // Apply feedforward for better dynamic response
+    if (_feedforward_gain.get() > 0.0f) {
+        compensated_angle = apply_feedforward(compensated_angle, _current_angle_rad);
+    }
+
+    // Rate limiting for smooth control
+    _commanded_angle_rad = rate_limit(compensated_angle, _commanded_angle_rad);
+
+    // Update current angle estimate from servo feedback if available
+    if (_servo_state.feedback_valid) {
+        _current_angle_rad = _servo_state.position_rad;
+    } else {
+        // Fallback: assume perfect tracking with small lag
+        const float tracking_tc = 0.1f;  // 100ms time constant for ST3125 response
+        _current_angle_rad += (_commanded_angle_rad - _current_angle_rad) * _dt / tracking_tc;
+    }
+
+    // Update angle history for moving average filtering
+    _angle_history[_history_index] = _commanded_angle_rad;
+    _history_index = (_history_index + 1) % FILTER_SIZE;
+}
+
+float SteeringController::apply_slip_compensation(float target_angle)
+{
+    if (!_slip_state.traction_active) {
+        _slip_compensation_rad = 0.0f;
+        return target_angle;
+    }
+
+    // Calculate slip asymmetry (difference between front and rear wheel slip)
+    float slip_asymmetry = _slip_state.slip_front - _slip_state.slip_rear;
+
+    // Compensate for slip by adjusting steering angle
+    // Positive slip asymmetry (front slipping more) requires counter-steer
+    float compensation = -_slip_comp_gain.get() * slip_asymmetry;
+
+    // Add compensation based on slip tracking error
+    compensation += -_slip_comp_gain.get() * 0.5f * _slip_state.slip_error;
+
+    // Limit compensation to prevent over-correction
+    compensation = math::constrain(compensation,
+                                  -_slip_comp_max.get(),
+                                  _slip_comp_max.get());
+
+    // Smooth the compensation with low-pass filter
+    const float filter_tc = 0.2f;  // 200ms filter time constant
+    _slip_compensation_rad += (compensation - _slip_compensation_rad) * _dt / filter_tc;
+
+    return target_angle + _slip_compensation_rad;
+}
+
+float SteeringController::apply_feedforward(float target_angle, float current_angle)
+{
+    // Calculate angle error and rate
+    float angle_error = target_angle - current_angle;
+
+    // Speed-dependent feedforward gain
+    float speed_factor = 1.0f + _feedforward_speed_scale.get() * fabsf(_vehicle_speed_mps);
+
+    // Feedforward term proportional to error and speed
+    float feedforward = _feedforward_gain.get() * angle_error * speed_factor;
+
+    // Limit feedforward to prevent instability (±5 degrees in radians)
+    feedforward = math::constrain(feedforward, -math::radians(5.0f), math::radians(5.0f));
+
+    return target_angle + feedforward;
+}
+
+float SteeringController::rate_limit(float target, float current)
+{
+    float max_change = _max_steering_rate.get() * _dt;
+    float delta = target - current;
+
+    // Apply deadband to reduce jitter around target
+    if (fabsf(delta) < _steering_deadband.get()) {
+        return current;
+    }
+
+    // Rate limit the change
+    if (fabsf(delta) > max_change) {
+        delta = (delta > 0) ? max_change : -max_change;
+    }
+
+    return current + delta;
+}
+
+void SteeringController::send_servo_command(float position_rad, float velocity_rad_s)
+{
+    robotic_servo_command_s servo_cmd{};
+
+    servo_cmd.timestamp = hrt_absolute_time();
+    servo_cmd.id = ST3125_SERVO_ID;
+    servo_cmd.command_type = 0;  // Position control
+
+    // Set target position with safety limits
+    servo_cmd.goal_position = math::constrain(position_rad,
+                                             -ST3125_MAX_ANGLE_RAD,
+                                             ST3125_MAX_ANGLE_RAD);
+
+    // Set velocity limit
+    servo_cmd.goal_velocity = math::constrain(velocity_rad_s,
+                                             0.0f,
+                                             ST3125_MAX_VELOCITY_RAD_S);
+
+    // Set current limit
+    servo_cmd.goal_current = _servo_current_limit.get();
+
+    // Use servo defaults for PID (ST3125 handles internal control)
+    servo_cmd.position_p_gain = 0;
+    servo_cmd.position_i_gain = 0;
+    servo_cmd.position_d_gain = 0;
+
+    // Enable torque and set control mode
+    servo_cmd.torque_enable = !_emergency_stop;
+    servo_cmd.led_enable = true;
+    servo_cmd.control_mode = 0;  // Position control
+
+    // Set limits
+    servo_cmd.moving_threshold = ST3125_DEADBAND_RAD;
+    servo_cmd.current_limit = (uint16_t)(ST3125_CURRENT_LIMIT_A * 1000);  // Convert to mA
+    servo_cmd.velocity_limit = (uint16_t)(ST3125_MAX_VELOCITY_RAD_S * 100);  // Convert to appropriate units
+    servo_cmd.max_position = (uint16_t)(ST3125_MAX_ANGLE_RAD * 1000);
+    servo_cmd.min_position = (uint16_t)(-ST3125_MAX_ANGLE_RAD * 1000);
+
+    _servo_command_pub.publish(servo_cmd);
+}
+
+void SteeringController::process_servo_feedback()
+{
+    servo_feedback_s feedback{};
+    if (_servo_feedback_sub.update(&feedback)) {
+        if (feedback.id == ST3125_SERVO_ID) {
+            _servo_state.position_rad = feedback.position;
+            _servo_state.velocity_rad_s = feedback.velocity;
+            _servo_state.current_a = feedback.current;
+            _servo_state.temperature_c = feedback.temperature;
+            _servo_state.error_flags = feedback.error_flags;
+            _servo_state.torque_enabled = feedback.torque_enabled;
+            _servo_state.feedback_valid = true;
+            _last_feedback_time = feedback.timestamp;
+        }
+    } else {
+        // Check for feedback timeout
+        if ((hrt_absolute_time() - _last_feedback_time) > SERVO_FEEDBACK_TIMEOUT_US) {
+            _servo_state.feedback_valid = false;
+            _metrics.feedback_timeout_count++;
+        }
+    }
+}
+
+void SteeringController::check_command_timeout()
+{
+    if ((hrt_absolute_time() - _last_command_time) > COMMAND_TIMEOUT_US) {
+        // No recent commands, gradually return to center
+        _target_angle_rad = 0.0f;
+        _metrics.timeout_count++;
+
+        if (_metrics.timeout_count % 100 == 1) {  // Throttled warning
+            PX4_WARN("Steering command timeout, returning to center");
+        }
+    }
+}
+
+void SteeringController::update_status()
+{
+    const hrt_abstime now = hrt_absolute_time();
+
+    // Publish steering status
+    steering_status_s status{};
+    status.timestamp = now;
+    status.steering_angle_deg = math::degrees(_current_angle_rad);
+    status.steering_angle_setpoint_deg = math::degrees(_target_angle_rad);
+    status.steering_rate_deg_s = math::degrees((_commanded_angle_rad - _current_angle_rad) / _dt);
+    status.slip_compensation_deg = math::degrees(_slip_compensation_rad);
+    status.control_mode = steering_status_s::CONTROL_MODE_POSITION;
+
+    // Calculate and update performance metrics
+    float error = fabsf(_target_angle_rad - _current_angle_rad);
+    _metrics.max_error_rad = fmaxf(_metrics.max_error_rad, error);
+
+    if (_metrics.command_count > 0) {
+        _metrics.avg_error_rad = (_metrics.avg_error_rad * _metrics.command_count + error) /
+                                (_metrics.command_count + 1);
+    } else {
+        _metrics.avg_error_rad = error;
+    }
+    _metrics.command_count++;
+
+    // Set status flags
+    status.is_healthy = (_metrics.max_error_rad < MAX_POSITION_ERROR_RAD) &&
+                       (!_emergency_stop) &&
+                       (_servo_state.feedback_valid) &&
+                       (_servo_state.error_flags == 0);
+    status.emergency_stop = _emergency_stop;
+
+    _steering_status_pub.publish(status);
 }
 
 int SteeringController::print_status()
 {
-    PX4_INFO("Steering Controller Status:");
-    PX4_INFO("  Current Angle: %.1f°", (double)_current_angle_deg);
-    PX4_INFO("  Target Angle: %.1f°", (double)_target_angle_deg);
-    PX4_INFO("  Rate Limited Target: %.1f°", (double)_rate_limited_target_deg);
-    PX4_INFO("  Servo PWM: %.0f μs", (double)_servo_pwm_us);
-    PX4_INFO("  Servo Current: %.0f mA", (double)_servo_current_ma);
-    PX4_INFO("  Position Error: %.2f°", (double)(_rate_limited_target_deg - _current_angle_deg));
-    PX4_INFO("  Controller Healthy: %s", _module_healthy ? "YES" : "NO");
-    PX4_INFO("  Emergency Stop: %s", _emergency_stop ? "ACTIVE" : "INACTIVE");
-    PX4_INFO("  Position Feedback: %s", _position_feedback_valid ? "VALID" : "INVALID");
+    PX4_INFO("ST3125 Steering Controller Status:");
+    PX4_INFO("  Current Angle: %.1f°", (double)math::degrees(_current_angle_rad));
+    PX4_INFO("  Target Angle: %.1f°", (double)math::degrees(_target_angle_rad));
+    PX4_INFO("  Commanded Angle: %.1f°", (double)math::degrees(_commanded_angle_rad));
+    PX4_INFO("  Slip Compensation: %.2f°", (double)math::degrees(_slip_compensation_rad));
+    PX4_INFO("  Vehicle Speed: %.1f m/s", (double)_vehicle_speed_mps);
+    PX4_INFO("  Servo State:");
+    PX4_INFO("    Position: %.1f°", (double)math::degrees(_servo_state.position_rad));
+    PX4_INFO("    Velocity: %.1f°/s", (double)math::degrees(_servo_state.velocity_rad_s));
+    PX4_INFO("    Current: %.2fA", (double)_servo_state.current_a);
+    PX4_INFO("    Temperature: %.1f°C", (double)_servo_state.temperature_c);
+    PX4_INFO("    Error Flags: 0x%04X", _servo_state.error_flags);
+    PX4_INFO("    Torque Enabled: %s", _servo_state.torque_enabled ? "YES" : "NO");
+    PX4_INFO("    Feedback Valid: %s", _servo_state.feedback_valid ? "YES" : "NO");
+    PX4_INFO("  Slip State:");
+    PX4_INFO("    Front Slip: %.3f", (double)_slip_state.slip_front);
+    PX4_INFO("    Rear Slip: %.3f", (double)_slip_state.slip_rear);
+    PX4_INFO("    Tracking Error: %.3f", (double)_slip_state.slip_error);
+    PX4_INFO("    Traction Active: %s", _slip_state.traction_active ? "YES" : "NO");
     PX4_INFO("  Performance:");
-    PX4_INFO("    Position Error RMS: %.2f°", (double)_performance.position_error_rms);
-    PX4_INFO("    Max Tracking Error: %.2f°", (double)_performance.tracking_error_max);
-    PX4_INFO("    Avg Response Time: %.2f s", (double)_performance.response_time_avg);
-    PX4_INFO("    Safety Violations: %u", _performance.safety_violations);
-    PX4_INFO("    Command Timeouts: %u", _performance.command_timeouts);
+    PX4_INFO("    Max Error: %.2f°", (double)math::degrees(_metrics.max_error_rad));
+    PX4_INFO("    Avg Error: %.2f°", (double)math::degrees(_metrics.avg_error_rad));
+    PX4_INFO("    Commands: %u", _metrics.command_count);
+    PX4_INFO("    Timeouts: %u", _metrics.timeout_count);
+    PX4_INFO("    Feedback Timeouts: %u", _metrics.feedback_timeout_count);
 
     return 0;
 }
@@ -399,10 +364,13 @@ int SteeringController::print_usage(const char *reason)
     PRINT_MODULE_DESCRIPTION(
         R"DESCR_STR(
 ### Description
-Steering controller for articulated wheel loader.
+Simplified steering controller for articulated wheel loader with ST3125 servo.
 
-Controls the steering servo via ST3125 servo controller with PID position control,
-rate limiting, and safety monitoring.
+Features:
+- Direct position commands to ST3125 (servo handles internal PID)
+- Slip compensation using PredictiveTraction data
+- Feedforward control for improved dynamic response
+- Rate limiting and safety monitoring
 
 ### Examples
 CLI usage example:
@@ -411,7 +379,7 @@ $ steering_controller status
 $ steering_controller stop
 )DESCR_STR");
 
-    PRINT_MODULE_USAGE_NAME("steering_module", "driver");
+    PRINT_MODULE_USAGE_NAME("steering_controller", "driver");
     PRINT_MODULE_USAGE_COMMAND("start");
     PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print status information");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
@@ -419,7 +387,7 @@ $ steering_controller stop
     return 0;
 }
 
-extern "C" __EXPORT int steering_module_main(int argc, char *argv[])
+extern "C" __EXPORT int steering_controller_main(int argc, char *argv[])
 {
     return SteeringController::main(argc, argv);
 }
