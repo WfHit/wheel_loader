@@ -150,7 +150,7 @@
 /* GPIO Pin Usage for WL-Rear:
  * RC port pins (PC6/PC7) - Quad encoder from motor encoder (A/B phases)
  * TELEM1 port (/dev/ttyS1) - ST3125 robotic servo communication
- * TELEM3 port - RX7 pin (PC11) used as DRV8701 H-bridge enable signal
+ * UART7 RX pin (PE7) - DRV8701 H-bridge enable signal
  * I2C4 (PD12/PD13) - AS5600 magnetic encoder
  * UART1 (PA9/PA10) - Proxy client communication
  * PWM1-4 - DRV8701 H-bridge control (direction and PWM signals)
@@ -229,8 +229,8 @@
 #define STEERING_LEFT_LIMIT_SW_GPIO        /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
 #define STEERING_RIGHT_LIMIT_SW_GPIO       /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
 
-/* TELEM3 RX7 - Enable signal for DRV8701 H-bridge */
-#define DRV8701_ENABLE_GPIO                /* PC11 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN11)
+/* UART7 RX - Enable signal for DRV8701 H-bridge */
+#define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
 /* DRV8701 H-bridge support */
 #define BOARD_HAS_DRV8701_HBRIDGE          1
