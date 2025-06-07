@@ -10,16 +10,30 @@
 // uORB message includes - System Status
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failsafe_flags.h>
-#include <uORB/topics/actuator_armed.h>
+#include <uORB/topics/actuato    // Bucket system monitoring
+    struct BucketMonitoring {
+        float bucket_angle_rad{0.0f};
+        float bucket_current_a{0.0f};
+        float bucket_voltage_v{0.0f};
+        float bucket_temperature_c{0.0f};
+        float max_safe_bucket_angle_rad{1.0f}; // ~57 degrees
+        float max_safe_current_a{40.0f};
+        float max_safe_temperature_c{70.0f};
+        bool bucket_limit_exceeded{false};
+        bool bucket_motor_fault{false};
+        bool bucket_encoder_fault{false};
+        uint32_t bucket_violations{0};
+    } _bucket_monitor;
 #include <uORB/topics/ModuleStatus.h>
 #include <uORB/topics/SystemSafety.h>
+#include <uORB/topics/vehicle_command.h>
 
 // uORB message includes - Chassis Control
 #include <uORB/topics/WheelSpeedsSetpoint.h>
 #include <uORB/topics/SteeringSetpoint.h>
 #include <uORB/topics/TractionControl.h>
 
-// uORB message includes - Hydraulic Systems
+// uORB message includes - Electric Actuator Systems
 #include <uORB/topics/BoomStatus.h>
 #include <uORB/topics/BucketStatus.h>
 #include <uORB/topics/LoadAwareTorque.h>
@@ -34,6 +48,9 @@
 #include <uORB/topics/WheelLoaderStatus.h>
 #include <uORB/topics/SystemSafety.h>
 
+// uORB message includes - Limit Sensors
+#include <uORB/topics/limit_sensor.h>
+
 using namespace time_literals;
 
 /**
@@ -46,7 +63,7 @@ using namespace time_literals;
  * - Manages safety interlocks and operational permits
  * - Performs continuous safety assessment and risk analysis
  * - Implements emergency response procedures
- * - Coordinates safety between chassis, hydraulics, and auxiliary systems
+ * - Coordinates safety between chassis, electric actuators, and auxiliary systems
  * - Maintains safety records and diagnostics
  */
 class SafetyManager : public ModuleBase<SafetyManager>, public ModuleParams
@@ -100,12 +117,13 @@ private:
         FAULT_STABILITY = 32,
         FAULT_LOAD = 64,
         FAULT_TERRAIN = 128,
-        FAULT_HYDRAULIC = 256,      // Hydraulic system faults
+        FAULT_HYDRAULIC = 256,      // Electric actuator system faults
         FAULT_BOOM = 512,           // Boom control faults
         FAULT_BUCKET = 1024,        // Bucket control faults
         FAULT_ARTICULATION = 2048,  // Articulation system faults
         FAULT_POWER = 4096,         // Power system faults
-        FAULT_THERMAL = 8192        // Thermal management faults
+        FAULT_THERMAL = 8192,       // Thermal management faults
+        FAULT_LIMIT_SENSOR = 16384  // Limit sensor faults
     };
 
     void run() override;
@@ -123,13 +141,14 @@ private:
     void monitor_terrain_conditions();
 
     // Additional system-level monitoring
-    void monitor_hydraulic_systems();
+    void monitor_electric_actuators();
     void monitor_boom_operations();
     void monitor_bucket_operations();
     void monitor_articulation_system();
     void monitor_power_systems();
     void monitor_thermal_conditions();
     void monitor_operator_interface();
+    void monitor_limit_sensors();
 
     /**
      * Safety assessment
@@ -138,6 +157,11 @@ private:
     void calculate_risk_factors();
     void update_safety_level();
     void check_safety_interlocks();
+
+    /**
+     * Safety mode management
+     */
+    void update_safety_mode();
 
     /**
      * Fail-safe actions
@@ -166,7 +190,7 @@ private:
     bool check_load_operation_permit();
 
     // System-level permit checking
-    bool check_hydraulic_operation_permit();
+    bool check_electric_actuator_permit();
     bool check_boom_operation_permit();
     bool check_bucket_operation_permit();
     bool check_articulation_permit();
@@ -192,7 +216,7 @@ private:
     uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
     uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
 
-    // uORB subscriptions - Hydraulic Systems
+    // uORB subscriptions - Electric Actuator Systems
     uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
     uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
     uORB::Subscription _wheel_loader_status_sub{ORB_ID(wheel_loader_status)};
@@ -205,6 +229,9 @@ private:
     uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
     uORB::Subscription _load_aware_torque_sub{ORB_ID(load_aware_torque)};
     uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)};
+
+    // uORB subscriptions - Limit sensors (up to 8 instances)
+    uORB::Subscription _limit_sensor_sub[8]{};
 
     // uORB subscriptions - Control commands
     uORB::Subscription _manual_control_sub{ORB_ID(manual_control_input)};
@@ -331,27 +358,34 @@ private:
         uint32_t terrain_violations{0};
     } _terrain_monitor;
 
-    // Hydraulic system monitoring
-    struct HydraulicMonitoring {
-        float system_pressure_bar{0.0f};
-        float max_safe_pressure_bar{300.0f};
-        float hydraulic_temperature_c{0.0f};
+    // Electric actuator system monitoring
+    struct ElectricActuatorMonitoring {
+        float system_voltage_v{0.0f};
+        float max_safe_voltage_v{60.0f};
+        float system_current_a{0.0f};
+        float max_safe_current_a{100.0f};
+        float motor_temperature_c{0.0f};
         float max_safe_temperature_c{80.0f};
-        bool pressure_fault{false};
+        bool voltage_fault{false};
+        bool current_fault{false};
         bool temperature_fault{false};
-        bool pump_fault{false};
-        bool reservoir_low{false};
-        uint32_t hydraulic_violations{0};
-        float hydraulic_health_score{1.0f};
-    } _hydraulic_monitor;
+        bool motor_fault{false};
+        bool controller_fault{false};
+        uint32_t actuator_violations{0};
+        float actuator_health_score{1.0f};
+    } _electric_actuator_monitor;
 
     // Boom system monitoring
     struct BoomMonitoring {
         float boom_angle_rad{0.0f};
-        float boom_pressure_bar{0.0f};
+        float boom_current_a{0.0f};
+        float boom_voltage_v{0.0f};
+        float boom_temperature_c{0.0f};
         float max_safe_boom_angle_rad{1.57f}; // 90 degrees
+        float max_safe_current_a{50.0f};
+        float max_safe_temperature_c{70.0f};
         bool boom_limit_exceeded{false};
-        bool boom_hydraulic_fault{false};
+        bool boom_motor_fault{false};
         bool boom_encoder_fault{false};
         uint32_t boom_violations{0};
     } _boom_monitor;
@@ -359,10 +393,14 @@ private:
     // Bucket system monitoring
     struct BucketMonitoring {
         float bucket_angle_rad{0.0f};
-        float bucket_pressure_bar{0.0f};
-        float max_safe_bucket_angle_rad{2.09f}; // 120 degrees
+        float bucket_current_a{0.0f};
+        float bucket_voltage_v{0.0f};
+        float bucket_temperature_c{0.0f};
+        float max_safe_bucket_angle_rad{1.0f}; // ~57 degrees
+        float max_safe_current_a{40.0f};
+        float max_safe_temperature_c{70.0f};
         bool bucket_limit_exceeded{false};
-        bool bucket_hydraulic_fault{false};
+        bool bucket_motor_fault{false};
         bool bucket_encoder_fault{false};
         uint32_t bucket_violations{0};
     } _bucket_monitor;
@@ -395,15 +433,36 @@ private:
     // Thermal system monitoring
     struct ThermalMonitoring {
         float engine_temperature_c{0.0f};
-        float hydraulic_temperature_c{0.0f};
+        float motor_temperature_c{0.0f};  // Electric motor temperature instead of hydraulic
         float ambient_temperature_c{0.0f};
         float max_safe_engine_temp_c{100.0f};
-        float max_safe_hydraulic_temp_c{80.0f};
+        float max_safe_motor_temp_c{80.0f};  // Electric motor temperature limit
         bool engine_overheat{false};
-        bool hydraulic_overheat{false};
+        bool motor_overheat{false};  // Electric motor overheat flag
         bool cooling_fault{false};
         uint32_t thermal_violations{0};
     } _thermal_monitor;
+
+    // Limit sensor monitoring
+    struct LimitSensorMonitoring {
+        struct SensorInstance {
+            bool healthy{false};
+            bool state{false};
+            bool redundancy_fault{false};
+            bool timeout{false};
+            uint32_t activation_count{0};
+            uint64_t last_update_time{0};
+            uint8_t sensor_type{0}; // 0=bucket_min, 1=bucket_max, 2=boom_min, 3=boom_max
+        } sensors[8];
+
+        uint32_t total_sensor_faults{0};
+        uint32_t redundancy_faults{0};
+        uint32_t timeout_faults{0};
+        bool system_healthy{true};
+        bool zeroing_mode_active{false};   // Allow limit override during zeroing
+        uint64_t last_zeroing_time{0};
+        float sensor_health_score{1.0f};
+    } _limit_sensor_monitor;
 
     // Safety permits for system-level operations
     struct SafetyPermits {
@@ -415,7 +474,7 @@ private:
         bool manual_override_active{false};
 
         // System-level permits
-        bool hydraulic_operation_permitted{false};
+        bool electric_actuator_permitted{false};
         bool boom_operation_permitted{false};
         bool bucket_operation_permitted{false};
         bool articulation_permitted{false};

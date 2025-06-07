@@ -10,7 +10,14 @@ uint8 SAFETY_LEVEL_WARNING = 2
 uint8 SAFETY_LEVEL_CRITICAL = 3
 uint8 SAFETY_LEVEL_EMERGENCY = 4
 
+# Safety modes
+uint8 SAFETY_MODE_NORMAL = 0
+uint8 SAFETY_MODE_MANUAL_OVERRIDE = 1
+uint8 SAFETY_MODE_ZEROING = 2
+uint8 SAFETY_MODE_EMERGENCY = 3
+
 uint8 safety_level                  # Current system safety level
+uint8 safety_mode                   # Current safety mode
 float32 overall_risk_factor         # Overall system risk factor [0, 1]
 bool emergency_active               # Emergency response active
 bool safety_override_active         # Safety override active
@@ -25,7 +32,7 @@ uint32 safety_violation_count      # Total safety violations
 bool motion_permitted              # Vehicle motion allowed
 bool steering_permitted            # Steering operations allowed
 bool autonomous_permitted          # Autonomous operation allowed
-bool hydraulic_operation_permitted # Hydraulic operations allowed
+bool electric_actuator_permitted   # Electric actuator operations allowed
 bool boom_operation_permitted      # Boom operations allowed
 bool bucket_operation_permitted    # Bucket operations allowed
 bool articulation_permitted        # Articulation operations allowed
@@ -34,7 +41,7 @@ bool emergency_override_active     # Emergency override active
 
 # System monitoring status
 bool chassis_safe                  # Chassis systems safe
-bool hydraulic_safe               # Hydraulic systems safe
+bool hydraulic_safe               # Electric actuator systems safe (legacy field name)
 bool sensor_safe                  # Sensor systems safe
 bool communication_safe           # Communication systems safe
 bool power_safe                   # Power systems safe

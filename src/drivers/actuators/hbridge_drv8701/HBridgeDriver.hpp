@@ -80,8 +80,19 @@ private:
         (ParamInt<px4::params::HBRDG_GPIO_DIR0>) _param_gpio_dir0,
         (ParamInt<px4::params::HBRDG_GPIO_DIR1>) _param_gpio_dir1,
         (ParamInt<px4::params::HBRDG_GPIO_FLT0>) _param_gpio_fault0,
-        (ParamInt<px4::params::HBRDG_GPIO_FLT1>) _param_gpio_fault1
+        (ParamInt<px4::params::HBRDG_GPIO_FLT1>) _param_gpio_fault1,
+        (ParamInt<px4::params::HBRDG_CH0_LIM_MIN>) _param_ch0_lim_min,
+        (ParamInt<px4::params::HBRDG_CH0_LIM_MAX>) _param_ch0_lim_max,
+        (ParamInt<px4::params::HBRDG_CH1_LIM_MIN>) _param_ch1_lim_min,
+        (ParamInt<px4::params::HBRDG_CH1_LIM_MAX>) _param_ch1_lim_max,
+        (ParamBool<px4::params::HBRDG_CH0_INTO_MIN>) _param_ch0_into_min,
+        (ParamBool<px4::params::HBRDG_CH0_INTO_MAX>) _param_ch0_into_max,
+        (ParamBool<px4::params::HBRDG_CH1_INTO_MIN>) _param_ch1_into_min,
+        (ParamBool<px4::params::HBRDG_CH1_INTO_MAX>) _param_ch1_into_max
     )
+
+    void updateParams() override;
+    void configure_limits();
 
     bool _initialized{false};
 };

@@ -65,6 +65,7 @@ public:
     bool has_fault() const { return _fault_detected; }
     uint8_t get_channel_id() const { return CHANNEL_ID; }
     uint8_t get_state() const { return static_cast<uint8_t>(_state); }
+    float get_output() const { return _speed_setpoint; }
 
     void emergency_stop();
 

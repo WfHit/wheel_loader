@@ -97,6 +97,24 @@ int HBridgeDriver::init()
 		return PX4_ERROR;
 	}
 
+	// Configure limit sensors for each channel
+	EnableManager::LimitConfig ch0_limits = {
+		.min_limit_instance = static_cast<uint8_t>(_param_ch0_lim_min.get()),
+		.max_limit_instance = static_cast<uint8_t>(_param_ch0_lim_max.get()),
+		.allow_into_min = _param_ch0_into_min.get(),
+		.allow_into_max = _param_ch0_into_max.get()
+	};
+
+	EnableManager::LimitConfig ch1_limits = {
+		.min_limit_instance = static_cast<uint8_t>(_param_ch1_lim_min.get()),
+		.max_limit_instance = static_cast<uint8_t>(_param_ch1_lim_max.get()),
+		.allow_into_min = _param_ch1_into_min.get(),
+		.allow_into_max = _param_ch1_into_max.get()
+	};
+
+	_enable_manager->set_limit_config(0, ch0_limits);
+	_enable_manager->set_limit_config(1, ch1_limits);
+
 	// Start the work queue
 	ScheduleOnInterval(1000000 / _config.update_rate_hz); // Convert Hz to microseconds
 
@@ -127,12 +145,28 @@ void HBridgeDriver::Run()
 		_channel1->update();
 	}
 
-	// Update enable manager
+	// Update enable manager with limit checking
 	if (_enable_manager) {
 		bool ch0_request = (_channel0 != nullptr);
 		bool ch1_request = (_channel1 != nullptr);
 		uint8_t ch0_state = _channel0 ? _channel0->get_state() : 0;
 		uint8_t ch1_state = _channel1 ? _channel1->get_state() : 0;
+
+		// Get commanded outputs from channels
+		float ch0_output = _channel0 ? _channel0->get_output() : 0.0f;
+		float ch1_output = _channel1 ? _channel1->get_output() : 0.0f;
+
+		// Check limits before allowing motor commands
+		bool ch0_allowed = _enable_manager->check_motion_allowed(0, ch0_output);
+		bool ch1_allowed = _enable_manager->check_motion_allowed(1, ch1_output);
+
+		// Apply limit restrictions
+		if (_channel0 && !ch0_allowed) {
+			_channel0->emergency_stop();
+		}
+		if (_channel1 && !ch1_allowed) {
+			_channel1->emergency_stop();
+		}
 
 		_enable_manager->update(ch0_request, ch1_request, ch0_state, ch1_state);
 	}

@@ -5,6 +5,7 @@
 #include <px4_platform_common/posix.h>
 #include <drivers/drv_hrt.h>
 #include <mathlib/mathlib.h>
+#include <uORB/topics/vehicle_command.h>
 
 SafetyManager::SafetyManager() :
     ModuleParams(nullptr)
@@ -53,6 +54,12 @@ bool SafetyManager::init()
     _imu_sub.set_queue_size(1);
     _gyro_sub.set_queue_size(1);
 
+    // Initialize limit sensor subscriptions
+    for (uint8_t i = 0; i < 8; i++) {
+        _limit_sensor_sub[i] = uORB::Subscription{ORB_ID(limit_sensor), i};
+        _limit_sensor_sub[i].set_queue_size(1);
+    }
+
     // Initialize monitoring values
     _speed_monitor.speed_limit_ms = _max_speed_ms.get();
     _speed_monitor.max_safe_acceleration = _max_acceleration_ms2.get();
@@ -91,13 +98,17 @@ void SafetyManager::run()
     monitor_hardware_health();
     monitor_sensor_validity();
     monitor_terrain_conditions();
-    monitor_hydraulic_systems();
+    monitor_electric_actuators();
     monitor_boom_operations();
     monitor_bucket_operations();
     monitor_articulation_system();
     monitor_power_systems();
     monitor_thermal_conditions();
     monitor_operator_interface();
+    monitor_limit_sensors();
+
+    // Update safety mode based on commands and conditions
+    update_safety_mode();
 
     // Assess overall safety situation
     assess_overall_safety();
@@ -143,6 +154,7 @@ void SafetyManager::run()
 
     // Overall safety status
     system_safety.safety_level = static_cast<uint8_t>(_safety_state.current_level);
+    system_safety.safety_mode = static_cast<uint8_t>(_safety_state.current_mode);
     system_safety.overall_risk_factor = _safety_state.overall_risk_factor;
     system_safety.emergency_active = _emergency_response.emergency_stop_commanded;
     system_safety.safety_override_active = _safety_state.safety_override_active;
@@ -157,7 +169,7 @@ void SafetyManager::run()
     system_safety.motion_permitted = _safety_permits.motion_permitted;
     system_safety.steering_permitted = _safety_permits.steering_permitted;
     system_safety.autonomous_permitted = _safety_permits.autonomous_permitted;
-    system_safety.hydraulic_operation_permitted = _safety_permits.hydraulic_operation_permitted;
+    system_safety.electric_actuator_permitted = _safety_permits.electric_actuator_permitted;
     system_safety.boom_operation_permitted = _safety_permits.boom_operation_permitted;
     system_safety.bucket_operation_permitted = _safety_permits.bucket_operation_permitted;
     system_safety.articulation_permitted = _safety_permits.articulation_permitted;
@@ -166,8 +178,8 @@ void SafetyManager::run()
 
     // System monitoring status
     system_safety.chassis_safe = (_safety_state.active_faults & (FAULT_SPEED_LIMIT | FAULT_STEERING_LIMIT | FAULT_STABILITY)) == 0;
-    system_safety.hydraulic_safe = (_safety_state.active_faults & FAULT_HYDRAULIC) == 0;
-    system_safety.sensor_safe = (_safety_state.active_faults & FAULT_SENSOR) == 0;
+    system_safety.hydraulic_safe = (_safety_state.active_faults & FAULT_HYDRAULIC) == 0; // Now represents electric actuator safety
+    system_safety.sensor_safe = (_safety_state.active_faults & (FAULT_SENSOR | FAULT_LIMIT_SENSOR)) == 0;
     system_safety.communication_safe = (_safety_state.active_faults & FAULT_COMMUNICATION) == 0;
     system_safety.power_safe = (_safety_state.active_faults & FAULT_POWER) == 0;
     system_safety.thermal_safe = (_safety_state.active_faults & FAULT_THERMAL) == 0;
@@ -560,48 +572,61 @@ void SafetyManager::monitor_terrain_conditions()
     }
 }
 
-void SafetyManager::monitor_hydraulic_systems()
+void SafetyManager::monitor_electric_actuators()
 {
     boom_status_s boom_status;
     bucket_status_s bucket_status;
     wheel_loader_status_s loader_status;
 
-    // Monitor boom hydraulic system
+    // Monitor boom electric actuator system
     if (_boom_status_sub.update(&boom_status)) {
-        _hydraulic_monitor.system_pressure_bar = boom_status.hydraulic_pressure_bar;
-        _hydraulic_monitor.hydraulic_temperature_c = boom_status.hydraulic_temperature_c;
+        _electric_actuator_monitor.system_voltage_v = boom_status.motor_voltage;
+        _electric_actuator_monitor.system_current_a = boom_status.motor_current;
+        _electric_actuator_monitor.motor_temperature_c = boom_status.motor_temperature_c;
 
-        // Check pressure limits
-        if (_hydraulic_monitor.system_pressure_bar > _hydraulic_monitor.max_safe_pressure_bar) {
-            _hydraulic_monitor.pressure_fault = true;
-            _hydraulic_monitor.hydraulic_violations++;
-            _safety_state.active_faults |= FAULT_HYDRAULIC;
-            PX4_WARN("Hydraulic pressure fault: %.1f bar", (double)_hydraulic_monitor.system_pressure_bar);
+        // Check voltage limits
+        if (_electric_actuator_monitor.system_voltage_v > _electric_actuator_monitor.max_safe_voltage_v ||
+            _electric_actuator_monitor.system_voltage_v < _electric_actuator_monitor.min_safe_voltage_v) {
+            _electric_actuator_monitor.voltage_fault = true;
+            _electric_actuator_monitor.actuator_violations++;
+            _safety_state.active_faults |= FAULT_HYDRAULIC; // Reusing FAULT_HYDRAULIC as FAULT_ELECTRIC_ACTUATOR
+            PX4_WARN("Electric actuator voltage fault: %.1f V", (double)_electric_actuator_monitor.system_voltage_v);
         } else {
-            _hydraulic_monitor.pressure_fault = false;
+            _electric_actuator_monitor.voltage_fault = false;
+        }
+
+        // Check current limits
+        if (_electric_actuator_monitor.system_current_a > _electric_actuator_monitor.max_safe_current_a) {
+            _electric_actuator_monitor.current_fault = true;
+            _electric_actuator_monitor.actuator_violations++;
+            _safety_state.active_faults |= FAULT_HYDRAULIC;
+            PX4_WARN("Electric actuator current fault: %.1f A", (double)_electric_actuator_monitor.system_current_a);
+        } else {
+            _electric_actuator_monitor.current_fault = false;
         }
 
         // Check temperature limits
-        if (_hydraulic_monitor.hydraulic_temperature_c > _hydraulic_monitor.max_safe_temperature_c) {
-            _hydraulic_monitor.temperature_fault = true;
-            _hydraulic_monitor.hydraulic_violations++;
+        if (_electric_actuator_monitor.motor_temperature_c > _electric_actuator_monitor.max_safe_temperature_c) {
+            _electric_actuator_monitor.temperature_fault = true;
+            _electric_actuator_monitor.actuator_violations++;
             _safety_state.active_faults |= FAULT_THERMAL;
-            PX4_WARN("Hydraulic temperature fault: %.1f°C", (double)_hydraulic_monitor.hydraulic_temperature_c);
+            PX4_WARN("Electric motor temperature fault: %.1f°C", (double)_electric_actuator_monitor.motor_temperature_c);
         } else {
-            _hydraulic_monitor.temperature_fault = false;
+            _electric_actuator_monitor.temperature_fault = false;
         }
 
-        // Update hydraulic health score
-        float pressure_factor = 1.0f - math::constrain(_hydraulic_monitor.system_pressure_bar / _hydraulic_monitor.max_safe_pressure_bar, 0.0f, 1.0f);
-        float temp_factor = 1.0f - math::constrain(_hydraulic_monitor.hydraulic_temperature_c / _hydraulic_monitor.max_safe_temperature_c, 0.0f, 1.0f);
-        _hydraulic_monitor.hydraulic_health_score = (pressure_factor + temp_factor) / 2.0f;
+        // Update electric actuator health score
+        float voltage_factor = 1.0f - math::constrain(fabsf(_electric_actuator_monitor.system_voltage_v - 24.0f) / 12.0f, 0.0f, 1.0f); // Nominal 24V
+        float current_factor = 1.0f - math::constrain(_electric_actuator_monitor.system_current_a / _electric_actuator_monitor.max_safe_current_a, 0.0f, 1.0f);
+        float temp_factor = 1.0f - math::constrain(_electric_actuator_monitor.motor_temperature_c / _electric_actuator_monitor.max_safe_temperature_c, 0.0f, 1.0f);
+        _electric_actuator_monitor.actuator_health_score = (voltage_factor + current_factor + temp_factor) / 3.0f;
     }
 
-    // Check for hydraulic pump and reservoir status
+    // Check for motor controller and power system status
     if (_wheel_loader_status_sub.update(&loader_status)) {
-        // Assume wheel loader status includes hydraulic system health
-        _hydraulic_monitor.pump_fault = (loader_status.system_health > 1); // WARNING or higher
-        _hydraulic_monitor.reservoir_low = (loader_status.supply_voltage < 22.0f); // Indirect indicator
+        // Monitor motor controller and power system health
+        _electric_actuator_monitor.controller_fault = (loader_status.system_health > 1); // WARNING or higher
+        _electric_actuator_monitor.power_supply_fault = (loader_status.supply_voltage < 20.0f); // Low voltage indicator
     }
 }
 
@@ -610,8 +635,10 @@ void SafetyManager::monitor_boom_operations()
     boom_status_s boom_status;
 
     if (_boom_status_sub.update(&boom_status)) {
-        _boom_monitor.boom_angle_rad = boom_status.boom_angle_rad;
-        _boom_monitor.boom_pressure_bar = boom_status.hydraulic_pressure_bar;
+        _boom_monitor.boom_angle_rad = boom_status.angle;
+        _boom_monitor.boom_current_a = boom_status.motor_current;
+        _boom_monitor.boom_voltage_v = boom_status.motor_voltage;
+        _boom_monitor.boom_temperature_c = boom_status.motor_temperature_c;
 
         // Check boom angle limits
         if (fabsf(_boom_monitor.boom_angle_rad) > _boom_monitor.max_safe_boom_angle_rad) {
@@ -624,14 +651,33 @@ void SafetyManager::monitor_boom_operations()
             _safety_state.active_faults &= ~FAULT_BOOM;
         }
 
-        // Check boom hydraulic health
-        _boom_monitor.boom_hydraulic_fault = boom_status.hydraulic_fault;
+        // Check boom electric motor current limits
+        if (_boom_monitor.boom_current_a > _boom_monitor.max_safe_current_a) {
+            _boom_monitor.boom_motor_fault = true;
+            _boom_monitor.boom_violations++;
+            _safety_state.active_faults |= FAULT_BOOM;
+            PX4_WARN("Boom motor current fault: %.1f A", (double)_boom_monitor.boom_current_a);
+        } else {
+            _boom_monitor.boom_motor_fault = false;
+        }
+
+        // Check boom motor temperature limits
+        if (_boom_monitor.boom_temperature_c > _boom_monitor.max_safe_temperature_c) {
+            _boom_monitor.boom_motor_fault = true;
+            _boom_monitor.boom_violations++;
+            _safety_state.active_faults |= FAULT_BOOM;
+            PX4_WARN("Boom motor temperature fault: %.1f°C", (double)_boom_monitor.boom_temperature_c);
+        }
+
+        // Check boom motor and encoder health
+        _boom_monitor.boom_motor_fault = boom_status.motor_fault;
         _boom_monitor.boom_encoder_fault = boom_status.encoder_fault;
 
-        if (_boom_monitor.boom_hydraulic_fault || _boom_monitor.boom_encoder_fault) {
+        if (_boom_monitor.boom_motor_fault || _boom_monitor.boom_encoder_fault) {
             _safety_state.active_faults |= FAULT_BOOM;
         }
     }
+}
 }
 
 void SafetyManager::monitor_bucket_operations()
@@ -639,8 +685,10 @@ void SafetyManager::monitor_bucket_operations()
     bucket_status_s bucket_status;
 
     if (_bucket_status_sub.update(&bucket_status)) {
-        _bucket_monitor.bucket_angle_rad = bucket_status.bucket_angle_rad;
-        _bucket_monitor.bucket_pressure_bar = bucket_status.hydraulic_pressure_bar;
+        _bucket_monitor.bucket_angle_rad = bucket_status.current_angle;
+        _bucket_monitor.bucket_current_a = bucket_status.motor_current;
+        _bucket_monitor.bucket_voltage_v = bucket_status.motor_voltage;
+        _bucket_monitor.bucket_temperature_c = bucket_status.motor_temperature_c;
 
         // Check bucket angle limits
         if (fabsf(_bucket_monitor.bucket_angle_rad) > _bucket_monitor.max_safe_bucket_angle_rad) {
@@ -653,14 +701,33 @@ void SafetyManager::monitor_bucket_operations()
             _safety_state.active_faults &= ~FAULT_BUCKET;
         }
 
-        // Check bucket hydraulic health
-        _bucket_monitor.bucket_hydraulic_fault = bucket_status.hydraulic_fault;
+        // Check bucket electric motor current limits
+        if (_bucket_monitor.bucket_current_a > _bucket_monitor.max_safe_current_a) {
+            _bucket_monitor.bucket_motor_fault = true;
+            _bucket_monitor.bucket_violations++;
+            _safety_state.active_faults |= FAULT_BUCKET;
+            PX4_WARN("Bucket motor current fault: %.1f A", (double)_bucket_monitor.bucket_current_a);
+        } else {
+            _bucket_monitor.bucket_motor_fault = false;
+        }
+
+        // Check bucket motor temperature limits
+        if (_bucket_monitor.bucket_temperature_c > _bucket_monitor.max_safe_temperature_c) {
+            _bucket_monitor.bucket_motor_fault = true;
+            _bucket_monitor.bucket_violations++;
+            _safety_state.active_faults |= FAULT_BUCKET;
+            PX4_WARN("Bucket motor temperature fault: %.1f°C", (double)_bucket_monitor.bucket_temperature_c);
+        }
+
+        // Check bucket motor and encoder health
+        _bucket_monitor.bucket_motor_fault = bucket_status.motor_fault;
         _bucket_monitor.bucket_encoder_fault = bucket_status.encoder_fault;
 
-        if (_bucket_monitor.bucket_hydraulic_fault || _bucket_monitor.bucket_encoder_fault) {
+        if (_bucket_monitor.bucket_motor_fault || _bucket_monitor.bucket_encoder_fault) {
             _safety_state.active_faults |= FAULT_BUCKET;
         }
     }
+}
 }
 
 void SafetyManager::monitor_articulation_system()
@@ -756,12 +823,14 @@ void SafetyManager::monitor_power_systems()
 void SafetyManager::monitor_thermal_conditions()
 {
     wheel_loader_status_s loader_status;
+    boom_status_s boom_status;
+    bucket_status_s bucket_status;
 
     if (_wheel_loader_status_sub.update(&loader_status)) {
         _thermal_monitor.engine_temperature_c = loader_status.motor_temperature;
-        _thermal_monitor.hydraulic_temperature_c = loader_status.controller_temperature;
-        // Note: Assuming controller temperature as proxy for hydraulic temp
-        // In real implementation, would have dedicated hydraulic temp sensor
+        _thermal_monitor.motor_temperature_c = loader_status.controller_temperature;
+        // Note: Using controller temperature as proxy for motor controller temp
+        // In real implementation, would have dedicated motor controller temp sensor
 
         // Check engine temperature
         if (_thermal_monitor.engine_temperature_c > _thermal_monitor.max_safe_engine_temp_c) {
@@ -773,23 +842,44 @@ void SafetyManager::monitor_thermal_conditions()
             _thermal_monitor.engine_overheat = false;
         }
 
-        // Check hydraulic temperature
-        if (_thermal_monitor.hydraulic_temperature_c > _thermal_monitor.max_safe_hydraulic_temp_c) {
-            _thermal_monitor.hydraulic_overheat = true;
+        // Check motor controller temperature
+        if (_thermal_monitor.motor_temperature_c > _thermal_monitor.max_safe_motor_temp_c) {
+            _thermal_monitor.motor_overheat = true;
             _thermal_monitor.thermal_violations++;
             _safety_state.active_faults |= FAULT_THERMAL;
-            PX4_WARN("Hydraulic overheat: %.1f°C", (double)_thermal_monitor.hydraulic_temperature_c);
+            PX4_WARN("Motor controller overheat: %.1f°C", (double)_thermal_monitor.motor_temperature_c);
         } else {
-            _thermal_monitor.hydraulic_overheat = false;
-        }
-
-        // Update cooling fault status
-        _thermal_monitor.cooling_fault = _thermal_monitor.engine_overheat || _thermal_monitor.hydraulic_overheat;
-
-        if (!_thermal_monitor.cooling_fault) {
-            _safety_state.active_faults &= ~FAULT_THERMAL;
+            _thermal_monitor.motor_overheat = false;
         }
     }
+
+    // Monitor boom motor temperature
+    if (_boom_status_sub.update(&boom_status)) {
+        if (boom_status.motor_temperature_c > _thermal_monitor.max_safe_motor_temp_c) {
+            _thermal_monitor.motor_overheat = true;
+            _thermal_monitor.thermal_violations++;
+            _safety_state.active_faults |= FAULT_THERMAL;
+            PX4_WARN("Boom motor overheat: %.1f°C", (double)boom_status.motor_temperature_c);
+        }
+    }
+
+    // Monitor bucket motor temperature
+    if (_bucket_status_sub.update(&bucket_status)) {
+        if (bucket_status.motor_temperature_c > _thermal_monitor.max_safe_motor_temp_c) {
+            _thermal_monitor.motor_overheat = true;
+            _thermal_monitor.thermal_violations++;
+            _safety_state.active_faults |= FAULT_THERMAL;
+            PX4_WARN("Bucket motor overheat: %.1f°C", (double)bucket_status.motor_temperature_c);
+        }
+    }
+
+    // Update cooling fault status
+    _thermal_monitor.cooling_fault = _thermal_monitor.engine_overheat || _thermal_monitor.motor_overheat;
+
+    if (!_thermal_monitor.cooling_fault) {
+        _safety_state.active_faults &= ~FAULT_THERMAL;
+    }
+}
 }
 
 void SafetyManager::monitor_operator_interface()
@@ -826,6 +916,189 @@ void SafetyManager::monitor_operator_interface()
             _safety_state.active_faults &= ~FAULT_COMMUNICATION;
         }
     }
+}
+
+void SafetyManager::monitor_limit_sensors()
+{
+    uint64_t current_time = hrt_absolute_time();
+    uint32_t sensor_faults = 0;
+    uint32_t redundancy_faults = 0;
+    uint32_t timeout_faults = 0;
+    bool all_healthy = true;
+
+    // Check each limit sensor instance
+    for (uint8_t i = 0; i < 8; i++) {
+        limit_sensor_s sensor_msg;
+        auto& sensor = _limit_sensor_monitor.sensors[i];
+
+        if (_limit_sensor_sub[i].copy(&sensor_msg)) {
+            sensor.last_update_time = current_time;
+            sensor.healthy = sensor_msg.healthy;
+            sensor.state = sensor_msg.state;
+            sensor.redundancy_fault = sensor_msg.redundancy_fault;
+            sensor.timeout = false;
+            sensor.activation_count = sensor_msg.activation_count;
+            sensor.sensor_type = sensor_msg.type;
+
+            // Check for redundancy faults
+            if (sensor_msg.redundancy_fault) {
+                redundancy_faults++;
+                PX4_WARN_THROTTLE(5000, "Limit sensor %d redundancy fault", i);
+            }
+
+            // Check sensor health
+            if (!sensor_msg.healthy) {
+                sensor_faults++;
+                all_healthy = false;
+                PX4_WARN_THROTTLE(5000, "Limit sensor %d unhealthy", i);
+            }
+        } else {
+            // Check for timeout (no recent messages)
+            if (current_time - sensor.last_update_time > 1_s && sensor.last_update_time > 0) {
+                sensor.timeout = true;
+                timeout_faults++;
+                all_healthy = false;
+                PX4_WARN_THROTTLE(10000, "Limit sensor %d timeout", i);
+            }
+        }
+    }
+
+    // Update monitoring state
+    _limit_sensor_monitor.total_sensor_faults = sensor_faults;
+    _limit_sensor_monitor.redundancy_faults = redundancy_faults;
+    _limit_sensor_monitor.timeout_faults = timeout_faults;
+    _limit_sensor_monitor.system_healthy = all_healthy;
+
+    // Calculate health score
+    float health_penalty = (float)(sensor_faults + redundancy_faults + timeout_faults) / 8.0f;
+    _limit_sensor_monitor.sensor_health_score = math::max(0.0f, 1.0f - health_penalty);
+
+    // Check for zeroing mode (safety override conditions)
+    system_safety_s safety_msg;
+    if (_system_safety_pub.get_state() != nullptr) {
+        // Access published safety state to check mode
+        _limit_sensor_monitor.zeroing_mode_active =
+            (_safety_state.current_mode == SAFETY_OVERRIDE) ||
+            (_safety_permits.emergency_override_permitted);
+
+        if (_limit_sensor_monitor.zeroing_mode_active) {
+            _limit_sensor_monitor.last_zeroing_time = current_time;
+        }
+    }
+
+    // Set fault flags based on limit sensor issues
+    if (sensor_faults > 2 || redundancy_faults > 1 || timeout_faults > 2) {
+        _safety_state.active_faults |= FAULT_LIMIT_SENSOR;
+        _safety_state.active_faults |= FAULT_SENSOR;
+        PX4_WARN_THROTTLE(5000, "Limit sensor system degraded: faults=%d, redundancy=%d, timeouts=%d",
+                         sensor_faults, redundancy_faults, timeout_faults);
+    } else {
+        _safety_state.active_faults &= ~FAULT_LIMIT_SENSOR;
+    }
+
+    // Log critical limit sensor events
+    for (uint8_t i = 0; i < 8; i++) {
+        auto& sensor = _limit_sensor_monitor.sensors[i];
+
+        // Log limit activations for critical sensors (boom/bucket limits)
+        if (sensor.state && sensor.healthy &&
+           (sensor.sensor_type == 2 || sensor.sensor_type == 3)) { // boom min/max
+            PX4_INFO_THROTTLE(2000, "Boom limit sensor %d activated (type %d)",
+                             i, sensor.sensor_type);
+        }
+        if (sensor.state && sensor.healthy &&
+           (sensor.sensor_type == 0 || sensor.sensor_type == 1)) { // bucket min/max
+            PX4_INFO_THROTTLE(2000, "Bucket limit sensor %d activated (type %d)",
+                             i, sensor.sensor_type);
+        }
+    }
+
+    PX4_DEBUG("Limit sensor monitoring: healthy=%s, faults=%d, health_score=%.2f",
+             all_healthy ? "yes" : "no", sensor_faults, _limit_sensor_monitor.sensor_health_score);
+}
+
+void SafetyManager::update_safety_mode()
+{
+    uint64_t current_time = hrt_absolute_time();
+    bool mode_changed = false;
+
+    // Check for zeroing mode activation via vehicle commands
+    vehicle_command_s cmd;
+    if (_vehicle_command_sub.copy(&cmd)) {
+        // Process zeroing commands (bucket zeroing = command 1000, boom zeroing = command 1001)
+        if (cmd.command == 1000 || cmd.command == 1001) {  // Custom zeroing commands
+            if (cmd.param1 == 1.0f) {  // param1 = 1 means start zeroing
+                if (_safety_state.current_mode != SAFETY_OVERRIDE) {
+                    _safety_state.current_mode = SAFETY_OVERRIDE;
+                    _safety_permits.emergency_override_permitted = true;
+                    mode_changed = true;
+                    PX4_INFO("Zeroing mode activated for %s (command %d)",
+                           (cmd.command == 1000) ? "bucket" : "boom", (int)cmd.command);
+                }
+            } else if (cmd.param1 == 0.0f) {  // param1 = 0 means stop zeroing
+                if (_safety_state.current_mode == SAFETY_OVERRIDE) {
+                    _safety_state.current_mode = SAFETY_MONITORING;
+                    _safety_permits.emergency_override_permitted = false;
+                    mode_changed = true;
+                    PX4_INFO("Zeroing mode deactivated for %s (command %d)",
+                           (cmd.command == 1000) ? "bucket" : "boom", (int)cmd.command);
+                }
+            }
+        }
+
+        // Handle emergency override commands
+        if (cmd.command == MAV_CMD_DO_SET_MODE && cmd.param1 == MAV_MODE_FLAG_SAFETY_ARMED) {
+            if (_safety_state.current_mode != SAFETY_OVERRIDE) {
+                _safety_state.current_mode = SAFETY_OVERRIDE;
+                _safety_permits.emergency_override_permitted = true;
+                mode_changed = true;
+                PX4_WARN("Emergency safety override activated");
+            }
+        }
+
+        // Handle return to normal mode
+        if (cmd.command == MAV_CMD_DO_SET_MODE && cmd.param1 == MAV_MODE_FLAG_AUTO_ENABLED) {
+            if (_safety_state.current_mode == SAFETY_OVERRIDE) {
+                _safety_state.current_mode = SAFETY_MONITORING;
+                _safety_permits.emergency_override_permitted = false;
+                mode_changed = true;
+                PX4_INFO("Returning to normal monitoring mode");
+            }
+        }
+    }
+
+    // Auto-timeout for zeroing mode (safety feature)
+    if (_safety_state.current_mode == SAFETY_OVERRIDE &&
+        _limit_sensor_monitor.last_zeroing_time > 0 &&
+        current_time - _limit_sensor_monitor.last_zeroing_time > 30_s) {  // 30 second timeout
+
+        _safety_state.current_mode = SAFETY_MONITORING;
+        _safety_permits.emergency_override_permitted = false;
+        mode_changed = true;
+        PX4_WARN("Zeroing mode timed out after 30 seconds - returning to monitoring");
+    }
+
+    // Update safety override state based on current mode
+    _safety_state.safety_override_active = (_safety_state.current_mode == SAFETY_OVERRIDE);
+
+    // Update limit sensor monitoring state
+    _limit_sensor_monitor.zeroing_mode_active = _safety_state.safety_override_active;
+
+    // Log mode changes
+    if (mode_changed) {
+        const char* mode_str = (_safety_state.current_mode == SAFETY_OVERRIDE) ? "OVERRIDE" : "MONITORING";
+        PX4_INFO("Safety mode changed to %s", mode_str);
+
+        // Reset the zeroing time when entering override mode
+        if (_safety_state.current_mode == SAFETY_OVERRIDE) {
+            _limit_sensor_monitor.last_zeroing_time = current_time;
+        }
+    }
+
+    PX4_DEBUG("Safety mode: %s, override_active: %s, zeroing_active: %s",
+             (_safety_state.current_mode == SAFETY_OVERRIDE) ? "OVERRIDE" : "MONITORING",
+             _safety_state.safety_override_active ? "yes" : "no",
+             _limit_sensor_monitor.zeroing_mode_active ? "yes" : "no");
 }
 
 void SafetyManager::assess_overall_safety()
@@ -907,6 +1180,12 @@ void SafetyManager::calculate_risk_factors()
     if (_terrain_monitor.slope_limit_exceeded) risk += 0.5f;
     if (_terrain_monitor.poor_traction) risk += 0.3f;
     if (_terrain_monitor.unsafe_terrain) risk += 0.2f;
+
+    // Limit sensor-related risk
+    if (_limit_sensor_monitor.sensor_health_score < 0.7f) risk += 0.3f;
+    if (_limit_sensor_monitor.redundancy_faults > 1) risk += 0.4f;
+    if (_limit_sensor_monitor.timeout_faults > 2) risk += 0.5f;
+    if (!_limit_sensor_monitor.system_healthy) risk += 0.2f;
 
     _safety_state.overall_risk_factor = math::min(risk, 1.0f);
 }
@@ -1006,18 +1285,19 @@ bool SafetyManager::check_load_operation_permit()
     return true;
 }
 
-bool SafetyManager::check_hydraulic_operation_permit()
+bool SafetyManager::check_electric_actuator_permit()
 {
-    // Hydraulic operations not permitted if:
-    // - Hydraulic system faults
+    // Electric actuator operations not permitted if:
+    // - Electric actuator system faults
     // - Overheating conditions
-    // - Low pressure conditions
+    // - Voltage/current limit conditions
     // - Emergency conditions
 
-    if (_hydraulic_monitor.pressure_fault || _hydraulic_monitor.temperature_fault) return false;
-    if (_hydraulic_monitor.pump_fault || _hydraulic_monitor.reservoir_low) return false;
+    if (_electric_actuator_monitor.voltage_fault || _electric_actuator_monitor.current_fault) return false;
+    if (_electric_actuator_monitor.temperature_fault) return false;
+    if (_electric_actuator_monitor.controller_fault || _electric_actuator_monitor.power_supply_fault) return false;
     if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
-    if (_hydraulic_monitor.hydraulic_health_score < 0.5f) return false;
+    if (_electric_actuator_monitor.actuator_health_score < 0.5f) return false;
 
     return true;
 }
@@ -1027,12 +1307,12 @@ bool SafetyManager::check_boom_operation_permit()
     // Boom operations not permitted if:
     // - Boom system faults
     // - Boom angle limits exceeded
-    // - Hydraulic system issues
+    // - Electric actuator system issues
     // - Unstable conditions
 
-    if (_boom_monitor.boom_hydraulic_fault || _boom_monitor.boom_encoder_fault) return false;
+    if (_boom_monitor.boom_motor_fault || _boom_monitor.boom_encoder_fault) return false;
     if (_boom_monitor.boom_limit_exceeded) return false;
-    if (!check_hydraulic_operation_permit()) return false;
+    if (!check_electric_actuator_permit()) return false;
     if (_stability_monitor.stability_warning) return false;
     if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
 
@@ -1044,12 +1324,12 @@ bool SafetyManager::check_bucket_operation_permit()
     // Bucket operations not permitted if:
     // - Bucket system faults
     // - Bucket angle limits exceeded
-    // - Hydraulic system issues
+    // - Electric actuator system issues
     // - Unstable conditions
 
-    if (_bucket_monitor.bucket_hydraulic_fault || _bucket_monitor.bucket_encoder_fault) return false;
+    if (_bucket_monitor.bucket_motor_fault || _bucket_monitor.bucket_encoder_fault) return false;
     if (_bucket_monitor.bucket_limit_exceeded) return false;
-    if (!check_hydraulic_operation_permit()) return false;
+    if (!check_electric_actuator_permit()) return false;
     if (_stability_monitor.stability_warning) return false;
     if (_safety_state.current_level >= SAFETY_CRITICAL) return false;
 

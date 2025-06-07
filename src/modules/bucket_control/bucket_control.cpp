@@ -21,6 +21,12 @@ bool BucketControl::init()
     // Get motor and sensor indices
     _motor_index = _param_motor_index.get();
 
+    // Get limit sensor instance IDs
+    uint8_t coarse_instance = _param_limit_coarse_idx.get();
+    uint8_t fine_instance = _param_limit_fine_idx.get();
+
+    PX4_INFO("Using limit sensors: coarse=%d, fine=%d", coarse_instance, fine_instance);
+
     // Validate geometry
     if (_kinematics.bellcrank_length <= 0 || _kinematics.coupler_length <= 0) {
         PX4_ERR("Invalid linkage lengths");
@@ -490,18 +496,18 @@ void BucketControl::readEncoderFeedback()
 
 bool BucketControl::checkLimitSwitches()
 {
-    // Read GPIO states from sensor_gpio topic
-    sensor_gpio_s gpio_state;
-    if (_sensor_gpio_sub.copy(&gpio_state)) {
-        uint8_t gpio_coarse_idx = _param_gpio_coarse_idx.get();  // Coarse limit (down)
-        uint8_t gpio_fine_idx = _param_gpio_fine_idx.get();      // Fine limit (up)
+    // Read limit sensor states from limit_sensor topic
+    limit_sensor_s limit_sensor_data;
 
-        if (gpio_coarse_idx < sensor_gpio_s::GPIO_COUNT) {
-            _limit_switch_coarse = gpio_state.levels & (1 << gpio_coarse_idx);
-        }
+    uint8_t coarse_instance = _param_limit_coarse_idx.get();
+    uint8_t fine_instance = _param_limit_fine_idx.get();
 
-        if (gpio_fine_idx < sensor_gpio_s::GPIO_COUNT) {
-            _limit_switch_fine = gpio_state.levels & (1 << gpio_fine_idx);
+    // Check for updated limit sensor data
+    while (_limit_sensor_sub.update(&limit_sensor_data)) {
+        if (limit_sensor_data.instance == coarse_instance) {
+            _limit_switch_coarse = limit_sensor_data.state;
+        } else if (limit_sensor_data.instance == fine_instance) {
+            _limit_switch_fine = limit_sensor_data.state;
         }
     }
 
