@@ -12,27 +12,32 @@ int SteeringController::print_usage(const char *reason)
     PRINT_MODULE_DESCRIPTION(
         R"DESCR_STR(
 ### Description
-Steering controller for articulated wheel loader.
-Controls steering servo via ST3125 servo controller with position feedback.
+Simplified steering controller for articulated wheel loader with ST3125 servo.
+
+Features:
+- Direct position commands to ST3125 (servo handles internal PID)
+- Slip compensation using PredictiveTraction data
+- Feedforward control for improved dynamic response
+- Rate limiting and safety monitoring
 
 ### Implementation
 The module runs at 50Hz and provides:
-- PID position control with rate limiting
-- Articulation angle feedback monitoring
-- Safety monitoring and current limiting
-- Controller health reporting
+- Direct servo position control via RoboticServoCommand
+- Real-time servo feedback monitoring via ServoFeedback
+- Advanced slip compensation using slip estimator data
+- Safety monitoring and emergency stop functionality
 
 ### Examples
 Start steering controller:
 $ steering_controller start
 
-Run steering test:
-$ steering_controller test
+Check status:
+$ steering_controller status
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("steering_controller", "controller");
     PRINT_MODULE_USAGE_COMMAND("start");
-    PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Run steering test sequence");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print status information");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;
@@ -45,9 +50,8 @@ int SteeringController::custom_command(int argc, char *argv[])
         return 1;
     }
 
-    if (!strcmp(argv[0], "test")) {
-        get_instance()->request_test();
-        return 0;
+    if (!strcmp(argv[0], "status")) {
+        return get_instance()->print_status();
     }
 
     return print_usage("unknown command");
@@ -55,22 +59,16 @@ int SteeringController::custom_command(int argc, char *argv[])
 
 int SteeringController::task_spawn(int argc, char *argv[])
 {
-    SteeringController *controller = new SteeringController();
+    _task_id = px4_task_spawn_cmd("steering_controller",
+                                  SCHED_DEFAULT,
+                                  SCHED_PRIORITY_FAST_DRIVER,
+                                  2048,
+                                  (px4_main_t)&run_trampoline,
+                                  (char *const *)argv);
 
-    if (!controller) {
-        PX4_ERR("alloc failed");
-        return -1;
-    }
-
-    _object.store(controller);
-    _task_id = task_id_is_work_queue;
-
-    if (!controller->init()) {
-        PX4_ERR("init failed");
-        delete controller;
-        _object.store(nullptr);
+    if (_task_id < 0) {
         _task_id = -1;
-        return -1;
+        return -errno;
     }
 
     return 0;
