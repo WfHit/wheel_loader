@@ -26,26 +26,26 @@ PARAM_DEFINE_INT32(BCT_MOT_IDX, 0);
 PARAM_DEFINE_INT32(BCT_ENC_IDX, 0);
 
 /**
- * Bucket coarse limit switch GPIO
+ * Bucket coarse limit sensor instance
  *
- * GPIO index for the coarse limit switch at bucket down position
+ * Limit sensor instance ID for the coarse limit at bucket down position
  *
  * @group Bucket Control
  * @min 0
- * @max 31
+ * @max 7
  */
-PARAM_DEFINE_INT32(BCT_GPIO_COARSE, 0);
+PARAM_DEFINE_INT32(BCT_LIM_COARSE, 0);
 
 /**
- * Bucket fine limit switch GPIO
+ * Bucket fine limit sensor instance
  *
- * GPIO index for the fine limit switch at bucket up position
+ * Limit sensor instance ID for the fine limit at bucket up position
  *
  * @group Bucket Control
  * @min 0
- * @max 31
+ * @max 7
  */
-PARAM_DEFINE_INT32(BCT_GPIO_FINE, 1);
+PARAM_DEFINE_INT32(BCT_LIM_FINE, 1);
 
 /**
  * Actuator base attachment X

@@ -2,11 +2,10 @@
 
 uint64 timestamp         # time since system start (microseconds)
 
-bool master_enable       # actual hardware enable pin state
-bool emergency_stop      # system-wide emergency stop
-float32 board_temp       # board temperature
+bool enabled             # System enable state
+bool emergency_stop      # Emergency stop active
+float32 temperature      # Board temperature
+bool safety_override     # Safety system allowing limit override
 
-uint8 ch0_request        # channel 0 enable request state
-uint8 ch1_request        # channel 1 enable request state
-uint8 ch0_state          # channel 0 state
-uint8 ch1_state          # channel 1 state
+# Per-channel status
+hbridge_channel[2] channel         # Status for each channel

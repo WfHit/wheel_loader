@@ -37,5 +37,18 @@ fi
 # Start H-bridge driver for bucket actuator
 drv8701 start
 
+# Start limit sensor instances for hydraulic component monitoring
+echo "Starting limit sensor instances"
+for instance in $(seq 0 7)
+do
+	# Check if this instance is enabled
+	instance_enable_param="LS${instance}_ENABLE"
+	if param compare $instance_enable_param 1
+	then
+		echo "Starting limit sensor instance $instance"
+		limit_sensor start -i $instance
+	fi
+done
+
 # Initialize front wheel motor control
 echo "Initializing front wheel motor control"

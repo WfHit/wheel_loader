@@ -13,7 +13,7 @@
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/actuator_motors.h>
 #include <uORB/topics/wheel_encoders.h>
-#include <uORB/topics/sensor_gpio.h>
+#include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 
 using namespace time_literals;
@@ -141,7 +141,7 @@ private:
     uORB::Subscription _bucket_cmd_sub{ORB_ID(bucket_command)};
     uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
     uORB::Subscription _wheel_encoders_sub{ORB_ID(wheel_encoders)};
-    uORB::Subscription _sensor_gpio_sub{ORB_ID(sensor_gpio)};
+    uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
     // uORB publications
@@ -155,8 +155,8 @@ private:
     DEFINE_PARAMETERS(
         (ParamInt<px4::params::BCT_MOT_IDX>) _param_motor_index,
         (ParamInt<px4::params::BCT_ENC_IDX>) _param_encoder_index,
-        (ParamInt<px4::params::BCT_GPIO_COARSE>) _param_gpio_coarse_idx,
-        (ParamInt<px4::params::BCT_GPIO_FINE>) _param_gpio_fine_idx,
+        (ParamInt<px4::params::BCT_LIM_COARSE>) _param_limit_coarse_idx,
+        (ParamInt<px4::params::BCT_LIM_FINE>) _param_limit_fine_idx,
 
         // Actuator attachment point (relative to chassis/boom base)
         (ParamFloat<px4::params::BCT_ACT_BASE_X>) _param_actuator_base_x,

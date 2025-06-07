@@ -29,3 +29,16 @@ then
 		echo "Warning: Quadrature encoder initialization failed"
 	fi
 fi
+
+# Start limit sensor instances for hydraulic component monitoring
+echo "Starting limit sensor instances"
+for instance in $(seq 0 7)
+do
+	# Check if this instance is enabled
+	instance_enable_param="LS${instance}_ENABLE"
+	if param compare $instance_enable_param 1
+	then
+		echo "Starting limit sensor instance $instance"
+		limit_sensor start -i $instance
+	fi
+done

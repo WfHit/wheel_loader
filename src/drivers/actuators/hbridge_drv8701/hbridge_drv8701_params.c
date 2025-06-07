@@ -158,3 +158,103 @@ PARAM_DEFINE_INT32(HBRDG_GPIO_FLT0, 103);
  * @group H-Bridge DRV8701
  */
 PARAM_DEFINE_INT32(HBRDG_GPIO_FLT1, 104);
+
+/**
+ * H-Bridge Channel 0 Minimum Limit Sensor Instance
+ *
+ * Limit sensor instance for channel 0 minimum position limit.
+ * Set to 255 to disable limit checking.
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MIN, 255);
+
+/**
+ * H-Bridge Channel 0 Maximum Limit Sensor Instance
+ *
+ * Limit sensor instance for channel 0 maximum position limit.
+ * Set to 255 to disable limit checking.
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MAX, 255);
+
+/**
+ * H-Bridge Channel 1 Minimum Limit Sensor Instance
+ *
+ * Limit sensor instance for channel 1 minimum position limit.
+ * Set to 255 to disable limit checking.
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MIN, 255);
+
+/**
+ * H-Bridge Channel 1 Maximum Limit Sensor Instance
+ *
+ * Limit sensor instance for channel 1 maximum position limit.
+ * Set to 255 to disable limit checking.
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MAX, 255);
+
+/**
+ * H-Bridge Channel 0 Allow Into Min Limit
+ *
+ * Allow motion into minimum limit for channel 0.
+ * Useful for zeroing operations.
+ *
+ * @boolean
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MIN, 0);
+
+/**
+ * H-Bridge Channel 0 Allow Into Max Limit
+ *
+ * Allow motion into maximum limit for channel 0.
+ * Useful for calibration operations.
+ *
+ * @boolean
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MAX, 0);
+
+/**
+ * H-Bridge Channel 1 Allow Into Min Limit
+ *
+ * Allow motion into minimum limit for channel 1.
+ * Useful for zeroing operations.
+ *
+ * @boolean
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH1_INTO_MIN, 0);
+
+/**
+ * H-Bridge Channel 1 Allow Into Max Limit
+ *
+ * Allow motion into maximum limit for channel 1.
+ * Useful for calibration operations.
+ *
+ * @boolean
+ * @group H-Bridge DRV8701
+ */
+PARAM_DEFINE_INT32(HBRDG_CH1_INTO_MAX, 0);
