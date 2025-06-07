@@ -31,9 +31,6 @@
  *
  ****************************************************************************/
 
-#include <px4_platform_common/px4_config.h>
-#include <lib/parameters/param.h>
-
 /**
  * Quadrature Encoder update rate
  *
@@ -54,7 +51,7 @@ PARAM_DEFINE_INT32(QE_UPDATE_RATE, 100);
  *
  * @group Quadrature Encoder
  * @min 0
- * @max 8
+ * @max 4
  */
 PARAM_DEFINE_INT32(QE_NUM_ENCODERS, 0);
 
@@ -142,138 +139,3 @@ PARAM_DEFINE_INT32(QE_INVERT_2, 0);
  * @boolean
  */
 PARAM_DEFINE_INT32(QE_INVERT_3, 0);
-
-/**
- * Enable wheel odometry publishing
- *
- * Enable publishing of computed vehicle odometry from wheel encoder data.
- * Only enable this for wheel applications.
- *
- * @group Quadrature Encoder
- * @boolean
- */
-PARAM_DEFINE_INT32(QE_ENABLE_ODOM, 0);
-
-/**
- * Wheel base distance (for odometry)
- *
- * Distance between left and right wheels in meters.
- * Used for differential drive odometry calculations when QE_ENABLE_ODOM is true.
- *
- * @group Quadrature Encoder
- * @unit m
- * @min 0.1
- * @max 5.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_WHEEL_BASE, 1.5f);
-
-/**
- * Wheel radius (for odometry)
- *
- * Radius of the wheels in meters.
- * Used to convert encoder pulses to linear distance when QE_ENABLE_ODOM is true.
- *
- * @group Quadrature Encoder
- * @unit m
- * @min 0.05
- * @max 1.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_WHEEL_RADIUS, 0.3f);
-
-/**
- * Encoder 0 type
- *
- * Type of encoder 0: 0=Rotary (wheel/motor), 1=Linear (actuator)
- *
- * @group Quadrature Encoder
- * @value 0 Rotary
- * @value 1 Linear
- */
-PARAM_DEFINE_INT32(QE_TYPE_0, 0);
-
-/**
- * Encoder 1 type
- *
- * Type of encoder 1: 0=Rotary (wheel/motor), 1=Linear (actuator)
- *
- * @group Quadrature Encoder
- * @value 0 Rotary
- * @value 1 Linear
- */
-PARAM_DEFINE_INT32(QE_TYPE_1, 0);
-
-/**
- * Encoder 2 type
- *
- * Type of encoder 2: 0=Rotary (wheel/motor), 1=Linear (actuator)
- *
- * @group Quadrature Encoder
- * @value 0 Rotary
- * @value 1 Linear
- */
-PARAM_DEFINE_INT32(QE_TYPE_2, 0);
-
-/**
- * Encoder 3 type
- *
- * Type of encoder 3: 0=Rotary (wheel/motor), 1=Linear (actuator)
- *
- * @group Quadrature Encoder
- * @value 0 Rotary
- * @value 1 Linear
- */
-PARAM_DEFINE_INT32(QE_TYPE_3, 0);
-
-/**
- * Encoder 0 gear ratio / screw pitch
- *
- * For rotary encoders: gear ratio (output/input)
- * For linear encoders: screw pitch in mm per revolution
- *
- * @group Quadrature Encoder
- * @min 0.001
- * @max 1000.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_GEAR_RATIO_0, 1.0f);
-
-/**
- * Encoder 1 gear ratio / screw pitch
- *
- * For rotary encoders: gear ratio (output/input)
- * For linear encoders: screw pitch in mm per revolution
- *
- * @group Quadrature Encoder
- * @min 0.001
- * @max 1000.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_GEAR_RATIO_1, 1.0f);
-
-/**
- * Encoder 2 gear ratio / screw pitch
- *
- * For rotary encoders: gear ratio (output/input)
- * For linear encoders: screw pitch in mm per revolution
- *
- * @group Quadrature Encoder
- * @min 0.001
- * @max 1000.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_GEAR_RATIO_2, 1.0f);
-
-/**
- * Encoder 3 gear ratio / screw pitch
- *
-  * For rotary encoders: gear ratio (output/input)
- * For linear encoders: screw pitch in mm per revolution
- *
- * @group Quadrature Encoder
- * @min 0.001
- * @max 1000.0
- * @decimal 3
- */
-PARAM_DEFINE_FLOAT(QE_GEAR_RATIO_3, 1.0f);
