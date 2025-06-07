@@ -44,7 +44,6 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/vehicle_odometry.h>
 
 #include <nuttx/sensors/qencoder.h>
 
@@ -54,10 +53,8 @@ using namespace time_literals;
  * @brief GPIO-based quadrature encoder driver
  *
  * This driver interfaces with the NuttX GPIO-based quadrature encoder framework
- * to provide encoder data for various applications including wheels, rotary actuators,
- * linear actuators, and other position sensors. It supports multiple encoder instances
- * and publishes raw encoder data. Optional odometry calculation can be enabled for
- * wheel applications.
+ * to provide encoder data for rotary encoders. It supports multiple encoder instances
+ * and publishes raw encoder data.
  */
 class QuadEncoder : public ModuleBase<QuadEncoder>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -82,9 +79,21 @@ public:
 	static int task_spawn(int argc, char *argv[]);
 
 	/**
+	 * @brief Instantiate specific instance
+	 * @param instance Instance ID
+	 * @return QuadEncoder instance or nullptr
+	 */
+	static QuadEncoder *instantiate(int instance);
+
+	/**
 	 * @brief Print module usage information
 	 */
 	static void usage(const char *reason = nullptr);
+
+	/**
+	 * @brief Print module usage information
+	 */
+	static int print_usage(const char *reason = nullptr);
 
 	/**
 	 * @brief Initialize the driver
@@ -122,12 +131,7 @@ private:
 	void read_encoders();
 
 	/**
-	 * @brief Calculate and publish odometry
-	 */
-	void calculate_odometry();
-
-	/**
-	 * @brief Reset encoder positions and odometry
+	 * @brief Reset encoder positions
 	 */
 	void reset_encoders();
 
@@ -153,18 +157,7 @@ private:
 		(ParamBool<px4::params::QE_INVERT_0>) _param_invert_0,
 		(ParamBool<px4::params::QE_INVERT_1>) _param_invert_1,
 		(ParamBool<px4::params::QE_INVERT_2>) _param_invert_2,
-		(ParamBool<px4::params::QE_INVERT_3>) _param_invert_3,
-		(ParamInt<px4::params::QE_TYPE_0>) _param_type_0,
-		(ParamInt<px4::params::QE_TYPE_1>) _param_type_1,
-		(ParamInt<px4::params::QE_TYPE_2>) _param_type_2,
-		(ParamInt<px4::params::QE_TYPE_3>) _param_type_3,
-		(ParamFloat<px4::params::QE_GEAR_RATIO_0>) _param_gear_ratio_0,
-		(ParamFloat<px4::params::QE_GEAR_RATIO_1>) _param_gear_ratio_1,
-		(ParamFloat<px4::params::QE_GEAR_RATIO_2>) _param_gear_ratio_2,
-		(ParamFloat<px4::params::QE_GEAR_RATIO_3>) _param_gear_ratio_3,
-		(ParamBool<px4::params::QE_ENABLE_ODOM>) _param_enable_odom,
-		(ParamFloat<px4::params::QE_WHEEL_BASE>) _param_wheel_base,
-		(ParamFloat<px4::params::QE_WHEEL_RADIUS>) _param_wheel_radius
+		(ParamBool<px4::params::QE_INVERT_3>) _param_invert_3
 	)
 
 	// Instance configuration
@@ -172,21 +165,20 @@ private:
 	bool _is_running{false};
 
 	// Device file descriptors
-	int _fd_encoders[8]{-1, -1, -1, -1, -1, -1, -1, -1}; // Up to 8 encoders
-	static constexpr int MAX_ENCODERS = 8;
+	int _fd_encoders[MAX_ENCODERS]{-1, -1, -1, -1}; // Up to 4 encoders
+	static constexpr int MAX_ENCODERS = 4;
+	static constexpr int MAX_INSTANCES = 4; // Support up to 4 module instances
 	int _num_active_encoders{4}; // Default to 4 for compatibility
 
 	// Encoder data
 	struct encoder_data_s {
 		int32_t position;
-		float velocity_rad_s;     // rad/s for rotary, m/s for linear
-		float angle_rad;          // rad for rotary, m for linear (distance)
+		float velocity_rad_s;     // rad/s
+		float angle_rad;          // rad (cumulative angle)
 		uint64_t timestamp;
 		bool valid;
-		int32_t pulses_per_rev;   // PPR for rotary, pulses per mm for linear
+		int32_t pulses_per_rev;   // PPR
 		bool invert_direction;
-		uint8_t encoder_type;     // 0=rotary, 1=linear
-		float gear_ratio;         // gear ratio for rotary, screw pitch for linear
 	};
 	encoder_data_s _encoder_data[MAX_ENCODERS]{};
 
@@ -194,16 +186,11 @@ private:
 	int32_t _prev_position[MAX_ENCODERS]{};
 	hrt_abstime _prev_timestamp{0};
 
-	// Odometry state
-	double _position_x{0.0};
-	double _position_y{0.0};
-	double _heading{0.0};
-	double _linear_velocity{0.0};
-	double _angular_velocity{0.0};
+	// Publishers - use orb_advert_t for multi-instance
+	orb_advert_t _sensor_quad_encoder_pub{nullptr};
 
-	// Publishers
-	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_pub{ORB_ID(sensor_quad_encoder)};
-	uORB::Publication<vehicle_odometry_s> _vehicle_odometry_pub{ORB_ID(vehicle_odometry)};
+	// Instance-specific topic instances
+	int _sensor_encoder_instance{-1};
 
 	// Subscribers
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
@@ -211,7 +198,6 @@ private:
 	// Performance counters
 	perf_counter_t _loop_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
 	perf_counter_t _read_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
-	perf_counter_t _odom_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": odometry")};
 
 	// Statistics
 	uint32_t _error_count{0};
@@ -221,7 +207,6 @@ private:
 	// Configuration
 	static constexpr uint32_t SCHEDULE_INTERVAL{10_ms}; // 100 Hz default
 	static constexpr const char *ENCODER_DEVICE_PATHS[MAX_ENCODERS] = {
-		"/dev/qe0", "/dev/qe1", "/dev/qe2", "/dev/qe3",
-		"/dev/qe4", "/dev/qe5", "/dev/qe6", "/dev/qe7"
+		"/dev/qe0", "/dev/qe1", "/dev/qe2", "/dev/qe3"
 	};
 };
