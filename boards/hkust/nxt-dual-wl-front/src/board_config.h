@@ -151,12 +151,14 @@
  * RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases)
  * TELEM1 port pins (PD5/PD6) - Quad encoder 2 from motor encoder (A/B phases)
  * TELEM3 port - RX7 pin (PC11) used as DRV8701 H-bridge enable signal
- * GPS1 port - Dual interface: I2C1 (PB6/PB7) for AS5600 magnetic encoder + UART1 (PA9/PA10) for proxy client
+ * I2C4 (PD12/PD13) - AS5600 magnetic encoder
+ * UART1 (PA9/PA10) - Proxy client communication
  * PWM1-4 - DRV8701 H-bridge control (direction and PWM signals)
- * PWM5-8 - Limit switch inputs
+ * PWM5-6 - Bucket load limit switches
+ * PWM7-8 - Bucket dump limit switches
  */
 
-/* Quadrature Encoder GPIO Pins for Motor Encoders */
+/* GPIO definitions for QEncoder driver */
 #define QENCODER1_A_GPIO                   /* PC6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN6)
 #define QENCODER1_B_GPIO                   /* PC7 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN7)
 #define QENCODER2_A_GPIO                   /* PD5 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTD|GPIO_PIN5)
@@ -194,24 +196,22 @@
 #define CONFIG_BOARD_NXT_QENCODER 1
 #define BOARD_HAS_QENCODER 1
 
-/* GPS1 Port Dual Interface Configuration */
-/* I2C1 Interface for AS5600 Magnetic Rotary Encoder */
-#define GPS1_I2C_BUS                       1           /* I2C1 bus */
-#define GPS1_I2C_SCL_GPIO                  /* PB6 */ (GPIO_I2C1_SCL)
-#define GPS1_I2C_SDA_GPIO                  /* PB7 */ (GPIO_I2C1_SDA)
-#define AS5600_I2C_BUS                     GPS1_I2C_BUS
+/* AS5600 I2C Configuration */
+/* I2C4 Interface for AS5600 Magnetic Rotary Encoder */
+#define AS5600_I2C_BUS                     4           /* I2C4 bus */
+#define AS5600_I2C_SCL_GPIO                /* PD12 */ (GPIO_I2C4_SCL)
+#define AS5600_I2C_SDA_GPIO                /* PD13 */ (GPIO_I2C4_SDA)
 #define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
 
 /* UART1 Interface for Proxy Client */
-#define GPS1_UART_PORT                     "/dev/ttyS0" /* USART1 for proxy client */
-#define GPS1_UART_TX_GPIO                  /* PA9 */ (GPIO_USART1_TX)
-#define GPS1_UART_RX_GPIO                  /* PA10*/ (GPIO_USART1_RX)
-#define PROXY_CLIENT_UART_PORT             GPS1_UART_PORT
+#define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
+#define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
+#define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
 
-/* GPS1 Dual Interface Support */
-#define BOARD_HAS_GPS1_DUAL_INTERFACE      1
-#define BOARD_GPS1_I2C_ENABLED             1
-#define BOARD_GPS1_UART_ENABLED            1
+/* Interface Support */
+#define BOARD_HAS_AS5600_I2C               1
+#define BOARD_AS5600_I2C_ENABLED           1
+#define BOARD_PROXY_CLIENT_UART_ENABLED    1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE9) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -224,11 +224,11 @@
 #define DRV8701_PWM2_TIMER                 Timer::Timer1
 #define DRV8701_PWM2_CHANNEL               Timer::Channel3   /* PE13 */
 
-/* PWM5-8 (PB10, PB11, PB0, PB1) - Limit switch inputs */
-#define LIMIT_SWITCH1_GPIO                 /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)
-#define LIMIT_SWITCH2_GPIO                 /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)
-#define LIMIT_SWITCH3_GPIO                 /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)
-#define LIMIT_SWITCH4_GPIO                 /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)
+/* PWM5-8 - Limit switch inputs for bucket operations */
+#define BUCKET_LOAD_LIMIT_SW1_GPIO         /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
+#define BUCKET_LOAD_LIMIT_SW2_GPIO         /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
+#define BUCKET_DUMP_LIMIT_SW1_GPIO         /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
+#define BUCKET_DUMP_LIMIT_SW2_GPIO         /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
 
 /* TELEM3 RX7 - Enable signal for DRV8701 H-bridge */
 #define DRV8701_ENABLE_GPIO                /* PC11 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN11)
@@ -247,17 +247,17 @@
 		QENCODER1_B_GPIO, \
 		QENCODER2_A_GPIO, \
 		QENCODER2_B_GPIO, \
-		GPS1_I2C_SCL_GPIO, \
-		GPS1_I2C_SDA_GPIO, \
-		GPS1_UART_TX_GPIO, \
-		GPS1_UART_RX_GPIO, \
+		AS5600_I2C_SCL_GPIO, \
+		AS5600_I2C_SDA_GPIO, \
+		PROXY_CLIENT_UART_TX_GPIO, \
+		PROXY_CLIENT_UART_RX_GPIO, \
 		DRV8701_DIR1_GPIO, \
 		DRV8701_DIR2_GPIO, \
 		DRV8701_ENABLE_GPIO, \
-		LIMIT_SWITCH1_GPIO, \
-		LIMIT_SWITCH2_GPIO, \
-		LIMIT_SWITCH3_GPIO, \
-		LIMIT_SWITCH4_GPIO, \
+		BUCKET_LOAD_LIMIT_SW1_GPIO, \
+		BUCKET_LOAD_LIMIT_SW2_GPIO, \
+		BUCKET_DUMP_LIMIT_SW1_GPIO, \
+		BUCKET_DUMP_LIMIT_SW2_GPIO, \
 	}
 
 #define BOARD_ENABLE_CONSOLE_BUFFER
