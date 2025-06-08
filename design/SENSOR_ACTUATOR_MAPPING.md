@@ -4,11 +4,11 @@ This document describes the correct sensor and actuator message mapping for the 
 
 ## Sensor Messages
 
-### AS5600 Magnetic Encoder
-- **Message**: `sensor_as5600`
-- **Usage**: Absolute angle measurement for steering and boom position
+### Magnetic Rotary Encoder
+- **Message**: `sensor_mag_encoder`
+- **Usage**: Absolute angle measurement for boom position
+- **Hardware**: AS5600-compatible magnetic rotary encoders
 - **Controllers using this**:
-  - SteeringController (for steering angle feedback)
   - BoomControl (for boom angle measurement)
 
 ### Quadrature Encoder
@@ -36,9 +36,9 @@ This document describes the correct sensor and actuator message mapping for the 
 
 ### ST3125 Servo
 - **Message**: `robotic_servo_command`
-- **Usage**: Smart servo control with internal PID
+- **Usage**: Smart servo control with internal PID and position feedback
 - **Controllers using this**:
-  - SteeringController (for steering servo control)
+  - SteeringController (for steering servo control with internal angle feedback)
 
 ## Updated Controller Mappings
 
@@ -60,12 +60,8 @@ uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
 ```
 
 ### 2. SteeringController
-**Added:**
-```cpp
-#include <uORB/topics/sensor_as5600.h>
-uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
-```
-**Already using**: `robotic_servo_command` ✓
+**Uses**: `robotic_servo_command` ✓ (servo provides internal position feedback)
+**Note**: No external sensor needed - the ST3125 servo returns its own angle position
 
 ### 3. BoomControl
 **Before:**
@@ -76,8 +72,8 @@ uORB::SubscriptionData<sensor_mag_s> _as5600_sub{ORB_ID(sensor_mag)};
 
 **After:**
 ```cpp
-#include <uORB/topics/sensor_as5600.h>
-uORB::SubscriptionData<sensor_as5600_s> _as5600_sub{ORB_ID(sensor_as5600)};
+#include <uORB/topics/sensor_mag_encoder.h>
+uORB::SubscriptionData<sensor_mag_encoder_s> _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 ```
 **Already using**: `hbridge_cmd` ✓
 
@@ -114,20 +110,33 @@ void setMotorCommand(float command) {
 }
 ```
 
-### AS5600 Sensor Reading
+### Magnetic Encoder Reading
 ```cpp
-void readAS5600Angle() {
-    sensor_as5600_s sensor_data;
-    if (_sensor_as5600_sub.update(&sensor_data)) {
-        _current_angle_rad = sensor_data.angle;
-        _sensor_valid = (sensor_data.magnet_detected == 1) &&
-                       (sensor_data.magnet_too_strong == 0) &&
-                       (sensor_data.magnet_too_weak == 0);
+void readMagneticEncoder() {
+    sensor_mag_encoder_s encoder_data;
+    if (_mag_encoder_sub.update(&encoder_data)) {
+        _current_angle_rad = encoder_data.angle;
+        _sensor_valid = (encoder_data.magnet_detected == 1) &&
+                       (encoder_data.magnet_too_strong == 0) &&
+                       (encoder_data.magnet_too_weak == 0);
     }
 }
 ```
 
-### Quad Encoder Reading
+### Robotic Servo Reading (ST3125 internal feedback)
+```cpp
+void processServoFeedback() {
+    servo_feedback_s feedback{};
+    if (_servo_feedback_sub.update(&feedback)) {
+        if (feedback.id == ST3125_SERVO_ID) {
+            _current_angle_rad = feedback.position;
+            _current_velocity_rad_s = feedback.velocity;
+            _current_current_a = feedback.current;
+            _servo_feedback_valid = true;
+        }
+    }
+}
+```
 ```cpp
 void readQuadEncoder() {
     sensor_quad_encoder_s encoder_data;
@@ -146,7 +155,10 @@ void readQuadEncoder() {
 
 ## Next Steps
 
-1. Update the implementation files (.cpp) to match these header changes
-2. Test compilation with the new message types
-3. Verify parameter mappings for sensor/actuator indices
-4. Update any remaining references to old message types
+1. ✅ Update the implementation files (.cpp) to match these header changes
+2. ✅ Test compilation with the new message types
+3. ✅ Verify parameter mappings for sensor/actuator indices
+4. ✅ Update any remaining references to old message types
+5. Update steering controller to remove AS5600 sensor usage (ST3125 provides internal feedback)
+6. Test hardware integration with correct sensor/actuator assignments
+7. Validate control performance with new message mappings

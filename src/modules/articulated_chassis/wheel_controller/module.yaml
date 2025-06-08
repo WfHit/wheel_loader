@@ -1,4 +1,28 @@
 module_name: Wheel Controller
+
+parameters:
+    - group: Wheel Controller Hardware
+      definitions:
+        WC_HBRIDGE_CH:
+            description:
+                short: H-bridge channel for wheel motor
+                long: DRV8701 H-bridge channel (0 or 1) used for the wheel drive motor.
+            type: int32
+            min: 0
+            max: 1
+            default: 0
+            reboot_required: true
+
+        WC_ENC_INST:
+            description:
+                short: Wheel encoder instance
+                long: Quad encoder instance for wheel speed measurement.
+            type: int32
+            min: 0
+            max: 3
+            default: 0
+            reboot_required: true
+
 serial_config:
     - command: wheel_controller start -i 0 -f  # Front wheel
       port_config_param:

@@ -51,7 +51,7 @@
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/sensor_as5600.h>
+#include <uORB/topics/sensor_mag_encoder.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_command_ack.h>
 
@@ -131,10 +131,10 @@ private:
 		(ParamFloat<px4::params::BOOM_ACT_MIN>) _param_actuator_min_length,
 		(ParamFloat<px4::params::BOOM_ACT_MAX>) _param_actuator_max_length,
 
-		// AS5600 sensor calibration
-		(ParamFloat<px4::params::BOOM_AS5600_OFF>) _param_as5600_offset,
-		(ParamFloat<px4::params::BOOM_AS5600_SCALE>) _param_as5600_scale,
-		(ParamInt<px4::params::BOOM_AS5600_ID>) _param_as5600_instance_id,
+		// Magnetic encoder sensor calibration
+		(ParamFloat<px4::params::BOOM_MAG_ENC_OFF>) _param_mag_encoder_offset,
+		(ParamFloat<px4::params::BOOM_MAG_ENC_SCALE>) _param_mag_encoder_scale,
+		(ParamInt<px4::params::BOOM_MAG_ENC_ID>) _param_mag_encoder_instance_id,
 
 		// H-bridge motor configuration
 		(ParamInt<px4::params::BOOM_HBRIDGE_CH>) _param_hbridge_channel,
@@ -153,7 +153,7 @@ private:
 	uORB::Subscription _vehicle_command_sub{ORB_ID(vehicle_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
-	uORB::SubscriptionData<sensor_as5600_s> _as5600_sub{ORB_ID(sensor_as5600)};
+	uORB::SubscriptionData<sensor_mag_encoder_s> _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 
 	// uORB publications
 	uORB::PublicationMulti<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
