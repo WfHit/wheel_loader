@@ -19,6 +19,7 @@ LimitSensor::LimitSensor(uint8_t instance) :
     _params.invert_handle = PARAM_INVALID;
     _params.redundancy_handle = PARAM_INVALID;
     _params.enable_handle = PARAM_INVALID;
+    _params.function_handle = PARAM_INVALID;  // Add function handle
 
     // Initialize global parameter handles
     _global_params.poll_rate_handle = PARAM_INVALID;
@@ -87,6 +88,9 @@ void LimitSensor::load_parameters()
     snprintf(param_name, sizeof(param_name), "LS%d_ENABLE", _instance);
     _params.enable_handle = param_find(param_name);
 
+    snprintf(param_name, sizeof(param_name), "LS%d_FUNCTION", _instance);
+    _params.function_handle = param_find(param_name);
+
     // Load current parameter values
     param_get(_params.gpio_pin_1_handle, &_params.gpio_pin_1);
     param_get(_params.gpio_pin_2_handle, &_params.gpio_pin_2);
@@ -94,6 +98,7 @@ void LimitSensor::load_parameters()
     param_get(_params.invert_handle, &_params.invert);
     param_get(_params.redundancy_handle, &_params.redundancy);
     param_get(_params.enable_handle, &_params.enable);
+    param_get(_params.function_handle, &_params.function);
 }
 
 bool LimitSensor::init()
@@ -235,6 +240,7 @@ void LimitSensor::publish_state()
     msg.timestamp = hrt_absolute_time();
     msg.instance = _instance;
     msg.type = _params.type;
+    msg.function = _params.function;  // Add function to message
     msg.state = _sensor_state.combined_state;
     msg.state_switch_1 = _switch_1.current_state;
     msg.state_switch_2 = _switch_2.current_state;
@@ -294,8 +300,16 @@ void LimitSensor::Run()
 
 int LimitSensor::print_status()
 {
+    const char* function_names[] = {
+        "Bucket Load", "Bucket Dump", "Boom Up",
+        "Boom Down", "Steering Left", "Steering Right"
+    };
+
     PX4_INFO("Limit Sensor %d:", _instance);
     PX4_INFO("  Type: %d", _params.type);
+    PX4_INFO("  Function: %s (%d)",
+             (_params.function < 6) ? function_names[_params.function] : "Disabled",
+             _params.function);
     PX4_INFO("  Enabled: %s", _params.enable ? "yes" : "no");
     PX4_INFO("  Redundancy: %s", _params.redundancy ? "enabled" : "disabled");
     PX4_INFO("  Global config: poll=%dHz, debounce=%dus",

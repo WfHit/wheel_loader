@@ -181,6 +181,28 @@ PARAM_DEFINE_INT32(LS0_REDUNDANCY, 0);
 PARAM_DEFINE_INT32(LS0_ENABLE, 0);
 
 /**
+ * Limit Sensor 0 Function
+ *
+ * Function of limit sensor instance 0.
+ * Defines what this limit sensor is used for in the system.
+ * 255=Disabled, 0=Bucket Load, 1=Bucket Dump, 2=Boom Up, 3=Boom Down, 4=Steering Left, 5=Steering Right
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group Limit Sensors
+ * @value 0 Bucket Load Position
+ * @value 1 Bucket Dump Position
+ * @value 2 Boom Up Position
+ * @value 3 Boom Down Position
+ * @value 4 Steering Left Position
+ * @value 5 Steering Right Position
+ * @value 255 Function Disabled
+ */
+PARAM_DEFINE_INT32(LS0_FUNCTION, 255);
+
+/**
  * Limit Sensor 1 Primary GPIO Pin
  *
  * GPIO pin number for limit sensor instance 1 primary switch.
@@ -264,6 +286,28 @@ PARAM_DEFINE_INT32(LS1_REDUNDANCY, 0);
 PARAM_DEFINE_INT32(LS1_ENABLE, 0);
 
 /**
+ * Limit Sensor 1 Function
+ *
+ * Function of limit sensor instance 1.
+ * Defines what this limit sensor is used for in the system.
+ * 255=Disabled, 0=Bucket Load, 1=Bucket Dump, 2=Boom Up, 3=Boom Down, 4=Steering Left, 5=Steering Right
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group Limit Sensors
+ * @value 0 Bucket Load Position
+ * @value 1 Bucket Dump Position
+ * @value 2 Boom Up Position
+ * @value 3 Boom Down Position
+ * @value 4 Steering Left Position
+ * @value 5 Steering Right Position
+ * @value 255 Function Disabled
+ */
+PARAM_DEFINE_INT32(LS1_FUNCTION, 255);
+
+/**
  * Limit Sensor 2 Primary GPIO Pin
  *
  * GPIO pin number for limit sensor instance 2 primary switch.
@@ -338,6 +382,28 @@ PARAM_DEFINE_INT32(LS2_REDUNDANCY, 0);
 PARAM_DEFINE_INT32(LS2_ENABLE, 0);
 
 /**
+ * Limit Sensor 2 Function
+ *
+ * Function of limit sensor instance 2.
+ * Defines what this limit sensor is used for in the system.
+ * 255=Disabled, 0=Bucket Load, 1=Bucket Dump, 2=Boom Up, 3=Boom Down, 4=Steering Left, 5=Steering Right
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group Limit Sensors
+ * @value 0 Bucket Load Position
+ * @value 1 Bucket Dump Position
+ * @value 2 Boom Up Position
+ * @value 3 Boom Down Position
+ * @value 4 Steering Left Position
+ * @value 5 Steering Right Position
+ * @value 255 Function Disabled
+ */
+PARAM_DEFINE_INT32(LS2_FUNCTION, 255);
+
+/**
  * Limit Sensor 3 Primary GPIO Pin
  *
  * GPIO pin number for limit sensor instance 3 primary switch.
@@ -410,3 +476,25 @@ PARAM_DEFINE_INT32(LS3_REDUNDANCY, 0);
  * @group Limit Sensors
  */
 PARAM_DEFINE_INT32(LS3_ENABLE, 0);
+
+/**
+ * Limit Sensor 3 Function
+ *
+ * Function of limit sensor instance 3.
+ * Defines what this limit sensor is used for in the system.
+ * 255=Disabled, 0=Bucket Load, 1=Bucket Dump, 2=Boom Up, 3=Boom Down, 4=Steering Left, 5=Steering Right
+ *
+ * @min 0
+ * @max 255
+ * @decimal 0
+ * @increment 1
+ * @group Limit Sensors
+ * @value 0 Bucket Load Position
+ * @value 1 Bucket Dump Position
+ * @value 2 Boom Up Position
+ * @value 3 Boom Down Position
+ * @value 4 Steering Left Position
+ * @value 5 Steering Right Position
+ * @value 255 Function Disabled
+ */
+PARAM_DEFINE_INT32(LS3_FUNCTION, 255);

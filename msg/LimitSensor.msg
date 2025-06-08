@@ -2,6 +2,7 @@ uint64 timestamp                    # time since system start (microseconds)
 
 uint8 instance                      # Instance ID of this limit sensor
 uint8 type                         # Type of limit sensor (see LIMIT_TYPE_*)
+uint8 function                     # Function of this limit sensor (see LimitFunction enum)
 bool state                         # Combined state (true = limit reached)
 bool state_switch_1                # Individual switch 1 state
 bool state_switch_2                # Individual switch 2 state

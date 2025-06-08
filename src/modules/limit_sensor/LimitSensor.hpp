@@ -14,6 +14,16 @@ using namespace time_literals;
 class LimitSensor : public ModuleBase<LimitSensor>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
+    enum LimitFunction : uint8_t {
+        BUCKET_LOAD = 0,
+        BUCKET_DUMP = 1,
+        BOOM_UP = 2,
+        BOOM_DOWN = 3,
+        STEERING_LEFT = 4,
+        STEERING_RIGHT = 5,
+        FUNCTION_DISABLED = 255
+    };
+
     LimitSensor(uint8_t instance);
     ~LimitSensor() override;
 
@@ -24,6 +34,9 @@ public:
 
     bool init();
     int print_status() override;
+
+    // Add function getter
+    LimitFunction get_function() const { return static_cast<LimitFunction>(_params.function); }
 
     static LimitSensor *instantiate(int argc, char *argv[]);
 
@@ -104,6 +117,7 @@ private:
         param_t invert_handle;
         param_t redundancy_handle;
         param_t enable_handle;
+        param_t function_handle;  // Add function handle
 
         int32_t gpio_pin_1;
         int32_t gpio_pin_2;
@@ -111,6 +125,7 @@ private:
         int32_t invert;
         int32_t redundancy;
         int32_t enable;
+        int32_t function;  // Add function parameter
     } _params;
 
     void load_parameters();
