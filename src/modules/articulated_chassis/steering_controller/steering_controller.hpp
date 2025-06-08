@@ -13,7 +13,6 @@
 #include <uORB/topics/SteeringStatus.h>
 #include <uORB/topics/RoboticServoCommand.h>
 #include <uORB/topics/ServoFeedback.h>
-#include <uORB/topics/sensor_as5600.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/PredictiveTraction.h>
 
@@ -91,8 +90,6 @@ private:
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _predictive_traction_sub{ORB_ID(predictive_traction)};
     uORB::Subscription _servo_feedback_sub{ORB_ID(servo_feedback)};
-    uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
-    uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
 
     // uORB publications
     uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};

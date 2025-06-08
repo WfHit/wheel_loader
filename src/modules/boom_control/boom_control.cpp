@@ -144,17 +144,18 @@ void BoomControl::update_kinematics_from_params()
 
 void BoomControl::update_sensor_data()
 {
-	sensor_mag_s mag_data;
-	if (_as5600_sub.update(&mag_data) && mag_data.device_id == static_cast<uint32_t>(_param_as5600_instance_id.get())) {
+	sensor_mag_encoder_s mag_encoder_data;
+	if (_mag_encoder_sub.update(&mag_encoder_data) && mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
 		_last_sensor_update = hrt_absolute_time();
-		_sensor_valid = true;
+		_sensor_valid = (mag_encoder_data.magnet_detected == 1) &&
+		                (mag_encoder_data.magnet_too_strong == 0) &&
+		                (mag_encoder_data.magnet_too_weak == 0);
 
-		// AS5600 provides angle at actuator pivot
-		// Convert raw magnetometer reading to angle (AS5600 uses x-axis for angle)
-		float raw_angle_deg = atan2f(mag_data.y, mag_data.x) * 180.0f / M_PI_F;
+		// Magnetic encoder provides angle directly in radians
+		float raw_angle_deg = math::degrees(mag_encoder_data.angle);
 
 		// Apply calibration
-		float calibrated_angle = raw_angle_deg * _param_as5600_scale.get() + _param_as5600_offset.get();
+		float calibrated_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
 
 		// Ensure angle is in 0-360 range
 		while (calibrated_angle < 0.0f) {

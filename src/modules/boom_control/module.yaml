@@ -13,10 +13,10 @@ parameters:
             default: 0
             reboot_required: true
 
-        BOOM_ANGLE_SENS:
+        BOOM_MAG_ENC_INST:
             description:
-                short: Boom angle sensor instance
-                long: AS5600 magnetic encoder instance for boom angle measurement.
+                short: Boom magnetic encoder instance
+                long: Magnetic rotary encoder instance for boom angle measurement.
             type: int32
             min: 0
             max: 3
