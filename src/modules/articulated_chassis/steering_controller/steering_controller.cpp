@@ -12,6 +12,10 @@ SteeringController::SteeringController() :
     for (int i = 0; i < FILTER_SIZE; i++) {
         _angle_history[i] = 0.0f;
     }
+
+    // Initialize limit sensor instances to invalid values
+    _limit_sensors.left_instance = 255;
+    _limit_sensors.right_instance = 255;
 }
 
 int SteeringController::task_spawn(int argc, char *argv[])
@@ -57,6 +61,10 @@ void SteeringController::run()
 
         // Process servo feedback first
         process_servo_feedback();
+
+        // Process limit sensors and update safety state
+        process_limit_sensors();
+        update_safety_state();
 
         // Main control pipeline
         process_steering_command();
@@ -119,6 +127,13 @@ void SteeringController::process_steering_command()
 
     // Rate limiting for smooth control
     _commanded_angle_rad = rate_limit(compensated_angle, _commanded_angle_rad);
+
+    // Check position limits against limit sensors
+    if (_limit_sensors_enabled.get() && !check_position_limits(_commanded_angle_rad)) {
+        // Limit sensor violation - stop at safe position
+        _commanded_angle_rad = _safety_state.safe_position_rad;
+        handle_safety_violation();
+    }
 
     // Update current angle estimate from servo feedback if available
     if (_servo_state.feedback_valid) {
@@ -239,6 +254,157 @@ void SteeringController::send_servo_command(float position_rad, float velocity_r
     _servo_command_pub.publish(servo_cmd);
 }
 
+void SteeringController::process_limit_sensors()
+{
+    // Read limit sensor data from uORB topic
+    limit_sensor_s limit_data{};
+    const hrt_abstime now = hrt_absolute_time();
+
+    // Get configured limit sensor instances
+    uint8_t left_instance = static_cast<uint8_t>(_limit_left_instance.get());
+    uint8_t right_instance = static_cast<uint8_t>(_limit_right_instance.get());
+
+    // Update instance IDs if they changed
+    _limit_sensors.left_instance = left_instance;
+    _limit_sensors.right_instance = right_instance;
+
+    // Process all available limit sensor messages
+    while (_limit_sensor_sub.update(&limit_data)) {
+        if (limit_data.instance == left_instance &&
+            limit_data.function == static_cast<uint8_t>(4)) { // STEERING_LEFT
+            _limit_sensors.left_limit_active = limit_data.state;
+            _limit_sensors.left_limit_healthy = limit_data.healthy;
+            _limit_sensors.left_last_update = limit_data.timestamp;
+        } else if (limit_data.instance == right_instance &&
+                   limit_data.function == static_cast<uint8_t>(5)) { // STEERING_RIGHT
+            _limit_sensors.right_limit_active = limit_data.state;
+            _limit_sensors.right_limit_healthy = limit_data.healthy;
+            _limit_sensors.right_last_update = limit_data.timestamp;
+        }
+    }
+
+    // Check for sensor timeouts
+    const uint64_t timeout_threshold = 500_ms; // 500ms timeout for limit sensors
+
+    if ((now - _limit_sensors.left_last_update) > timeout_threshold) {
+        _limit_sensors.left_limit_healthy = false;
+    }
+
+    if ((now - _limit_sensors.right_last_update) > timeout_threshold) {
+        _limit_sensors.right_limit_healthy = false;
+    }
+}
+
+bool SteeringController::check_position_limits(float target_angle)
+{
+    if (!_limit_sensors_enabled.get()) {
+        return true; // No limit checking if disabled
+    }
+
+    const float margin = _limit_margin_rad.get();
+
+    // Check left limit (negative angle direction)
+    if (target_angle < -margin && _limit_sensors.left_limit_active) {
+        if (_limit_sensors.left_limit_healthy) {
+            PX4_WARN_THROTTLED(1000, "Left steering limit reached at %.1f°",
+                              (double)math::degrees(target_angle));
+            return false;
+        } else {
+            // Sensor unhealthy, assume limit is active for safety
+            PX4_WARN_THROTTLED(1000, "Left limit sensor unhealthy, assuming limit active");
+            return false;
+        }
+    }
+
+    // Check right limit (positive angle direction)
+    if (target_angle > margin && _limit_sensors.right_limit_active) {
+        if (_limit_sensors.right_limit_healthy) {
+            PX4_WARN_THROTTLED(1000, "Right steering limit reached at %.1f°",
+                              (double)math::degrees(target_angle));
+            return false;
+        } else {
+            // Sensor unhealthy, assume limit is active for safety
+            PX4_WARN_THROTTLED(1000, "Right limit sensor unhealthy, assuming limit active");
+            return false;
+        }
+    }
+
+    return true; // No limits violated
+}
+
+void SteeringController::handle_safety_violation()
+{
+    _safety_state.safety_violation = true;
+    _safety_state.position_limit_violation = true;
+    _safety_state.last_violation_time = hrt_absolute_time();
+    _safety_state.violation_count++;
+
+    // Log safety violation
+    PX4_ERR("Steering safety violation detected - count: %u", _safety_state.violation_count);
+
+    // Check if too many violations occurred
+    if (_safety_state.violation_count > static_cast<uint32_t>(_max_violations.get())) {
+        _safety_state.emergency_stop_active = true;
+        _emergency_stop = true;
+        PX4_ERR("Too many safety violations - emergency stop activated");
+    }
+}
+
+void SteeringController::update_safety_state()
+{
+    const hrt_abstime now = hrt_absolute_time();
+
+    if (!_safety_manager_enabled.get()) {
+        // Safety manager disabled, clear all safety states
+        _safety_state.safety_violation = false;
+        _safety_state.position_limit_violation = false;
+        _safety_state.emergency_stop_active = false;
+        return;
+    }
+
+    // Update safe position (typically center position)
+    _safety_state.safe_position_rad = _safety_position_rad.get();
+
+    // Check servo faults
+    _safety_state.servo_fault = (_servo_state.error_flags != 0) ||
+                                !_servo_state.feedback_valid ||
+                                (_servo_state.current_a > ST3125_CURRENT_LIMIT_A * 1.2f);
+
+    // Check sensor faults
+    _safety_state.sensor_fault = !_limit_sensors.left_limit_healthy ||
+                                 !_limit_sensors.right_limit_healthy;
+
+    // Clear violation flag after timeout if no active violations
+    const float timeout_ms = _fault_timeout_ms.get();
+    if (_safety_state.safety_violation &&
+        (now - _safety_state.last_violation_time) > (timeout_ms * 1000)) {
+
+        // Check if we can clear the violation
+        bool can_clear = !_safety_state.servo_fault &&
+                        !_safety_state.sensor_fault &&
+                        !_limit_sensors.left_limit_active &&
+                        !_limit_sensors.right_limit_active;
+
+        if (can_clear) {
+            _safety_state.safety_violation = false;
+            _safety_state.position_limit_violation = false;
+            PX4_INFO("Safety violation cleared after timeout");
+        }
+    }
+
+    // Update emergency stop state
+    if (_safety_state.emergency_stop_active) {
+        _emergency_stop = true;
+
+        // Emergency stop can only be cleared manually (reset violation count)
+        if (_safety_state.violation_count == 0) {
+            _safety_state.emergency_stop_active = false;
+            _emergency_stop = false;
+            PX4_INFO("Emergency stop cleared");
+        }
+    }
+}
+
 void SteeringController::process_servo_feedback()
 {
     // Process servo feedback from ST3125
@@ -308,8 +474,15 @@ void SteeringController::update_status()
     status.is_healthy = (_metrics.max_error_rad < MAX_POSITION_ERROR_RAD) &&
                        (!_emergency_stop) &&
                        (_servo_state.feedback_valid) &&
-                       (_servo_state.error_flags == 0);
+                       (_servo_state.error_flags == 0) &&
+                       (!_safety_state.safety_violation);
     status.emergency_stop = _emergency_stop;
+
+    // Add safety and limit sensor status
+    status.limit_left_active = _limit_sensors.left_limit_active;
+    status.limit_right_active = _limit_sensors.right_limit_active;
+    status.limit_sensors_healthy = _limit_sensors.left_limit_healthy && _limit_sensors.right_limit_healthy;
+    status.safety_violation = _safety_state.safety_violation;
 
     _steering_status_pub.publish(status);
 }
@@ -341,6 +514,24 @@ int SteeringController::print_status()
     PX4_INFO("    Commands: %u", _metrics.command_count);
     PX4_INFO("    Timeouts: %u", _metrics.timeout_count);
     PX4_INFO("    Feedback Timeouts: %u", _metrics.feedback_timeout_count);
+    PX4_INFO("  Limit Sensors:");
+    PX4_INFO("    Left (Instance %u): %s, Healthy: %s",
+             _limit_sensors.left_instance,
+             _limit_sensors.left_limit_active ? "ACTIVE" : "CLEAR",
+             _limit_sensors.left_limit_healthy ? "YES" : "NO");
+    PX4_INFO("    Right (Instance %u): %s, Healthy: %s",
+             _limit_sensors.right_instance,
+             _limit_sensors.right_limit_active ? "ACTIVE" : "CLEAR",
+             _limit_sensors.right_limit_healthy ? "YES" : "NO");
+    PX4_INFO("  Safety Manager:");
+    PX4_INFO("    Enabled: %s", _safety_manager_enabled.get() ? "YES" : "NO");
+    PX4_INFO("    Safety Violation: %s", _safety_state.safety_violation ? "YES" : "NO");
+    PX4_INFO("    Position Limit Violation: %s", _safety_state.position_limit_violation ? "YES" : "NO");
+    PX4_INFO("    Emergency Stop: %s", _safety_state.emergency_stop_active ? "YES" : "NO");
+    PX4_INFO("    Servo Fault: %s", _safety_state.servo_fault ? "YES" : "NO");
+    PX4_INFO("    Sensor Fault: %s", _safety_state.sensor_fault ? "YES" : "NO");
+    PX4_INFO("    Violation Count: %u", _safety_state.violation_count);
+    PX4_INFO("    Safe Position: %.1f°", (double)math::degrees(_safety_state.safe_position_rad));
 
     return 0;
 }
@@ -354,6 +545,18 @@ int SteeringController::custom_command(int argc, char *argv[])
 
     if (!strcmp(argv[0], "status")) {
         return get_instance()->print_status();
+    }
+
+    if (!strcmp(argv[0], "reset_safety")) {
+        if (get_instance()) {
+            get_instance()->_safety_state.violation_count = 0;
+            get_instance()->_safety_state.safety_violation = false;
+            get_instance()->_safety_state.position_limit_violation = false;
+            get_instance()->_safety_state.emergency_stop_active = false;
+            get_instance()->_emergency_stop = false;
+            PX4_INFO("Safety violations reset");
+        }
+        return 0;
     }
 
     return print_usage("unknown command");
@@ -375,17 +578,21 @@ Features:
 - Slip compensation using PredictiveTraction data
 - Feedforward control for improved dynamic response
 - Rate limiting and safety monitoring
+- Limit sensor integration for position safety
+- Safety manager with fault detection and emergency stop
 
 ### Examples
 CLI usage example:
 $ steering_controller start
 $ steering_controller status
+$ steering_controller reset_safety
 $ steering_controller stop
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("steering_controller", "driver");
     PRINT_MODULE_USAGE_COMMAND("start");
     PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print status information");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("reset_safety", "Reset safety violations and emergency stop");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;
