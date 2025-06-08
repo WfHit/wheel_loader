@@ -450,30 +450,28 @@ float BucketControl::generateSCurveSetpoint(float current, float target, float &
 
 void BucketControl::setMotorCommand(float command)
 {
-    // Publish to actuator_motors topic that DRV8701 driver subscribes to
-    actuator_motors_s motors{};
-    motors.timestamp = hrt_absolute_time();
+    // Publish HBridge command for bucket motor
+    hbridge_cmd_s cmd{};
+    cmd.timestamp = hrt_absolute_time();
+    cmd.channel = _motor_index;
+    cmd.speed = math::constrain(fabsf(command), 0.0f, 1.0f);
+    cmd.direction = (command >= 0.0f) ? 0 : 1;  // 0=forward, 1=reverse
+    cmd.enable_request = true;
+    cmd.control_mode = 1;  // NORMAL mode
 
-    // Initialize all motors to disarmed
-    for (int i = 0; i < actuator_motors_s::NUM_CONTROLS; i++) {
-        motors.control[i] = NAN;
-    }
-
-    // Set our motor command (-1 to 1)
-    motors.control[_motor_index] = math::constrain(command, -1.0f, 1.0f);
-
-    _actuator_motors_pub.publish(motors);
+    _hbridge_cmd_pub.publish(cmd);
 }
 
 void BucketControl::readEncoderFeedback()
 {
-    // Read from wheel_encoders topic published by quad encoder driver
-    wheel_encoders_s encoders;
-    if (_wheel_encoders_sub.copy(&encoders)) {
+    // Read from sensor_quad_encoder topic published by quad encoder driver
+    sensor_quad_encoder_s encoder_data;
+    if (_sensor_quad_encoder_sub.update(&encoder_data)) {
         uint8_t encoder_idx = _param_encoder_index.get();
 
-        if (encoder_idx < wheel_encoders_s::WHEEL_COUNT) {
-            _encoder_count = encoders.wheel_angle[encoder_idx] - _encoder_zero_offset;
+        if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
+            int32_t current_position = encoder_data.position[encoder_idx];
+            _encoder_count = current_position - _encoder_zero_offset;
 
             // Calculate velocity from encoder changes
             if (_last_encoder_time > 0) {
@@ -486,7 +484,7 @@ void BucketControl::readEncoderFeedback()
             }
 
             _last_encoder_count = _encoder_count;
-            _last_encoder_time = hrt_absolute_time();
+            _last_encoder_time = encoder_data.timestamp;
 
             // Convert encoder counts to actuator length
             _current_actuator_length = _encoder_count * _param_encoder_scale.get() + _kinematics.actuator_min_length;

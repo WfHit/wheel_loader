@@ -1,4 +1,4 @@
-#include "WheelController.hpp"
+#include "wheel_controller.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>

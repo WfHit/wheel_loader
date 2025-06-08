@@ -1,3 +1,4 @@
 explain limit sensor global param
-controll module need to confirm sensor used quad encoder, h bridge as6500
 add ahrs
+steering limit
+sensor actuactor mapping

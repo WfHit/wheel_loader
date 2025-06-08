@@ -34,8 +34,8 @@ px4_add_module(
 	MODULE modules__boom_control
 	MAIN boom_control
 	SRCS
-		BoomControl.cpp
-		BoomControl.hpp
+		boom_control.cpp
+		boom_control_main.cpp
 	DEPENDS
 		PID
 		motion_planning

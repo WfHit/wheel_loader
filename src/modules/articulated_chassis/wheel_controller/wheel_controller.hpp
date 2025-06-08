@@ -13,8 +13,8 @@
 
 // uORB message includes - matching existing system
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/wheel_encoders.h>
-#include <uORB/topics/actuator_motors.h>
+#include <uORB/topics/sensor_quad_encoder.h>
+#include <uORB/topics/hbridge_cmd.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/traction_control.h>
 #include <uORB/topics/module_status.h>
@@ -93,7 +93,7 @@ private:
 
     // uORB subscriptions - matching existing system
     uORB::Subscription _wheel_speeds_setpoint_sub{ORB_ID(wheel_speeds_setpoint)};
-    uORB::Subscription _wheel_encoders_sub{ORB_ID(wheel_encoders)};
+    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
     uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
@@ -101,7 +101,7 @@ private:
     // uORB publications
     uORB::Publication<module_status_s> _module_status_pub{ORB_ID(module_status)};
     uORB::PublicationMulti<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
-    uORB::PublicationMulti<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors)};
+    uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
 
     // Control system
     PID_t _speed_pid;

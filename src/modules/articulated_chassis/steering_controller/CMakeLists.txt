@@ -33,10 +33,10 @@
 
 px4_add_module(
 	MODULE modules__articulated_chassis__steering_controller
-	MAIN steering_controller
+		MAIN steering_controller
 	STACK_MAIN 2048
 	SRCS
-		SteeringController.cpp
+		steering_controller.cpp
 		steering_controller_main.cpp
 	DEPENDS
 		mathlib

@@ -1,4 +1,4 @@
-#include "WheelController.hpp"
+#include "wheel_controller.hpp"
 #include <mathlib/mathlib.h>
 #include <drivers/drv_hrt.h>
 
@@ -99,22 +99,22 @@ void WheelController::Run()
 
 void WheelController::process_encoder_data()
 {
-    wheel_encoders_s encoder_data;
+    sensor_quad_encoder_s encoder_data;
 
-    if (_wheel_encoders_sub.update(&encoder_data)) {
+    if (_sensor_quad_encoder_sub.update(&encoder_data)) {
         const uint8_t encoder_idx = _instance; // 0 for front, 1 for rear
 
-        if (encoder_idx < 2) { // Two wheels: 0 right, 1 left
-            // Get wheel angle (position) and speed
-            const float wheel_angle = encoder_data.wheel_angle[encoder_idx];
-            const float wheel_speed_rad_s = encoder_data.wheel_speed[encoder_idx];
+        if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
+            // Get encoder position and velocity from sensor_quad_encoder
+            const int32_t current_position = encoder_data.position[encoder_idx];
+            const float velocity_rad_s = encoder_data.velocity[encoder_idx];
 
-            // Convert angle to encoder counts for compatibility
+            // Update encoder counts
             _encoder_count_prev = _encoder_count;
-            _encoder_count = static_cast<int32_t>(wheel_angle * _encoder_cpr.get() / (2.0f * M_PI_F));
+            _encoder_count = current_position;
 
             // Convert rad/s to RPM for internal calculations
-            _current_speed_rpm = wheel_speed_rad_s * 60.0f / (2.0f * M_PI_F);
+            _current_speed_rpm = velocity_rad_s * 60.0f / (2.0f * M_PI_F);
 
             _last_encoder_time = encoder_data.timestamp;
             _controller_healthy = true; // No explicit health field, assume healthy if data received
@@ -309,21 +309,19 @@ void WheelController::communicate_with_hbridge()
     // Saturate PWM output
     _pwm_output = saturate_pwm(_pwm_output);
 
-    // Publish to actuator motors
-    actuator_motors_s motors{};
-    motors.timestamp = hrt_absolute_time();
-    motors.timestamp_sample = _last_encoder_time;
-    motors.reversible_flags = (1 << _instance);
+    // Publish to H-bridge driver using hbridge_cmd
+    hbridge_cmd_s cmd{};
+    cmd.timestamp = hrt_absolute_time();
+    cmd.channel = _instance; // 0 for front, 1 for rear
 
-    for (int i = 0; i < actuator_motors_s::NUM_CONTROLS; i++) {
-        motors.control[i] = 0.0f;
-    }
+    // Convert normalized PWM to H-bridge format
+    float normalized_output = _pwm_output / MAX_PWM_OUTPUT; // Normalize to [-1, 1]
+    cmd.speed = fabsf(normalized_output);
+    cmd.direction = (normalized_output >= 0.0f) ? 0 : 1;  // 0: forward, 1: reverse
+    cmd.enable_request = _armed && !_emergency_stop;
+    cmd.control_mode = 1; // NORMAL mode
 
-    if (_instance < actuator_motors_s::NUM_CONTROLS) {
-        motors.control[_instance] = _pwm_output / MAX_PWM_OUTPUT; // Normalize to [-1, 1]
-    }
-
-    _actuator_motors_pub.publish(motors);
+    _hbridge_cmd_pub.publish(cmd);
 
     // Also publish actuator_outputs for compatibility
     publish_actuator_outputs();
