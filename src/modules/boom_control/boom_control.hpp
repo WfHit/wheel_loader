@@ -51,7 +51,7 @@
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/sensor_mag.h>
+#include <uORB/topics/sensor_as5600.h>
 #include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_command_ack.h>
 
@@ -153,7 +153,7 @@ private:
 	uORB::Subscription _vehicle_command_sub{ORB_ID(vehicle_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
-	uORB::SubscriptionData<sensor_mag_s> _as5600_sub{ORB_ID(sensor_mag)};
+	uORB::SubscriptionData<sensor_as5600_s> _as5600_sub{ORB_ID(sensor_as5600)};
 
 	// uORB publications
 	uORB::PublicationMulti<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};

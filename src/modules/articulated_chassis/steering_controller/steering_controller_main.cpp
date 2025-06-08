@@ -1,4 +1,4 @@
-#include "SteeringController.hpp"
+#include "steering_controller.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>

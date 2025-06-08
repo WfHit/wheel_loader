@@ -1,4 +1,28 @@
 module_name: Bucket Control
+
+parameters:
+    - group: Bucket Control
+      definitions:
+        BUCKET_HBRIDGE_CH:
+            description:
+                short: H-bridge channel for bucket motor
+                long: DRV8701 H-bridge channel (0 or 1) used for the bucket actuator motor.
+            type: int32
+            min: 0
+            max: 1
+            default: 1
+            reboot_required: true
+
+        BUCKET_ENC_INST:
+            description:
+                short: Bucket encoder instance
+                long: Quad encoder instance for bucket position measurement.
+            type: int32
+            min: 0
+            max: 3
+            default: 1
+            reboot_required: true
+
 serial_config:
     - command: bucket_control start
       port_config_param:

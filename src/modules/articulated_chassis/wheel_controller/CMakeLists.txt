@@ -4,7 +4,7 @@ px4_add_module(
     COMPILE_FLAGS
         -Wno-unused-parameter
     SRCS
-        WheelController.cpp
+        wheel_controller.cpp
         wheel_controller_main.cpp
     MODULE_CONFIG
         module.yaml

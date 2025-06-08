@@ -11,8 +11,8 @@
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/boom_status.h>
-#include <uORB/topics/actuator_motors.h>
-#include <uORB/topics/wheel_encoders.h>
+#include <uORB/topics/hbridge_cmd.h>
+#include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 
@@ -140,13 +140,13 @@ private:
     // uORB subscriptions
     uORB::Subscription _bucket_cmd_sub{ORB_ID(bucket_command)};
     uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
-    uORB::Subscription _wheel_encoders_sub{ORB_ID(wheel_encoders)};
+    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
     uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
     // uORB publications
     uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
-    uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors)};
+    uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
 
     // Motor and sensor indices
     uint8_t _motor_index{0};

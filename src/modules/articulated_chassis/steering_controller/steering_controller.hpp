@@ -13,6 +13,7 @@
 #include <uORB/topics/SteeringStatus.h>
 #include <uORB/topics/RoboticServoCommand.h>
 #include <uORB/topics/ServoFeedback.h>
+#include <uORB/topics/sensor_as5600.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/PredictiveTraction.h>
 
@@ -61,6 +62,7 @@ private:
     static constexpr float MAX_POSITION_ERROR_RAD = math::radians(10.0f);
     static constexpr uint64_t COMMAND_TIMEOUT_US = 500_ms;
     static constexpr uint64_t SERVO_FEEDBACK_TIMEOUT_US = 100_ms;
+    static constexpr uint64_t SENSOR_TIMEOUT_US = 200_ms;
 
     void run() override;
 
@@ -89,6 +91,8 @@ private:
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _predictive_traction_sub{ORB_ID(predictive_traction)};
     uORB::Subscription _servo_feedback_sub{ORB_ID(servo_feedback)};
+    uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
+    uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
 
     // uORB publications
     uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};
@@ -104,7 +108,11 @@ private:
     uint64_t _last_command_time{0};
     uint64_t _last_update_time{0};
     uint64_t _last_feedback_time{0};
+    uint64_t _last_sensor_update{0};
     float _dt{0.02f};  // 50Hz nominal
+
+    // Sensor state
+    bool _sensor_valid{false};
 
     // Vehicle state
     float _vehicle_speed_mps{0.0f};
@@ -142,6 +150,9 @@ private:
         uint32_t command_count{0};
         uint32_t timeout_count{0};
         uint32_t feedback_timeout_count{0};
+        uint32_t sensor_update_count{0};
+        uint32_t sensor_error_count{0};
+        uint32_t sensor_timeout_count{0};
     } _metrics;
 
     // Parameters
@@ -165,6 +176,11 @@ private:
         // ST3125 calibration
         (ParamFloat<px4::params::STEER_PWM_MIN>) _servo_pwm_min,
         (ParamFloat<px4::params::STEER_PWM_MAX>) _servo_pwm_max,
-        (ParamFloat<px4::params::STEER_CURR_LIMIT>) _servo_current_limit
+        (ParamFloat<px4::params::STEER_CURR_LIMIT>) _servo_current_limit,
+
+        // AS5600 sensor calibration
+        (ParamInt32<px4::params::AS5600_INSTANCE_ID>) _param_as5600_instance_id,
+        (ParamFloat<px4::params::AS5600_SCALE>) _param_as5600_scale,
+        (ParamFloat<px4::params::AS5600_OFFSET>) _param_as5600_offset
     )
 };

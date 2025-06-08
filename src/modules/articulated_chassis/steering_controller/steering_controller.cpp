@@ -1,4 +1,4 @@
-#include "SteeringController.hpp"
+#include "steering_controller.hpp"
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
@@ -241,6 +241,7 @@ void SteeringController::send_servo_command(float position_rad, float velocity_r
 
 void SteeringController::process_servo_feedback()
 {
+    // Process servo feedback from ST3125
     servo_feedback_s feedback{};
     if (_servo_feedback_sub.update(&feedback)) {
         if (feedback.id == ST3125_SERVO_ID) {
@@ -258,6 +259,50 @@ void SteeringController::process_servo_feedback()
         if ((hrt_absolute_time() - _last_feedback_time) > SERVO_FEEDBACK_TIMEOUT_US) {
             _servo_state.feedback_valid = false;
             _metrics.feedback_timeout_count++;
+        }
+    }
+
+    // Process AS5600 sensor feedback for actual steering angle
+    sensor_as5600_s as5600_data{};
+    if (_sensor_as5600_sub.update(&as5600_data) &&
+        as5600_data.device_id == static_cast<uint32_t>(_param_as5600_instance_id.get())) {
+
+        _last_sensor_update = hrt_absolute_time();
+
+        // Check sensor status flags
+        _sensor_valid = (as5600_data.magnet_detected == 1) &&
+                       (as5600_data.magnet_too_strong == 0) &&
+                       (as5600_data.magnet_too_weak == 0);
+
+        if (_sensor_valid) {
+            // Apply calibration to raw angle
+            float raw_angle_rad = as5600_data.angle;
+            _current_angle_rad = raw_angle_rad * _param_as5600_scale.get() + _param_as5600_offset.get();
+
+            // Apply moving average filter to reduce noise
+            _angle_history[_filter_index] = _current_angle_rad;
+            _filter_index = (_filter_index + 1) % FILTER_SIZE;
+
+            float filtered_angle = 0.0f;
+            for (int i = 0; i < FILTER_SIZE; i++) {
+                filtered_angle += _angle_history[i];
+            }
+            _current_angle_rad = filtered_angle / FILTER_SIZE;
+
+            // Update metrics
+            _metrics.sensor_update_count++;
+        } else {
+            _metrics.sensor_error_count++;
+            if (_metrics.sensor_error_count % 50 == 1) {  // Throttled warning
+                PX4_WARN("AS5600 sensor error: magnet_detected=%d, too_strong=%d, too_weak=%d",
+                        as5600_data.magnet_detected, as5600_data.magnet_too_strong, as5600_data.magnet_too_weak);
+            }
+        }
+    } else {
+        // Check for sensor timeout
+        if ((hrt_absolute_time() - _last_sensor_update) > SENSOR_TIMEOUT_US) {
+            _sensor_valid = false;
+            _metrics.sensor_timeout_count++;
         }
     }
 }

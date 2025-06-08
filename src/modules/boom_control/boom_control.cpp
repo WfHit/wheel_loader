@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "BoomControl.hpp"
+#include "boom_control.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>

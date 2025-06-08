@@ -3,6 +3,7 @@ px4_add_module(
     MAIN bucket_control
     SRCS
         bucket_control.cpp
+        bucket_control_main.cpp
     DEPENDS
         px4_work_queue
         pid
