@@ -59,6 +59,7 @@
 #include <uORB/topics/parameter_update.h>
 
 // Boom and bucket control messages
+#include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
@@ -140,7 +141,10 @@ private:
         float loading_speed{0.2f};         // m/s
         float transport_speed{2.0f};       // m/s
         float dump_height{2.5f};           // m
-        float dump_angle{60.0f};           // degrees
+        float dump_angle{60.0f};           // degrees - bucket tip angle for dumping
+        float load_angle{-10.0f};          // degrees - boom angle for loading
+        float transport_angle{30.0f};      // degrees - boom angle for transport
+        float carry_angle{30.0f};          // degrees - boom angle for carry position
         float load_detection_threshold{0.8f}; // normalized load
     };
 
@@ -176,6 +180,12 @@ private:
     void handleEmergencyStop();
     void publishSystemStatus();
 
+    // AHRS-enhanced operational modes
+    void configureAHRSBucketControl(uint8_t mode, float target_angle = 0.0f);
+    void updateBucketControlForTerrain();
+    bool isStabilityLimitRequired();
+    void logAHRSStatus();
+
     // Utility functions
     void resetControllers();
     bool allSubsystemsReady();
@@ -208,6 +218,7 @@ private:
     uORB::Publication<vehicle_status_s> _vehicle_status_pub{ORB_ID(vehicle_status)};
     uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors)};
     uORB::Publication<actuator_servos_s> _actuator_servos_pub{ORB_ID(actuator_servos)};
+    uORB::Publication<boom_command_s> _boom_command_pub{ORB_ID(boom_command)};
     uORB::Publication<bucket_command_s> _bucket_command_pub{ORB_ID(bucket_command)};
     uORB::Publication<module_status_s> _module_status_pub{ORB_ID(module_status)};
 
@@ -223,6 +234,7 @@ private:
     // Control outputs
     actuator_motors_s _actuator_motors{};
     actuator_servos_s _actuator_servos{};
+    boom_command_s _boom_command{};
     bucket_command_s _bucket_command{};
     vehicle_status_s _vehicle_status{};
     module_status_s _module_status{};

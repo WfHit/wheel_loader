@@ -96,12 +96,11 @@ void BoomControl::Run()
 	// Update sensor data from AS5600
 	update_sensor_data();
 
-	// Process H-bridge status feedback
-	process_hbridge_status();
+	// Process H-bridge channel status feedback
+	process_hbridge_channel_status();
 
-	// Process control inputs
-	process_manual_control();
-	process_vehicle_commands();
+	// Process boom command inputs
+	process_boom_command();
 
 	// Update trajectory planning
 	update_trajectory();
@@ -112,8 +111,11 @@ void BoomControl::Run()
 	// Check safety limits
 	check_limits_and_safety();
 
-	// Publish H-bridge command
-	publish_hbridge_command();
+	// Publish H-bridge channel command
+	publish_hbridge_channel_command();
+
+	// Publish boom status
+	publish_boom_status();
 
 	perf_end(_cycle_perf);
 }
@@ -176,18 +178,19 @@ void BoomControl::update_sensor_data()
 	}
 }
 
-void BoomControl::process_hbridge_status()
+void BoomControl::process_hbridge_channel_status()
 {
-	hbridge_status_s status{};
-	if (_hbridge_status_sub.update(&status) && status.channel == _param_hbridge_channel.get()) {
-		// Check for faults from the H-bridge driver
-		if (status.fault) {
-			PX4_WARN("H-bridge fault detected: channel %d, fault code %d", status.channel, status.fault_code);
+	hbridge_channel_s status{};
+	if (_hbridge_channel_status_sub.update(&status) && status.channel_id == static_cast<uint8_t>(_param_hbridge_channel.get())) {
+		// Check for faults from the H-bridge channel
+		if (status.fault_overcurrent || status.fault_overheat) {
+			PX4_WARN("H-bridge channel fault detected: channel %d, overcurrent: %d, overheat: %d",
+					status.channel_id, status.fault_overcurrent, status.fault_overheat);
 			_state = BoomState::ERROR;
 			emergency_stop();
 		}
 
-		// Monitor driver state
+		// Monitor channel state
 		if (status.state == 2) { // FAULT state
 			_state = BoomState::ERROR;
 		}
@@ -195,8 +198,9 @@ void BoomControl::process_hbridge_status()
 		// Log runtime information (optional, can be removed for production)
 		static uint64_t last_log_time = 0;
 		if (hrt_elapsed_time(&last_log_time) > 5_s) {
-			PX4_INFO("H-bridge status: channel %d, duty %.2f, state %d, runtime %d ms",
-					status.channel, (double)status.actual_duty, status.state, status.runtime_ms);
+			PX4_INFO("H-bridge channel status: channel %d, command %.2f, state %d, current %.2fA, temp %.1fC",
+					status.channel_id, (double)status.current_command, status.state,
+					(double)status.actual_current, (double)status.temperature);
 			last_log_time = hrt_absolute_time();
 		}
 	}
@@ -262,57 +266,55 @@ float BoomControl::actuator_length_to_boom_angle(float actuator_length)
 	return boom_angle;
 }
 
-void BoomControl::process_manual_control()
+void BoomControl::process_boom_command()
 {
-	manual_control_setpoint_s manual_control;
-	if (_manual_control_sub.update(&manual_control)) {
+	boom_command_s cmd;
+	if (_boom_command_sub.update(&cmd)) {
 		_last_command_time = hrt_absolute_time();
 
-		// Use aux1 channel for boom control (-1 to 1)
-		// Map to angle range
-		float normalized = (manual_control.aux1 + 1.0f) * 0.5f; // Convert to 0-1 range
-		_target_boom_angle = _param_boom_min_angle.get() +
-		                    normalized * (_param_boom_max_angle.get() - _param_boom_min_angle.get());
-
-		// Constrain to limits
-		_target_boom_angle = math::constrain(_target_boom_angle,
-		                                    _param_boom_min_angle.get(),
-		                                    _param_boom_max_angle.get());
-
-		_state = BoomState::MOVING;
-	}
-}
-
-void BoomControl::process_vehicle_commands()
-{
-	vehicle_command_s cmd;
-	if (_vehicle_command_sub.update(&cmd)) {
-		_last_command_time = hrt_absolute_time();
-
-		switch (cmd.command) {
-		case vehicle_command_s::VEHICLE_CMD_DO_SET_ACTUATOR:
-			// param1: actuator group, param2: actuator index, param3: value
-			if (static_cast<int>(cmd.param2) == _param_hbridge_channel.get()) {
-				_target_boom_angle = cmd.param3;
-				_state = BoomState::MOVING;
-				publish_command_ack(cmd.command, vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED);
-			}
-			break;
-
-		case vehicle_command_s::VEHICLE_CMD_CUSTOM_0:
-			// Custom command for preset positions
-			set_target_position(static_cast<BoomPreset>(static_cast<int>(cmd.param1)));
-			publish_command_ack(cmd.command, vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED);
-			break;
-
-		case vehicle_command_s::VEHICLE_CMD_CUSTOM_1:
-			// Emergency stop
+		// Handle emergency stop first
+		if (cmd.emergency_stop) {
 			emergency_stop();
-			publish_command_ack(cmd.command, vehicle_command_ack_s::VEHICLE_CMD_RESULT_ACCEPTED);
+			return;
+		}
+
+		// Process command based on mode
+		switch (cmd.command_mode) {
+		case 0: // Position control
+			_target_boom_angle = cmd.target_angle;
+
+			// Constrain to limits
+			_target_boom_angle = math::constrain(_target_boom_angle,
+			                                    _param_boom_min_angle.get(),
+			                                    _param_boom_max_angle.get());
+
+			// Update trajectory parameters
+			_trajectory_generator.setMaxVelocity(cmd.max_velocity);
+			_trajectory_generator.setMaxAcceleration(_param_boom_max_acc.get());
+			_trajectory_generator.setMaxJerk(_param_boom_max_jerk.get());
+
+			_state = BoomState::MOVING;
+			break;
+
+		case 1: // Velocity control
+			// Direct velocity command - integrate to get position
+			float dt = 0.01f; // Assume 100Hz update rate
+			_target_boom_angle += cmd.target_angle * dt; // target_angle used as velocity
+
+			// Constrain to limits
+			_target_boom_angle = math::constrain(_target_boom_angle,
+			                                    _param_boom_min_angle.get(),
+			                                    _param_boom_max_angle.get());
+
+			_state = BoomState::MOVING;
+			break;
+
+		case 2: // Force control (not implemented yet)
+			PX4_WARN("Force control mode not implemented");
 			break;
 
 		default:
-			publish_command_ack(cmd.command, vehicle_command_ack_s::VEHICLE_CMD_RESULT_UNSUPPORTED);
+			PX4_WARN("Unknown boom command mode: %d", cmd.command_mode);
 			break;
 		}
 	}
@@ -436,13 +438,13 @@ void BoomControl::check_limits_and_safety()
 	}
 }
 
-void BoomControl::publish_hbridge_command()
+void BoomControl::publish_hbridge_channel_command()
 {
-	hbridge_cmd_s cmd{};
+	hbridge_channel_cmd_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
 
 	// Set channel from parameter
-	cmd.channel = _param_hbridge_channel.get();
+	cmd.channel_id = static_cast<uint8_t>(_param_hbridge_channel.get());
 
 	// Apply deadzone to prevent motor hunting around zero
 	float output = _motor_output;
@@ -450,43 +452,78 @@ void BoomControl::publish_hbridge_command()
 		output = 0.0f;
 	}
 
-	// Set speed and direction based on motor output
+	// Set command value (-1.0 to 1.0 range)
 	// Positive = extend actuator (boom up), Negative = retract actuator (boom down)
-	cmd.speed = fabsf(output);
-	cmd.direction = (output >= 0.0f) ? 0 : 1;  // 0: forward (extend), 1: reverse (retract)
+	cmd.command_value = math::constrain(output, -1.0f, 1.0f);
 
 	// Enable channel if not in error state
-	cmd.enable_request = (_state != BoomState::ERROR);
+	cmd.enable = (_state != BoomState::ERROR);
 
 	// Set control mode based on state
 	switch (_state) {
 		case BoomState::IDLE:
-			cmd.control_mode = 0; // IDLE
+			cmd.command_mode = 0; // IDLE/POSITION_HOLD
 			break;
 		case BoomState::MOVING:
 		case BoomState::HOLDING:
-			cmd.control_mode = 1; // NORMAL
+			cmd.command_mode = 1; // VELOCITY
 			break;
 		case BoomState::ERROR:
-			cmd.control_mode = 0; // IDLE
+			cmd.command_mode = 0; // IDLE
+			cmd.enable = false;
 			break;
 	}
 
-	// Set timeout and limits
-	cmd.timeout_ms = 500; // 500ms timeout
-	cmd.current_limit = 10.0f; // 10A limit (for future use)
+	// Set current limit and safety
+	cmd.max_current = 10.0f; // 10A limit
+	cmd.ignore_limits = false; // Respect limit switches
+	cmd.priority = 1; // Normal priority
 
-	_hbridge_cmd_pub.publish(cmd);
+	_hbridge_channel_cmd_pub.publish(cmd);
 }
 
-void BoomControl::publish_command_ack(uint16_t command, uint8_t result)
+void BoomControl::publish_boom_status()
 {
-	vehicle_command_ack_s ack{};
-	ack.timestamp = hrt_absolute_time();
-	ack.command = command;
-	ack.result = result;
+	boom_status_s status{};
+	status.timestamp = hrt_absolute_time();
 
-	_vehicle_command_ack_pub.publish(ack);
+	// Current position and state
+	status.current_angle = _current_boom_angle;
+	status.target_angle = _target_boom_angle;
+	status.current_actuator_length = _current_actuator_length;
+	status.target_actuator_length = _target_actuator_length;
+
+	// Control state
+	switch (_state) {
+		case BoomState::IDLE:
+			status.state = 0;
+			break;
+		case BoomState::MOVING:
+			status.state = 1;
+			break;
+		case BoomState::HOLDING:
+			status.state = 2;
+			break;
+		case BoomState::ERROR:
+			status.state = 3;
+			break;
+	}
+
+	// Motion status
+	status.is_moving = (_state == BoomState::MOVING);
+	status.at_target = (_state == BoomState::HOLDING);
+
+	// Limits and safety
+	status.lower_limit_reached = _lower_limit_reached;
+	status.upper_limit_reached = _upper_limit_reached;
+	status.sensor_valid = _sensor_valid;
+
+	// Motor output and control
+	status.motor_output = _motor_output;
+	status.last_command_time = _last_command_time;
+	status.last_sensor_update = _last_sensor_update;
+
+	_boom_status_pub.publish(status);
 }
 
 bool BoomControl::check_actuator_limits(float length)

@@ -32,6 +32,7 @@
  ****************************************************************************/
 
 #include "HBridgeDriver.hpp"
+
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 
@@ -101,15 +102,15 @@ int HBridgeDriver::init()
 	EnableManager::LimitConfig ch0_limits = {
 		.min_limit_instance = static_cast<uint8_t>(_param_ch0_lim_min.get()),
 		.max_limit_instance = static_cast<uint8_t>(_param_ch0_lim_max.get()),
-		.allow_into_min = _param_ch0_into_min.get(),
-		.allow_into_max = _param_ch0_into_max.get()
+		.allow_into_min = static_cast<bool>(_param_ch0_into_min.get()),
+		.allow_into_max = static_cast<bool>(_param_ch0_into_max.get())
 	};
 
 	EnableManager::LimitConfig ch1_limits = {
 		.min_limit_instance = static_cast<uint8_t>(_param_ch1_lim_min.get()),
 		.max_limit_instance = static_cast<uint8_t>(_param_ch1_lim_max.get()),
-		.allow_into_min = _param_ch1_into_min.get(),
-		.allow_into_max = _param_ch1_into_max.get()
+		.allow_into_min = static_cast<bool>(_param_ch1_into_min.get()),
+		.allow_into_max = static_cast<bool>(_param_ch1_into_max.get())
 	};
 
 	_enable_manager->set_limit_config(0, ch0_limits);

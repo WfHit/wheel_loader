@@ -1,4 +1,3 @@
 explain limit sensor global param
 add ahrs
-steering limit
-sensor actuactor mapping
+update bukcet comand msg

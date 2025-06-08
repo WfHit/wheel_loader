@@ -33,13 +33,15 @@
 
 #pragma once
 
+#include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+
 #include <lib/perf/perf_counter.h>
 
-#include "HBridgeChannel.hpp"
 #include "EnableManager.hpp"
+#include "HBridgeChannel.hpp"
 
 class HBridgeDriver : public ModuleBase<HBridgeDriver>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -81,14 +83,14 @@ private:
         (ParamInt<px4::params::HBRDG_GPIO_DIR1>) _param_gpio_dir1,
         (ParamInt<px4::params::HBRDG_GPIO_FLT0>) _param_gpio_fault0,
         (ParamInt<px4::params::HBRDG_GPIO_FLT1>) _param_gpio_fault1,
-        (ParamInt<px4::params::HBRDG_CH0_LIM_MIN>) _param_ch0_lim_min,
-        (ParamInt<px4::params::HBRDG_CH0_LIM_MAX>) _param_ch0_lim_max,
-        (ParamInt<px4::params::HBRDG_CH1_LIM_MIN>) _param_ch1_lim_min,
-        (ParamInt<px4::params::HBRDG_CH1_LIM_MAX>) _param_ch1_lim_max,
-        (ParamBool<px4::params::HBRDG_CH0_INTO_MIN>) _param_ch0_into_min,
-        (ParamBool<px4::params::HBRDG_CH0_INTO_MAX>) _param_ch0_into_max,
-        (ParamBool<px4::params::HBRDG_CH1_INTO_MIN>) _param_ch1_into_min,
-        (ParamBool<px4::params::HBRDG_CH1_INTO_MAX>) _param_ch1_into_max
+        (ParamInt<px4::params::HBRDG_CH0_LM_MIN>) _param_ch0_lim_min,
+        (ParamInt<px4::params::HBRDG_CH0_LM_MAX>) _param_ch0_lim_max,
+        (ParamInt<px4::params::HBRDG_CH1_LM_MIN>) _param_ch1_lim_min,
+        (ParamInt<px4::params::HBRDG_CH1_LM_MAX>) _param_ch1_lim_max,
+        (ParamInt<px4::params::HBRDG_CH0_AL_MIN>) _param_ch0_into_min,
+        (ParamInt<px4::params::HBRDG_CH0_AL_MAX>) _param_ch0_into_max,
+        (ParamInt<px4::params::HBRDG_CH1_AL_MIN>) _param_ch1_into_min,
+        (ParamInt<px4::params::HBRDG_CH1_AL_MAX>) _param_ch1_into_max
     )
 
     void updateParams() override;

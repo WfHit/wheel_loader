@@ -171,7 +171,7 @@ PARAM_DEFINE_INT32(HBRDG_GPIO_FLT1, 104);
  * @increment 1
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MIN, 255);
+PARAM_DEFINE_INT32(HBRDG_CH0_LM_MIN, 255);
 
 /**
  * H-Bridge Channel 0 Maximum Limit Sensor Instance
@@ -185,7 +185,7 @@ PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MIN, 255);
  * @increment 1
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MAX, 255);
+PARAM_DEFINE_INT32(HBRDG_CH0_LM_MAX, 255);
 
 /**
  * H-Bridge Channel 1 Minimum Limit Sensor Instance
@@ -199,7 +199,7 @@ PARAM_DEFINE_INT32(HBRDG_CH0_LIM_MAX, 255);
  * @increment 1
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MIN, 255);
+PARAM_DEFINE_INT32(HBRDG_CH1_LM_MIN, 255);
 
 /**
  * H-Bridge Channel 1 Maximum Limit Sensor Instance
@@ -213,7 +213,7 @@ PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MIN, 255);
  * @increment 1
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MAX, 255);
+PARAM_DEFINE_INT32(HBRDG_CH1_LM_MAX, 255);
 
 /**
  * H-Bridge Channel 0 Allow Into Min Limit
@@ -224,7 +224,7 @@ PARAM_DEFINE_INT32(HBRDG_CH1_LIM_MAX, 255);
  * @boolean
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MIN, 0);
+PARAM_DEFINE_INT32(HBRDG_CH0_AL_MIN, 0);
 
 /**
  * H-Bridge Channel 0 Allow Into Max Limit
@@ -235,7 +235,7 @@ PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MIN, 0);
  * @boolean
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MAX, 0);
+PARAM_DEFINE_INT32(HBRDG_CH0_AL_MAX, 0);
 
 /**
  * H-Bridge Channel 1 Allow Into Min Limit
@@ -246,7 +246,7 @@ PARAM_DEFINE_INT32(HBRDG_CH0_INTO_MAX, 0);
  * @boolean
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH1_INTO_MIN, 0);
+PARAM_DEFINE_INT32(HBRDG_CH1_AL_MIN, 0);
 
 /**
  * H-Bridge Channel 1 Allow Into Max Limit
@@ -257,4 +257,4 @@ PARAM_DEFINE_INT32(HBRDG_CH1_INTO_MIN, 0);
  * @boolean
  * @group H-Bridge DRV8701
  */
-PARAM_DEFINE_INT32(HBRDG_CH1_INTO_MAX, 0);
+PARAM_DEFINE_INT32(HBRDG_CH1_AL_MAX, 0);

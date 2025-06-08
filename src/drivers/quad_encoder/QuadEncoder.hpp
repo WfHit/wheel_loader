@@ -37,9 +37,11 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+
 #include <lib/drivers/device/device.h>
-#include <lib/perf/perf_counter.h>
 #include <lib/parameters/param.h>
+#include <lib/perf/perf_counter.h>
+
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/parameter_update.h>

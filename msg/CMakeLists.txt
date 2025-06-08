@@ -115,8 +115,8 @@ set(msg_files
 	GpsDump.msg
 	GpsInjectData.msg
 	Gripper.msg
-	HbridgeCmd.msg
-	HbridgeStatus.msg
+	HbridgeChannel.msg
+	HbridgeChannelCmd.msg
 	HbridgeSystem.msg
 	HealthReport.msg
 	HeaterStatus.msg

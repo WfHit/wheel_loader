@@ -41,7 +41,6 @@ px4_add_module(
 	DEPENDS
 		mathlib
 		matrix
-		module_constants
 	MODULE_CONFIG
 		MODULE_STACKSIZE=2048
 )
