@@ -204,3 +204,103 @@ PARAM_DEFINE_FLOAT(STEER_PWM_MAX, 2000.0f);
  * @group Steering Controller
  */
 PARAM_DEFINE_FLOAT(STEER_CURR_LIMIT, 2.0f);
+
+/**
+ * Enable limit sensors
+ *
+ * Enable limit sensor monitoring for steering position limits.
+ * When enabled, the controller will stop at limit positions to prevent damage.
+ *
+ * @boolean
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_LIMIT_EN, 1);
+
+/**
+ * Left limit sensor instance
+ *
+ * Instance ID of the left steering limit sensor.
+ * Must match the configured instance in the limit sensor module.
+ *
+ * @min 0
+ * @max 255
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_LIMIT_LEFT_IDX, 0);
+
+/**
+ * Right limit sensor instance
+ *
+ * Instance ID of the right steering limit sensor.
+ * Must match the configured instance in the limit sensor module.
+ *
+ * @min 0
+ * @max 255
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_LIMIT_RIGHT_IDX, 1);
+
+/**
+ * Limit sensor margin
+ *
+ * Safety margin in radians before limit sensor activation.
+ * Controller will respect this margin to avoid hitting hard limits.
+ *
+ * @unit rad
+ * @min 0.0
+ * @max 0.349
+ * @decimal 3
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_LIMIT_MARGIN, 0.087f);
+
+/**
+ * Enable safety manager
+ *
+ * Enable safety manager for fault detection and emergency stop functionality.
+ * Monitors servo faults, sensor faults, and safety violations.
+ *
+ * @boolean
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_SAFETY_EN, 1);
+
+/**
+ * Safety position
+ *
+ * Safe steering position in radians (typically center position).
+ * Controller will move to this position during safety violations.
+ *
+ * @unit rad
+ * @min -0.785
+ * @max 0.785
+ * @decimal 3
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_SAFE_POS, 0.0f);
+
+/**
+ * Fault timeout
+ *
+ * Timeout in milliseconds before clearing safety violations.
+ * Safety violations are cleared after this timeout if no active faults exist.
+ *
+ * @unit ms
+ * @min 1000
+ * @max 30000
+ * @decimal 0
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_FAULT_TIMEOUT, 5000.0f);
+
+/**
+ * Maximum violations
+ *
+ * Maximum number of safety violations before triggering emergency stop.
+ * After this many violations, manual intervention is required to clear.
+ *
+ * @min 1
+ * @max 100
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_MAX_VIOLATIONS, 10);

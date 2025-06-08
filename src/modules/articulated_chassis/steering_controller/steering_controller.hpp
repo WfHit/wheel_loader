@@ -15,6 +15,7 @@
 #include <uORB/topics/ServoFeedback.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/PredictiveTraction.h>
+#include <uORB/topics/limit_sensor.h>
 
 using namespace time_literals;
 
@@ -80,6 +81,14 @@ private:
     void process_servo_feedback();
 
     /**
+     * Limit sensor and safety management
+     */
+    void process_limit_sensors();
+    bool check_position_limits(float target_angle);
+    void handle_safety_violation();
+    void update_safety_state();
+
+    /**
      * Safety and monitoring
      */
     void check_command_timeout();
@@ -90,6 +99,7 @@ private:
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _predictive_traction_sub{ORB_ID(predictive_traction)};
     uORB::Subscription _servo_feedback_sub{ORB_ID(servo_feedback)};
+    uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
 
     // uORB publications
     uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};
@@ -114,6 +124,30 @@ private:
     // Vehicle state
     float _vehicle_speed_mps{0.0f};
     bool _emergency_stop{false};
+
+    // Limit sensor state
+    struct {
+        bool left_limit_active{false};
+        bool right_limit_active{false};
+        bool left_limit_healthy{false};
+        bool right_limit_healthy{false};
+        uint64_t left_last_update{0};
+        uint64_t right_last_update{0};
+        uint8_t left_instance{255};
+        uint8_t right_instance{255};
+    } _limit_sensors;
+
+    // Safety manager state
+    struct {
+        bool safety_violation{false};
+        bool position_limit_violation{false};
+        bool emergency_stop_active{false};
+        bool servo_fault{false};
+        bool sensor_fault{false};
+        float safe_position_rad{0.0f};
+        uint32_t violation_count{0};
+        uint64_t last_violation_time{0};
+    } _safety_state;
 
     // Servo feedback state
     struct {
@@ -178,6 +212,18 @@ private:
         // AS5600 sensor calibration
         (ParamInt32<px4::params::AS5600_INSTANCE_ID>) _param_as5600_instance_id,
         (ParamFloat<px4::params::AS5600_SCALE>) _param_as5600_scale,
-        (ParamFloat<px4::params::AS5600_OFFSET>) _param_as5600_offset
+        (ParamFloat<px4::params::AS5600_OFFSET>) _param_as5600_offset,
+
+        // Limit sensor configuration
+        (ParamBool<px4::params::STEER_LIMIT_EN>) _limit_sensors_enabled,
+        (ParamInt32<px4::params::STEER_LIMIT_LEFT_IDX>) _limit_left_instance,
+        (ParamInt32<px4::params::STEER_LIMIT_RIGHT_IDX>) _limit_right_instance,
+        (ParamFloat<px4::params::STEER_LIMIT_MARGIN>) _limit_margin_rad,
+
+        // Safety manager configuration
+        (ParamBool<px4::params::STEER_SAFETY_EN>) _safety_manager_enabled,
+        (ParamFloat<px4::params::STEER_SAFE_POS>) _safety_position_rad,
+        (ParamFloat<px4::params::STEER_FAULT_TIMEOUT>) _fault_timeout_ms,
+        (ParamInt32<px4::params::STEER_MAX_VIOLATIONS>) _max_violations
     )
 };
