@@ -127,3 +127,95 @@ parameters:
             default: 104
             decimal: 0
             increment: 1
+
+        HBRDG_CH0_LM_MIN:
+            description:
+                short: H-Bridge Channel 0 Minimum Limit Sensor Instance
+                long: |
+                    Limit sensor instance for channel 0 minimum position limit.
+                    Set to 255 to disable limit checking.
+            type: int32
+            min: 0
+            max: 255
+            default: 255
+            decimal: 0
+            increment: 1
+
+        HBRDG_CH0_LM_MAX:
+            description:
+                short: H-Bridge Channel 0 Maximum Limit Sensor Instance
+                long: |
+                    Limit sensor instance for channel 0 maximum position limit.
+                    Set to 255 to disable limit checking.
+            type: int32
+            min: 0
+            max: 255
+            default: 255
+            decimal: 0
+            increment: 1
+
+        HBRDG_CH1_LM_MIN:
+            description:
+                short: H-Bridge Channel 1 Minimum Limit Sensor Instance
+                long: |
+                    Limit sensor instance for channel 1 minimum position limit.
+                    Set to 255 to disable limit checking.
+            type: int32
+            min: 0
+            max: 255
+            default: 255
+            decimal: 0
+            increment: 1
+
+        HBRDG_CH1_LM_MAX:
+            description:
+                short: H-Bridge Channel 1 Maximum Limit Sensor Instance
+                long: |
+                    Limit sensor instance for channel 1 maximum position limit.
+                    Set to 255 to disable limit checking.
+            type: int32
+            min: 0
+            max: 255
+            default: 255
+            decimal: 0
+            increment: 1
+
+        HBRDG_CH0_AL_MIN:
+            description:
+                short: H-Bridge Channel 0 Allow Into Min Limit
+                long: |
+                    Allow motion into minimum limit for channel 0.
+                    Useful for zeroing operations.
+            type: int32
+            boolean: true
+            default: 0
+
+        HBRDG_CH0_AL_MAX:
+            description:
+                short: H-Bridge Channel 0 Allow Into Max Limit
+                long: |
+                    Allow motion into maximum limit for channel 0.
+                    Useful for calibration operations.
+            type: int32
+            boolean: true
+            default: 0
+
+        HBRDG_CH1_AL_MIN:
+            description:
+                short: H-Bridge Channel 1 Allow Into Min Limit
+                long: |
+                    Allow motion into minimum limit for channel 1.
+                    Useful for zeroing operations.
+            type: int32
+            boolean: true
+            default: 0
+
+        HBRDG_CH1_AL_MAX:
+            description:
+                short: H-Bridge Channel 1 Allow Into Max Limit
+                long: |
+                    Allow motion into maximum limit for channel 1.
+                    Useful for calibration operations.
+            type: int32
+            boolean: true
+            default: 0

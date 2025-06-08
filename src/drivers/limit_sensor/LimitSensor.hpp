@@ -1,12 +1,16 @@
 #pragma once
 
+#include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+
 #include <lib/perf/perf_counter.h>
+
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
+
 #include <board_config.h>
 
 using namespace time_literals;

@@ -4,15 +4,15 @@
  */
 
 /**
- * Bucket motor index
+ * Bucket H-bridge channel
  *
- * Index of the motor in the actuator_motors array for bucket control
+ * H-bridge driver channel index for bucket motor control
  *
  * @group Bucket Control
  * @min 0
  * @max 15
  */
-PARAM_DEFINE_INT32(BCT_MOT_IDX, 0);
+PARAM_DEFINE_INT32(BCT_HBRIDGE_CH, 0);
 
 /**
  * Bucket encoder index
@@ -78,7 +78,7 @@ PARAM_DEFINE_FLOAT(BCT_ACT_BASE_Y, -100.0);
  * @unit mm
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_BELLCRANK_BOOM_X, 300.0);
+PARAM_DEFINE_FLOAT(BCT_BCRK_BOOM_X, 300.0);
 
 /**
  * Bellcrank boom attachment Y
@@ -89,7 +89,7 @@ PARAM_DEFINE_FLOAT(BCT_BELLCRANK_BOOM_X, 300.0);
  * @unit mm
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_BELLCRANK_BOOM_Y, 50.0);
+PARAM_DEFINE_FLOAT(BCT_BCRK_BOOM_Y, 50.0);
 
 /**
  * Bucket boom pivot X
@@ -123,7 +123,7 @@ PARAM_DEFINE_FLOAT(BCT_BKT_BOOM_Y, 0.0);
  * @min 10.0
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_BELLCRANK_LENGTH, 150.0);
+PARAM_DEFINE_FLOAT(BCT_BCRK_LENGTH, 150.0);
 
 /**
  * Coupler length
@@ -135,7 +135,7 @@ PARAM_DEFINE_FLOAT(BCT_BELLCRANK_LENGTH, 150.0);
  * @min 10.0
  * @decimal 1
  */
-PARAM_DEFINE_FLOAT(BCT_COUPLER_LENGTH, 200.0);
+PARAM_DEFINE_FLOAT(BCT_COUP_LENGTH, 200.0);
 
 /**
  * Actuator attachment offset
@@ -172,7 +172,7 @@ PARAM_DEFINE_FLOAT(BCT_BKT_ARM_LEN, 100.0);
  * @max 3.14159
  * @decimal 3
  */
-PARAM_DEFINE_FLOAT(BCT_BELLCRANK_INT_ANG, 1.57);
+PARAM_DEFINE_FLOAT(BCT_BCRK_INT_ANG, 1.57);
 
 /**
  * Bucket attachment offset
@@ -249,7 +249,7 @@ PARAM_DEFINE_FLOAT(BCT_ANG_MAX, 1.57);
  * Conversion factor from encoder counts to mm of actuator travel
  *
  * @group Bucket Control
- * @unit mm/count
+ * @unit m
  * @decimal 6
  */
 PARAM_DEFINE_FLOAT(BCT_ENC_SCALE, 0.001);
@@ -296,7 +296,6 @@ PARAM_DEFINE_FLOAT(BCT_PID_D, 0.05);
  * Maximum velocity for bucket actuator (mm/s)
  *
  * @group Bucket Control
- * @unit mm/s
  * @min 10.0
  * @max 500.0
  * @decimal 1
@@ -309,7 +308,6 @@ PARAM_DEFINE_FLOAT(BCT_MAX_VEL, 100.0);
  * Maximum acceleration for bucket actuator (mm/s²)
  *
  * @group Bucket Control
- * @unit mm/s²
  * @min 50.0
  * @max 1000.0
  * @decimal 1
@@ -322,7 +320,6 @@ PARAM_DEFINE_FLOAT(BCT_MAX_ACC, 200.0);
  * Maximum jerk for S-curve trajectory (mm/s³)
  *
  * @group Bucket Control
- * @unit mm/s³
  * @min 100.0
  * @max 5000.0
  * @decimal 1
@@ -352,3 +349,117 @@ PARAM_DEFINE_FLOAT(BCT_ZERO_FAST, 0.7);
  * @decimal 3
  */
 PARAM_DEFINE_FLOAT(BCT_ZERO_SLOW, 0.05);
+
+/**
+ * AHRS integration enable
+ *
+ * Enable attitude-based bucket control features
+ *
+ * @group Bucket AHRS
+ * @boolean
+ */
+PARAM_DEFINE_INT32(BCT_AHRS_EN, 1);
+
+/**
+ * Bucket control mode
+ *
+ * 0: Manual, 1: Auto-level, 2: Slope compensation, 3: Grading, 4: Transport
+ *
+ * @group Bucket AHRS
+ * @min 0
+ * @max 4
+ * @value 0 Manual
+ * @value 1 Auto-level
+ * @value 2 Slope compensation
+ * @value 3 Grading
+ * @value 4 Transport
+ */
+PARAM_DEFINE_INT32(BCT_CTRL_MODE, 0);
+
+/**
+ * Auto-level P gain
+ *
+ * Proportional gain for auto-leveling control
+ *
+ * @group Bucket AHRS
+ * @min 0.0
+ * @max 5.0
+ * @decimal 2
+ */
+PARAM_DEFINE_FLOAT(BCT_LEVEL_P, 2.0);
+
+/**
+ * Auto-level D gain
+ *
+ * Derivative gain for auto-leveling control
+ *
+ * @group Bucket AHRS
+ * @min 0.0
+ * @max 2.0
+ * @decimal 3
+ */
+PARAM_DEFINE_FLOAT(BCT_LEVEL_D, 0.2);
+
+/**
+ * Slope compensation factor
+ *
+ * How much to compensate for machine pitch (0.0 = none, 1.0 = full)
+ *
+ * @group Bucket AHRS
+ * @min 0.0
+ * @max 1.0
+ * @decimal 2
+ */
+PARAM_DEFINE_FLOAT(BCT_SLOPE_COMP, 0.8);
+
+/**
+ * Grading angle
+ *
+ * Desired cutting angle for grading operations (rad)
+ *
+ * @group Bucket AHRS
+ * @unit rad
+ * @min -0.5
+ * @max 0.5
+ * @decimal 3
+ */
+PARAM_DEFINE_FLOAT(BCT_GRADE_ANG, -0.1);
+
+/**
+ * Transport angle
+ *
+ * Safe bucket angle for material transport (rad)
+ *
+ * @group Bucket AHRS
+ * @unit rad
+ * @min 0.0
+ * @max 1.0
+ * @decimal 3
+ */
+PARAM_DEFINE_FLOAT(BCT_TRANS_ANG, 0.3);
+
+/**
+ * Stability threshold
+ *
+ * Machine tilt angle threshold for stability limiting (rad)
+ *
+ * @group Bucket AHRS
+ * @unit rad
+ * @min 0.1
+ * @max 1.0
+ * @decimal 3
+ */
+PARAM_DEFINE_FLOAT(BCT_STAB_THR, 0.5);
+
+/**
+ * Anti-spill threshold
+ *
+ * Acceleration threshold for anti-spill activation (g)
+ *
+ * @group Bucket AHRS
+ * @unit
+ * @min 0.1
+ * @max 1.0
+ * @decimal 2
+ */
+PARAM_DEFINE_FLOAT(BCT_SPILL_THR, 0.3);

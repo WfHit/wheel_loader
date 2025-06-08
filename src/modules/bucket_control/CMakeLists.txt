@@ -6,6 +6,6 @@ px4_add_module(
         bucket_control_main.cpp
     DEPENDS
         px4_work_queue
-        pid
+        PID
         mathlib
 )

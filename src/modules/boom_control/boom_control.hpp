@@ -47,13 +47,12 @@
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionData.hpp>
-#include <uORB/topics/hbridge_cmd.h>
-#include <uORB/topics/hbridge_status.h>
-#include <uORB/topics/manual_control_setpoint.h>
+#include <uORB/topics/boom_command.h>
+#include <uORB/topics/boom_status.h>
+#include <uORB/topics/hbridge_channel_cmd.h>
+#include <uORB/topics/hbridge_channel.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_mag_encoder.h>
-#include <uORB/topics/vehicle_command.h>
-#include <uORB/topics/vehicle_command_ack.h>
 
 using namespace time_literals;
 
@@ -149,15 +148,14 @@ private:
 	PositionSmoothing _trajectory_generator;
 
 	// uORB subscriptions
-	uORB::Subscription _manual_control_sub{ORB_ID(manual_control_setpoint)};
-	uORB::Subscription _vehicle_command_sub{ORB_ID(vehicle_command)};
+	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::Subscription _hbridge_channel_status_sub{ORB_ID(hbridge_channel)};
 	uORB::SubscriptionData<sensor_mag_encoder_s> _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 
 	// uORB publications
-	uORB::PublicationMulti<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
-	uORB::Publication<vehicle_command_ack_s> _vehicle_command_ack_pub{ORB_ID(vehicle_command_ack)};
+	uORB::PublicationMulti<hbridge_channel_cmd_s> _hbridge_channel_cmd_pub{ORB_ID(hbridge_channel_cmd)};
+	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 
 	// Performance counters
 	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
@@ -188,14 +186,13 @@ private:
 	// Control and sensor functions
 	void update_parameters();
 	void update_sensor_data();
-	void process_hbridge_status();
-	void process_manual_control();
-	void process_vehicle_commands();
+	void process_hbridge_channel_status();
+	void process_boom_command();
 	void update_trajectory();
 	void run_position_control();
 	void check_limits_and_safety();
-	void publish_hbridge_command();
-	void publish_command_ack(uint16_t command, uint8_t result);
+	void publish_hbridge_channel_command();
+	void publish_boom_status();
 
 	// Utility functions
 	void set_target_position(BoomPreset preset);

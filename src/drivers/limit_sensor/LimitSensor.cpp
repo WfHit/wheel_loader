@@ -1,7 +1,9 @@
 #include "LimitSensor.hpp"
-#include <px4_platform_common/log.h>
+
 #include <px4_platform_common/getopt.h>
+#include <px4_platform_common/log.h>
 #include <px4_arch/io_timer.h>
+
 #include <parameters/param.h>
 
 LimitSensor::LimitSensor(uint8_t instance) :

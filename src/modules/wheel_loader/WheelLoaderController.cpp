@@ -61,6 +61,7 @@ WheelLoaderController::WheelLoaderController() :
     // Initialize control outputs
     _actuator_motors = {};
     _actuator_servos = {};
+    _boom_command = {};
     _bucket_command = {};
 }
 
@@ -109,6 +110,9 @@ void WheelLoaderController::Run()
     updateSafetyStatus();
     updateParameters();
 
+    // Update AHRS-enhanced bucket control monitoring
+    updateBucketControlForTerrain();
+
     // Perform safety checks
     performSafetyChecks();
 
@@ -127,6 +131,9 @@ void WheelLoaderController::Run()
         processEmergencyStop();
         break;
     }
+
+    // Log AHRS status periodically
+    logAHRSStatus();
 
     // Publish system status periodically
     if (hrt_elapsed_time(&_module_status.timestamp) > STATUS_PUBLISH_INTERVAL_US) {
@@ -308,19 +315,81 @@ void WheelLoaderController::controlBoomBucket(const manual_control_setpoint_s &m
     float boom_input = manual.pitch; // Use pitch for boom
     float bucket_input = manual.yaw;  // Use yaw for bucket
 
-    // Boom control (direct velocity control)
-    float boom_max_vel = _param_boom_max_vel.get();
-    float boom_velocity = boom_input * boom_max_vel;
+    // Boom control using boom_command messages
+    _boom_command.timestamp = hrt_absolute_time();
 
-    // For boom, we would send commands to the boom controller
-    // This is a simplified approach - in reality, boom control might be more complex
+    if (fabsf(boom_input) > 0.05f) { // Deadband to prevent noise
+        // Velocity control mode for manual operation
+        _boom_command.command_mode = 1; // Velocity mode
+        _boom_command.target_angle = boom_input * _param_boom_max_vel.get(); // Using target_angle as velocity in velocity mode
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f; // Maximum load capacity
+        _boom_command.priority = 1; // Normal priority
+        _boom_command.emergency_stop = false;
+    } else {
+        // Stop boom when no input
+        _boom_command.command_mode = 1; // Velocity mode
+        _boom_command.target_angle = 0.0f; // Zero velocity
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f;
+        _boom_command.priority = 1;
+        _boom_command.emergency_stop = false;
+    }
 
-    // Bucket control
+    // Enhanced bucket control with AHRS integration
     _bucket_command.timestamp = hrt_absolute_time();
-    _bucket_command.command_mode = 1; // Velocity mode
+
+    if (_control_mode == ControlMode::MANUAL) {
+        // Manual mode - direct operator control
+        _bucket_command.command_mode = 1; // Velocity mode for manual control
+        _bucket_command.control_mode = bucket_command_s::MODE_MANUAL;
+        _bucket_command.target_angle = bucket_input * _param_bucket_max_vel.get(); // Using as velocity
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.enable_stability_limit = true; // Always enable for safety
+        _bucket_command.enable_anti_spill = false; // Not needed in manual mode
+    } else {
+        // Semi-auto or auto modes - use enhanced features
+        _bucket_command.command_mode = 0; // Position mode for precise control
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.enable_stability_limit = true;
+        _bucket_command.enable_anti_spill = (_work_cycle_state == WorkCycleState::TRANSPORT);
+
+        // Set control mode based on work cycle state
+        switch (_work_cycle_state) {
+        case WorkCycleState::LOAD_MATERIAL:
+            _bucket_command.control_mode = bucket_command_s::MODE_AUTO_LEVEL;
+            _bucket_command.target_angle = _work_cycle_params.load_angle * M_PI / 180.0f;
+            break;
+
+        case WorkCycleState::TRANSPORT:
+            _bucket_command.control_mode = bucket_command_s::MODE_TRANSPORT;
+            _bucket_command.target_angle = _work_cycle_params.transport_angle * M_PI / 180.0f;
+            _bucket_command.transport_angle = _work_cycle_params.carry_angle * M_PI / 180.0f;
+            break;
+
+        case WorkCycleState::DUMP_MATERIAL:
+            _bucket_command.control_mode = bucket_command_s::MODE_GRADING;
+            _bucket_command.target_angle = _work_cycle_params.dump_angle * M_PI / 180.0f;
+            _bucket_command.grading_angle = _work_cycle_params.dump_angle * M_PI / 180.0f;
+            break;
+
+        default:
+            _bucket_command.control_mode = bucket_command_s::MODE_MANUAL;
+            _bucket_command.target_angle = bucket_input * _param_bucket_max_vel.get();
+            break;
+        }
+    }
+
     _bucket_command.max_velocity = _param_bucket_max_vel.get();
-    _bucket_command.target_angle = bucket_input * _param_bucket_max_vel.get(); // Using as velocity
-    _bucket_command.coordinate_frame = 0; // Ground reference
+
+    // Set NaN for parameters we want to use defaults for
+    if (_bucket_command.control_mode != bucket_command_s::MODE_GRADING) {
+        _bucket_command.grading_angle = NAN;
+    }
+    if (_bucket_command.control_mode != bucket_command_s::MODE_TRANSPORT) {
+        _bucket_command.transport_angle = NAN;
+    }
+    _bucket_command.stability_threshold = NAN; // Use parameter default
 
     publishBoomBucketCommands();
 }
@@ -340,11 +409,75 @@ void WheelLoaderController::processManualControl()
 
 void WheelLoaderController::processSemiAutoControl()
 {
-    // Semi-automatic mode with operator oversight
-    // This would include features like:
-    // - Automatic load leveling
-    // - Bucket shake for loading
-    // - Coordinated boom/bucket movements
+    // Semi-automatic mode with operator oversight and AHRS assistance
+    // This includes features like:
+    // - Automatic load leveling during loading operations
+    // - Bucket shake for loading assistance
+    // - Slope compensation during transport
+    // - Anti-spill control when carrying loads
+
+    manual_control_setpoint_s manual_control;
+    if (_manual_control_sub.copy(&manual_control)) {
+        // Check if operator is actively controlling bucket
+        bool operator_bucket_control = fabsf(manual_control.yaw) > 0.05f;
+        bool operator_boom_control = fabsf(manual_control.pitch) > 0.05f;
+
+        if (operator_bucket_control || operator_boom_control) {
+            // Operator override - use manual control with stability assist
+            controlBoomBucket(manual_control);
+        } else {
+            // No operator input - enable automatic features based on context
+
+            // Determine appropriate automatic mode based on boom position and load
+            bucket_status_s bucket_status;
+            bool has_bucket_status = _bucket_status_sub.copy(&bucket_status);
+
+            boom_status_s boom_status;
+            bool has_boom_status = _boom_status_sub.copy(&boom_status);
+
+            if (has_bucket_status && has_boom_status) {
+                // Auto-select control mode based on operational context
+                if (boom_status.angle < _work_cycle_params.load_angle * M_PI / 180.0f + 0.2f) {
+                    // Low boom position - likely loading
+                    _bucket_command.control_mode = bucket_command_s::MODE_AUTO_LEVEL;
+                    _bucket_command.target_angle = 0.0f; // Level bucket for loading
+
+                } else if (boom_status.angle > _work_cycle_params.transport_angle * M_PI / 180.0f - 0.2f) {
+                    // High boom position - likely transporting
+                    _bucket_command.control_mode = bucket_command_s::MODE_TRANSPORT;
+                    _bucket_command.target_angle = _work_cycle_params.carry_angle * M_PI / 180.0f;
+                    _bucket_command.enable_anti_spill = true;
+
+                } else {
+                    // Mid position - use slope compensation
+                    _bucket_command.control_mode = bucket_command_s::MODE_SLOPE_COMPENSATION;
+                    _bucket_command.target_angle = bucket_status.ground_angle; // Maintain current angle
+                }
+
+                _bucket_command.timestamp = hrt_absolute_time();
+                _bucket_command.command_mode = 0; // Position mode
+                _bucket_command.coordinate_frame = 0; // Ground reference
+                _bucket_command.max_velocity = _param_bucket_max_vel.get() * 0.5f; // Slower for auto mode
+                _bucket_command.enable_stability_limit = true;
+
+                // Set defaults for unused parameters
+                _bucket_command.grading_angle = NAN;
+                _bucket_command.transport_angle = NAN;
+                _bucket_command.stability_threshold = NAN;
+
+                // Keep boom control manual
+                _boom_command.timestamp = hrt_absolute_time();
+                _boom_command.command_mode = 1; // Velocity mode
+                _boom_command.target_angle = 0.0f; // No automatic boom movement
+                _boom_command.max_velocity = _param_boom_max_vel.get();
+                _boom_command.max_load = 1.0f;
+                _boom_command.priority = 1;
+                _boom_command.emergency_stop = false;
+
+                publishBoomBucketCommands();
+            }
+        }
+    }
 
     _system_state = SystemState::OPERATION;
     _module_status.operational_state = module_status_s::STATE_ACTIVE;
@@ -385,9 +518,31 @@ void WheelLoaderController::executeWorkCycle()
         break;
 
     case WorkCycleState::LOAD_MATERIAL:
-        // Autonomous loading sequence
+        // Autonomous loading sequence with AHRS-assisted bucket control
         _actuator_motors.velocity[0] = _work_cycle_params.loading_speed;
         _actuator_motors.velocity[1] = _work_cycle_params.loading_speed;
+
+        // Lower boom for loading
+        _boom_command.timestamp = hrt_absolute_time();
+        _boom_command.command_mode = 0; // Position mode
+        _boom_command.target_angle = math::radians(_work_cycle_params.load_angle);
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f;
+        _boom_command.priority = 2; // High priority for autonomous operation
+        _boom_command.emergency_stop = false;
+
+        // Enhanced bucket control for loading with auto-leveling
+        _bucket_command.timestamp = hrt_absolute_time();
+        _bucket_command.command_mode = 0; // Position mode
+        _bucket_command.control_mode = bucket_command_s::MODE_AUTO_LEVEL;
+        _bucket_command.target_angle = 0.0f; // Level bucket for optimal loading
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.max_velocity = _param_bucket_max_vel.get() * 0.8f; // Slower for precision
+        _bucket_command.enable_stability_limit = true;
+        _bucket_command.enable_anti_spill = false; // Not needed during loading
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = NAN;
+        _bucket_command.stability_threshold = NAN;
 
         // Check load level
         if (_boom_bucket_state.boom_load > _work_cycle_params.load_detection_threshold) {
@@ -396,9 +551,31 @@ void WheelLoaderController::executeWorkCycle()
         break;
 
     case WorkCycleState::TRANSPORT:
-        // Move to dump location
+        // Move to dump location with enhanced transport control
         _actuator_motors.velocity[0] = _work_cycle_params.transport_speed;
         _actuator_motors.velocity[1] = _work_cycle_params.transport_speed;
+
+        // Raise boom to transport position
+        _boom_command.timestamp = hrt_absolute_time();
+        _boom_command.command_mode = 0; // Position mode
+        _boom_command.target_angle = math::radians(_work_cycle_params.transport_angle);
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f;
+        _boom_command.priority = 2; // High priority for autonomous operation
+        _boom_command.emergency_stop = false;
+
+        // Enhanced bucket control for transport with anti-spill and stability
+        _bucket_command.timestamp = hrt_absolute_time();
+        _bucket_command.command_mode = 0; // Position mode
+        _bucket_command.control_mode = bucket_command_s::MODE_TRANSPORT;
+        _bucket_command.target_angle = math::radians(_work_cycle_params.carry_angle);
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.max_velocity = _param_bucket_max_vel.get() * 0.6f; // Slower for stability
+        _bucket_command.enable_stability_limit = true;
+        _bucket_command.enable_anti_spill = true; // Critical for transport
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = math::radians(_work_cycle_params.carry_angle);
+        _bucket_command.stability_threshold = NAN;
 
         // Transition when at dump location (simplified)
         if (hrt_elapsed_time(&_state_transition_time) > 15_s) {
@@ -407,15 +584,31 @@ void WheelLoaderController::executeWorkCycle()
         break;
 
     case WorkCycleState::DUMP_MATERIAL:
-        // Autonomous dump sequence
+        // Autonomous dump sequence with precision grading control
         _actuator_motors.velocity[0] = 0.0f;
         _actuator_motors.velocity[1] = 0.0f;
 
-        // Execute dump sequence (raise boom, tip bucket)
+        // Raise boom to dump position
+        _boom_command.timestamp = hrt_absolute_time();
+        _boom_command.command_mode = 0; // Position mode
+        _boom_command.target_angle = math::radians(_work_cycle_params.dump_height);
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f;
+        _boom_command.priority = 2; // High priority for autonomous operation
+        _boom_command.emergency_stop = false;
+
+        // Enhanced dump sequence with grading control for precise material placement
         _bucket_command.timestamp = hrt_absolute_time();
         _bucket_command.command_mode = 0; // Position mode
+        _bucket_command.control_mode = bucket_command_s::MODE_GRADING;
         _bucket_command.target_angle = math::radians(_work_cycle_params.dump_angle);
-        _bucket_command.coordinate_frame = 0;
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.max_velocity = _param_bucket_max_vel.get() * 0.7f; // Controlled dumping speed
+        _bucket_command.enable_stability_limit = true;
+        _bucket_command.enable_anti_spill = false; // Not needed during dumping
+        _bucket_command.grading_angle = math::radians(_work_cycle_params.dump_angle);
+        _bucket_command.transport_angle = NAN;
+        _bucket_command.stability_threshold = NAN;
 
         // Transition when dump complete
         if (hrt_elapsed_time(&_state_transition_time) > 8_s) {
@@ -424,15 +617,31 @@ void WheelLoaderController::executeWorkCycle()
         break;
 
     case WorkCycleState::RETURN:
-        // Return to starting position
+        // Return to starting position with safe transport settings
         _actuator_motors.velocity[0] = -_work_cycle_params.transport_speed * 0.8f;
         _actuator_motors.velocity[1] = -_work_cycle_params.transport_speed * 0.8f;
 
-        // Return bucket to transport position
+        // Lower boom to carry position
+        _boom_command.timestamp = hrt_absolute_time();
+        _boom_command.command_mode = 0; // Position mode
+        _boom_command.target_angle = math::radians(_work_cycle_params.carry_angle);
+        _boom_command.max_velocity = _param_boom_max_vel.get();
+        _boom_command.max_load = 1.0f;
+        _boom_command.priority = 2; // High priority for autonomous operation
+        _boom_command.emergency_stop = false;
+
+        // Return bucket to safe transport position with slope compensation
         _bucket_command.timestamp = hrt_absolute_time();
         _bucket_command.command_mode = 0; // Position mode
-        _bucket_command.target_angle = 0.0f;
-        _bucket_command.coordinate_frame = 0;
+        _bucket_command.control_mode = bucket_command_s::MODE_SLOPE_COMPENSATION;
+        _bucket_command.target_angle = 0.0f; // Neutral/level position
+        _bucket_command.coordinate_frame = 0; // Ground reference
+        _bucket_command.max_velocity = _param_bucket_max_vel.get();
+        _bucket_command.enable_stability_limit = true;
+        _bucket_command.enable_anti_spill = false; // No load to spill
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = NAN;
+        _bucket_command.stability_threshold = NAN;
 
         // Transition back to idle when complete
         if (hrt_elapsed_time(&_state_transition_time) > 12_s) {
@@ -478,6 +687,7 @@ void WheelLoaderController::resetControllers()
     // Reset all control outputs to safe values
     _actuator_motors = {};
     _actuator_servos = {};
+    _boom_command = {};
     _bucket_command = {};
 
     // Publish zero commands
@@ -496,6 +706,7 @@ void WheelLoaderController::publishChassisCommands()
 
 void WheelLoaderController::publishBoomBucketCommands()
 {
+    _boom_command_pub.publish(_boom_command);
     _bucket_command_pub.publish(_bucket_command);
 }
 
@@ -547,6 +758,122 @@ void WheelLoaderController::publishSystemStatus()
 
     _module_status.timestamp = hrt_absolute_time();
     _module_status_pub.publish(_module_status);
+}
+
+void WheelLoaderController::configureAHRSBucketControl(uint8_t mode, float target_angle)
+{
+    // Configure the bucket control system for AHRS-enhanced operation
+    _bucket_command.control_mode = mode;
+    _bucket_command.coordinate_frame = 0; // Ground reference frame for AHRS
+    _bucket_command.enable_stability_limit = true;
+    _bucket_command.stability_threshold = NAN; // Use parameter default
+
+    if (!isnan(target_angle)) {
+        _bucket_command.target_angle = target_angle;
+    }
+
+    switch (mode) {
+    case bucket_command_s::MODE_AUTO_LEVEL:
+        _bucket_command.enable_anti_spill = false;
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = NAN;
+        break;
+
+    case bucket_command_s::MODE_SLOPE_COMPENSATION:
+        _bucket_command.enable_anti_spill = false;
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = NAN;
+        break;
+
+    case bucket_command_s::MODE_GRADING:
+        _bucket_command.enable_anti_spill = false;
+        _bucket_command.grading_angle = isnan(target_angle) ?
+            (_work_cycle_params.load_angle * M_PI / 180.0f) : target_angle;
+        _bucket_command.transport_angle = NAN;
+        break;
+
+    case bucket_command_s::MODE_TRANSPORT:
+        _bucket_command.enable_anti_spill = true;
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = isnan(target_angle) ?
+            (_work_cycle_params.transport_angle * M_PI / 180.0f) : target_angle;
+        break;
+
+    default:
+        _bucket_command.control_mode = bucket_command_s::MODE_MANUAL;
+        _bucket_command.enable_anti_spill = false;
+        _bucket_command.grading_angle = NAN;
+        _bucket_command.transport_angle = NAN;
+        break;
+    }
+}
+
+void WheelLoaderController::updateBucketControlForTerrain()
+{
+    // Update bucket control based on current terrain conditions
+    bucket_status_s bucket_status;
+    if (_bucket_status_sub.copy(&bucket_status)) {
+        // Check if machine stability is compromised
+        if (bucket_status.stability_factor < 0.8f) {
+            // Reduce bucket movement aggressiveness
+            _bucket_command.max_velocity = _param_bucket_max_vel.get() * bucket_status.stability_factor;
+
+            // Enable stability limiting
+            _bucket_command.enable_stability_limit = true;
+
+            // If very unstable, switch to manual mode for operator control
+            if (bucket_status.stability_factor < 0.5f) {
+                configureAHRSBucketControl(bucket_command_s::MODE_MANUAL);
+                PX4_WARN("Switching to manual bucket control due to low stability");
+            }
+        }
+
+        // Check if we need anti-spill control
+        if (bucket_status.spill_risk > 0.5f && _work_cycle_state == WorkCycleState::TRANSPORT) {
+            _bucket_command.enable_anti_spill = true;
+        }
+
+        // Adjust control parameters based on machine pitch
+        if (fabsf(bucket_status.machine_pitch) > 0.17f) { // 10 degrees
+            // Enable slope compensation for steep terrain
+            if (_bucket_command.control_mode == bucket_command_s::MODE_AUTO_LEVEL) {
+                configureAHRSBucketControl(bucket_command_s::MODE_SLOPE_COMPENSATION);
+            }
+        }
+    }
+}
+
+bool WheelLoaderController::isStabilityLimitRequired()
+{
+    bucket_status_s bucket_status;
+    if (_bucket_status_sub.copy(&bucket_status)) {
+        // Check multiple stability indicators
+        bool low_stability = bucket_status.stability_factor < 0.8f;
+        bool high_pitch = fabsf(bucket_status.machine_pitch) > 0.26f; // 15 degrees
+        bool high_acceleration = bucket_status.spill_risk > 0.3f;
+
+        return low_stability || high_pitch || high_acceleration;
+    }
+
+    return true; // Default to enabled for safety
+}
+
+void WheelLoaderController::logAHRSStatus()
+{
+    static uint64_t last_log_time = 0;
+
+    if (hrt_elapsed_time(&last_log_time) > 2_s) {
+        last_log_time = hrt_absolute_time();
+
+        bucket_status_s bucket_status;
+        if (_bucket_status_sub.copy(&bucket_status)) {
+            PX4_INFO("AHRS Status - Mode: %d, Stability: %.2f, Pitch: %.1f°, Spill Risk: %.2f",
+                    bucket_status.control_mode,
+                    static_cast<double>(bucket_status.stability_factor),
+                    static_cast<double>(bucket_status.machine_pitch * 180.0f / M_PI),
+                    static_cast<double>(bucket_status.spill_risk));
+        }
+    }
 }
 
 void WheelLoaderController::logSystemPerformance()

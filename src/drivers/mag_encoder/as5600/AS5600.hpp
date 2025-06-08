@@ -46,8 +46,10 @@
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+
 #include <lib/drivers/device/i2c.h>
 #include <lib/perf/perf_counter.h>
+
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/sensor_mag_encoder.h>
 

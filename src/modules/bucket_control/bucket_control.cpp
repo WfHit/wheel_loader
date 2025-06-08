@@ -204,51 +204,99 @@ void BucketControl::Run()
         updateParams();
         updateKinematicParameters();
         _motor_index = _param_motor_index.get();
+        _control_mode = static_cast<ControlMode>(_param_control_mode.get());
+    }
+
+    // Update AHRS data if enabled
+    if (_param_ahrs_enabled.get()) {
+        updateAHRSData();
     }
 
     // Read sensors
     readEncoderFeedback();
     checkLimitSwitches();
 
-    // Process bucket commands
-    bucket_command_s cmd;
-    if (_bucket_cmd_sub.update(&cmd)) {
-        float target_ground_angle = cmd.target_angle; // Command is in ground coordinates
-
-        // Get current boom angle for compensation
-        boom_status_s boom_status;
-        float boom_angle = 0.0f;
-        if (_boom_status_sub.copy(&boom_status)) {
-            boom_angle = boom_status.angle;
-        }
-
-        // Convert ground angle to bucket angle relative to boom
-        float target_bucket_angle = compensateBoomAngle(target_ground_angle, boom_angle);
-
-        // Convert bucket angle to actuator length
-        _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, boom_angle);
-
-        PX4_DEBUG("Cmd: ground=%.2f°, boom=%.2f°, bucket=%.2f°, actuator=%.1fmm",
-                 math::degrees(target_ground_angle), math::degrees(boom_angle),
-                 math::degrees(target_bucket_angle), _target_actuator_length);
+    // Get current boom angle for all calculations
+    boom_status_s boom_status;
+    _current_boom_angle = 0.0f;
+    if (_boom_status_sub.copy(&boom_status)) {
+        _current_boom_angle = boom_status.angle;
     }
 
     // Update current angles for status
-    boom_status_s boom_status;
-    float boom_angle = 0.0f;
-    if (_boom_status_sub.copy(&boom_status)) {
-        boom_angle = boom_status.angle;
-    }
+    _current_bucket_angle = actuatorLengthToBucketAngle(_current_actuator_length, _current_boom_angle);
+    _current_ground_angle = calculateGroundRelativeAngle(_current_bucket_angle);
 
-    _current_bucket_angle = actuatorLengthToBucketAngle(_current_actuator_length, boom_angle);
-    _current_ground_angle = _current_bucket_angle + boom_angle;
+    // Process bucket commands
+    bucket_command_s cmd;
+    if (_bucket_cmd_sub.update(&cmd)) {
+        _target_ground_angle = cmd.target_angle; // Command is in ground coordinates
+
+        // Update control mode from command if specified
+        if (cmd.control_mode != static_cast<uint8_t>(_control_mode)) {
+            _control_mode = static_cast<ControlMode>(cmd.control_mode);
+            PX4_INFO("Control mode changed to: %d", static_cast<int>(_control_mode));
+        }
+
+        // Override parameters with command values if provided (not NaN)
+        if (!isnan(cmd.grading_angle)) {
+            _grading_angle = cmd.grading_angle;
+        } else {
+            _grading_angle = _param_grading_angle.get();
+        }
+
+        if (!isnan(cmd.transport_angle)) {
+            _transport_angle = cmd.transport_angle;
+        } else {
+            _transport_angle = _param_transport_angle.get();
+        }
+
+        // Apply control mode logic
+        switch (_control_mode) {
+        case ControlMode::AUTO_LEVEL:
+            performAutoLevel();
+            break;
+
+        case ControlMode::GRADING:
+            performGradingControl();
+            break;
+
+        case ControlMode::TRANSPORT:
+            applyAntiSpillControl();
+            break;
+
+        case ControlMode::SLOPE_COMPENSATION:
+            {
+                float compensated_angle = compensateForSlope(_target_ground_angle);
+                float target_bucket_angle = compensated_angle - _current_boom_angle;
+                _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+            }
+            break;
+
+        case ControlMode::MANUAL:
+        default:
+            // Use existing manual control
+            float target_bucket_angle = compensateBoomAngle(_target_ground_angle, _current_boom_angle);
+            _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+            break;
+        }
+
+        PX4_DEBUG("Cmd: ground=%.2f°, boom=%.2f°, bucket=%.2f°, actuator=%.1fmm, mode=%d",
+                 math::degrees(_target_ground_angle), math::degrees(_current_boom_angle),
+                 math::degrees(_current_bucket_angle), _target_actuator_length, static_cast<int>(_control_mode));
+    }
 
     // Update state machine
     updateStateMachine();
 
+    // Apply stability limiting if AHRS is enabled
+    if (_param_ahrs_enabled.get()) {
+        updateStabilityFactor();
+        _control_output = limitMovementForStability(_control_output);
+    }
+
     // Publish status
-    bucket_status_s status{};
-    status.timestamp = hrt_absolute_time();
+    publishStatus();
     status.current_angle = _current_ground_angle;        // Ground angle for user
     status.bucket_relative_angle = _current_bucket_angle; // Boom-relative angle
     status.current_velocity = _current_velocity;
@@ -510,6 +558,199 @@ bool BucketControl::checkLimitSwitches()
     }
 
     return _limit_switch_coarse || _limit_switch_fine;
+}
+
+// AHRS Integration Methods
+
+void BucketControl::updateAHRSData()
+{
+    // Get vehicle attitude
+    vehicle_attitude_s attitude;
+    if (_vehicle_attitude_sub.update(&attitude)) {
+        // Convert quaternion to Euler angles
+        matrix::Quatf q(attitude.q);
+        matrix::Eulerf euler(q);
+
+        _machine_roll = euler.phi();
+        _machine_pitch = euler.theta();
+        _machine_yaw = euler.psi();
+    }
+
+    // Get angular velocity
+    vehicle_angular_velocity_s angular_vel;
+    if (_vehicle_angular_velocity_sub.update(&angular_vel)) {
+        _angular_rate_x = angular_vel.xyz[0];
+        _angular_rate_y = angular_vel.xyz[1];
+        _angular_rate_z = angular_vel.xyz[2];
+    }
+
+    // Get acceleration
+    vehicle_acceleration_s acceleration;
+    if (_vehicle_acceleration_sub.update(&acceleration)) {
+        _acceleration_x = acceleration.xyz[0];
+        _acceleration_y = acceleration.xyz[1];
+        _acceleration_z = acceleration.xyz[2];
+    }
+}
+
+float BucketControl::calculateGroundRelativeAngle(float bucket_boom_angle)
+{
+    // Calculate bucket angle relative to ground, accounting for machine tilt
+    // bucket_boom_angle is relative to boom
+    // _current_boom_angle is boom angle relative to machine
+    // _machine_pitch is machine pitch relative to ground
+
+    if (!_param_ahrs_enabled.get()) {
+        // Without AHRS, just use simple boom compensation
+        return bucket_boom_angle + _current_boom_angle;
+    }
+
+    float bucket_machine_angle = bucket_boom_angle + _current_boom_angle;
+    float bucket_ground_angle = bucket_machine_angle - _machine_pitch;
+
+    return bucket_ground_angle;
+}
+
+float BucketControl::compensateForSlope(float target_angle)
+{
+    // Compensate for machine pitch to maintain desired ground angle
+    if (!_param_ahrs_enabled.get()) {
+        return target_angle;
+    }
+
+    float compensation = _param_slope_compensation.get() * _machine_pitch;
+    return target_angle + compensation;
+}
+
+void BucketControl::updateStabilityFactor()
+{
+    // Calculate stability based on machine attitude and motion
+    float pitch_factor = fabsf(_machine_pitch) / _param_stability_threshold.get();
+    float roll_factor = fabsf(_machine_roll) / _param_stability_threshold.get();
+
+    // Consider angular rates for dynamic stability
+    float pitch_rate_factor = fabsf(_angular_rate_y) / 1.0f; // 1 rad/s threshold
+    float roll_rate_factor = fabsf(_angular_rate_x) / 1.0f;
+
+    // Combined stability factor (0.0 = very unstable, 1.0 = stable)
+    float static_stability = 1.0f - fmaxf(pitch_factor, roll_factor);
+    float dynamic_stability = 1.0f - fmaxf(pitch_rate_factor, roll_rate_factor);
+
+    _stability_factor = fminf(static_stability, dynamic_stability);
+    _stability_factor = math::constrain(_stability_factor, 0.1f, 1.0f);
+
+    // Set warning flag
+    _stability_warning = (_stability_factor < 0.5f);
+}
+
+float BucketControl::limitMovementForStability(float command)
+{
+    // Reduce command based on stability factor
+    if (_stability_warning) {
+        // More aggressive limiting when unstable
+        return command * _stability_factor * 0.5f;
+    }
+    return command * _stability_factor;
+}
+
+void BucketControl::performAutoLevel()
+{
+    // Auto-level bucket to maintain horizontal orientation
+    float current_ground_angle = calculateGroundRelativeAngle(_current_bucket_angle);
+    float angle_error = _target_ground_angle - current_ground_angle;
+
+    // PD control for smooth leveling
+    float p_term = _param_level_p_gain.get() * angle_error;
+    float d_term = _param_level_d_gain.get() * (-_angular_rate_y); // Damping
+
+    float level_command = p_term + d_term;
+
+    // Convert to actuator length
+    float target_bucket_angle = _current_bucket_angle + level_command;
+    _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+}
+
+void BucketControl::performGradingControl()
+{
+    // Maintain consistent cutting angle for grading operations
+    _grading_angle = _param_grading_angle.get();
+
+    // Account for machine pitch and forward motion
+    float adjusted_angle = _grading_angle - _machine_pitch;
+
+    // Add feed-forward based on machine velocity (if available)
+    if (fabsf(_acceleration_x) > 0.1f) {
+        // Slight angle adjustment based on forward acceleration
+        adjusted_angle += 0.1f * _acceleration_x;
+    }
+
+    float target_bucket_angle = adjusted_angle - _current_boom_angle;
+    _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+}
+
+void BucketControl::applyAntiSpillControl()
+{
+    // Prevent material spillage during transport
+    float spill_risk = 0.0f;
+
+    // Check lateral acceleration (turning)
+    float lateral_g = fabsf(_acceleration_y) / 9.81f;
+    spill_risk = fmaxf(spill_risk, lateral_g / _param_spill_threshold.get());
+
+    // Check pitch changes
+    float pitch_rate_risk = fabsf(_angular_rate_y) / 0.5f; // 0.5 rad/s threshold
+    spill_risk = fmaxf(spill_risk, pitch_rate_risk);
+
+    // Check sudden stops (longitudinal acceleration)
+    float brake_g = fabsf(_acceleration_x) / 9.81f;
+    spill_risk = fmaxf(spill_risk, brake_g / _param_spill_threshold.get());
+
+    _anti_spill_active = (spill_risk > 0.5f);
+
+    if (_anti_spill_active) {
+        // Tilt bucket back to prevent spillage
+        float spill_compensation = math::constrain(spill_risk * 0.2f, 0.0f, 0.3f); // Max 0.3 rad
+        _transport_angle = _param_transport_angle.get() + spill_compensation;
+
+        float target_bucket_angle = _transport_angle - _current_boom_angle - _machine_pitch;
+        _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+    } else {
+        // Normal transport angle
+        _transport_angle = _param_transport_angle.get();
+        float target_bucket_angle = _transport_angle - _current_boom_angle;
+        _target_actuator_length = bucketAngleToActuatorLength(target_bucket_angle, _current_boom_angle);
+    }
+}
+
+void BucketControl::publishStatus()
+{
+    bucket_status_s status{};
+    status.timestamp = hrt_absolute_time();
+
+    // Basic status
+    status.state = static_cast<uint8_t>(_state);
+    status.actuator_length = _current_actuator_length;
+    status.target_actuator_length = _target_actuator_length;
+    status.bucket_angle = _current_bucket_angle;
+    status.ground_angle = _current_ground_angle;
+    status.velocity = _current_velocity;
+    status.control_output = _control_output;
+    status.limit_switch_coarse = _limit_switch_coarse;
+    status.limit_switch_fine = _limit_switch_fine;
+    status.zeroing_complete = _zeroing_complete;
+
+    // AHRS-related status
+    if (_param_ahrs_enabled.get()) {
+        status.control_mode = static_cast<uint8_t>(_control_mode);
+        status.stability_factor = _stability_factor;
+        status.anti_spill_active = _anti_spill_active;
+        status.stability_warning = _stability_warning;
+        status.machine_pitch = _machine_pitch;
+        status.machine_roll = _machine_roll;
+        status.target_ground_angle = _target_ground_angle;
+    }
+
+    _bucket_status_pub.publish(status);
 }
 
 // Module interface implementation
