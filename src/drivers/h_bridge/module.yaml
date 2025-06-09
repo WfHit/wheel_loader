@@ -1,7 +1,7 @@
 module_name: H-Bridge DRV8701 Driver
 
 serial_config:
-    - command: hbridge_drv8701 start
+    - command: h_bridge start
       port_config_param:
         name: TEL_FRSKY_CONFIG
         group: Serial

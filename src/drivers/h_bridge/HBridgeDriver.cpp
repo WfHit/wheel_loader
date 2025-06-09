@@ -234,16 +234,16 @@ The driver supports:
 
 ### Examples
 Start the driver:
-$ hbridge_drv8701 start
+$ h_bridge start
 
 Stop the driver:
-$ hbridge_drv8701 stop
+$ h_bridge stop
 
 Show driver status:
-$ hbridge_drv8701 status
+$ h_bridge status
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("hbridge_drv8701", "driver");
+	PRINT_MODULE_USAGE_NAME("h_bridge", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_COMMAND("stop");
 	PRINT_MODULE_USAGE_COMMAND("status");

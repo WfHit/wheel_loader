@@ -32,14 +32,14 @@
  ****************************************************************************/
 
 /**
- * @file hbridge_drv8701_main.cpp
+ * @file h_bridge_main.cpp
  *
  * Main entry point for the H-Bridge DRV8701 driver
  */
 
 #include "HBridgeDriver.hpp"
 
-extern "C" __EXPORT int hbridge_drv8701_main(int argc, char *argv[])
+extern "C" __EXPORT int h_bridge_main(int argc, char *argv[])
 {
 	return HBridgeDriver::main(argc, argv);
 }
