@@ -10,20 +10,7 @@
 // uORB message includes - System Status
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failsafe_flags.h>
-#include <uORB/topics/actuato    // Bucket system monitoring
-    struct BucketMonitoring {
-        float bucket_angle_rad{0.0f};
-        float bucket_current_a{0.0f};
-        float bucket_voltage_v{0.0f};
-        float bucket_temperature_c{0.0f};
-        float max_safe_bucket_angle_rad{1.0f}; // ~57 degrees
-        float max_safe_current_a{40.0f};
-        float max_safe_temperature_c{70.0f};
-        bool bucket_limit_exceeded{false};
-        bool bucket_motor_fault{false};
-        bool bucket_encoder_fault{false};
-        uint32_t bucket_violations{0};
-    } _bucket_monitor;
+#include <uORB/topics/actuato
 #include <uORB/topics/ModuleStatus.h>
 #include <uORB/topics/SystemSafety.h>
 #include <uORB/topics/vehicle_command.h>

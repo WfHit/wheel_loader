@@ -32,18 +32,18 @@
 ############################################################################
 
 px4_add_module(
-	MODULE drivers__hbridge_drv8701
-	MAIN hbridge_drv8701
+	MODULE drivers__h_bridge
+	MAIN h_bridge
 	COMPILE_FLAGS
 	SRCS
-		hbridge_drv8701_main.cpp
+		h_bridge_main.cpp
 		HBridgeDriver.cpp
 		EnableManager.cpp
 	DEPENDS
 		px4_work_queue
 	)
 
-target_link_libraries(drivers__hbridge_drv8701
+target_link_libraries(drivers__h_bridge
 	PRIVATE
 		px4_layer
 		arch_io_pins
