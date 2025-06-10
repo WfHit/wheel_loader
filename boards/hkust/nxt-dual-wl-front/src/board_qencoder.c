@@ -39,6 +39,8 @@
 #include <sys/types.h>
 #include <syslog.h>
 #include <errno.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <px4_arch/nuttx_qencoder.h>
 #include "stm32_gpio.h"
@@ -104,7 +106,7 @@ static const struct nuttx_qe_config_s g_motor_encoders[] =
 static void board_qencoder_gpio_config(void)
 {
   /* Configure index pins as GPIO inputs for encoders */
-  for (int i = 0; i < NUM_ENCODERS; i++)
+  for (unsigned int i = 0; i < NUM_ENCODERS; i++)
     {
       if (g_motor_encoders[i].use_index &&
           g_motor_encoders[i].gpio.index != 0)
@@ -141,7 +143,7 @@ int board_qencoder_initialize(void)
   board_qencoder_gpio_config();
 
   /* Initialize each encoder */
-  for (int i = 0; i < NUM_ENCODERS; i++)
+  for (unsigned int i = 0; i < NUM_ENCODERS; i++)
     {
       snprintf(devpath, sizeof(devpath), "/dev/qe%d", i);
 
@@ -153,7 +155,7 @@ int board_qencoder_initialize(void)
           return ret;
         }
 
-      syslog(LOG_INFO, "Initialized encoder %s (mode=%s, resolution=%d)\n",
+      syslog(LOG_INFO, "Initialized encoder %s (mode=%s, resolution=%lu)\n",
              devpath,
              "GPIO",
              g_motor_encoders[i].resolution);
@@ -180,7 +182,7 @@ int board_qencoder_get_config(int encoder_id,
                              FAR struct nuttx_qe_config_s *config)
 {
 #ifdef CONFIG_BOARD_NXT_QENCODER
-  if (encoder_id < 0 || encoder_id >= NUM_ENCODERS || !config)
+  if (encoder_id < 0 || encoder_id >= (int)NUM_ENCODERS || !config)
     {
       return -EINVAL;
     }

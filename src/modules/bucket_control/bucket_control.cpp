@@ -6,7 +6,7 @@ BucketControl::BucketControl() :
     ModuleParams(nullptr),
     WorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
-    _position_pid.setDt(0.01f); // 100Hz control loop
+    // Note: PID dt is passed in the update() call, not set here
 
     // Initialize motion planning components
     _velocity_smoother.setMaxAccel(200.0f);  // mm/s²
