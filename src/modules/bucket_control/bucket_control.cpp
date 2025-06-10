@@ -21,10 +21,8 @@ BucketControl::BucketControl() :
 
 bool BucketControl::init()
 {
-    // Initialize PID controller
-    _position_pid.setProportionalGain(_param_pid_p.get());
-    _position_pid.setIntegralGain(_param_pid_i.get());
-    _position_pid.setDerivativeGain(_param_pid_d.get());
+    // Initialize PID controller - use setGains method
+    _position_pid.setGains(_param_pid_p.get(), _param_pid_i.get(), _param_pid_d.get());
 
     // Configure motion planning with parameters
     _velocity_smoother.setMaxAccel(_param_max_acceleration.get());
