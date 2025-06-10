@@ -237,6 +237,11 @@
 #define BOARD_HAS_DRV8701_HBRIDGE          1
 #define BOARD_HAS_LIMIT_SWITCHES           1
 
+/* Limit Sensor Configuration for Front Board */
+/* Only bucket load and dump sensors are configured on front board */
+#define BOARD_NUM_LIMIT_SENSORS            2
+#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \
 		GPIO_TONE_ALARM_IDLE, \

@@ -14,7 +14,7 @@
 // uORB message includes - matching existing system
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/hbridge_cmd.h>
+#include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/traction_control.h>
 #include <uORB/topics/module_status.h>
@@ -101,7 +101,7 @@ private:
     // uORB publications
     uORB::Publication<module_status_s> _module_status_pub{ORB_ID(module_status)};
     uORB::PublicationMulti<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
-    uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
+    uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 
     // Control system
     PID_t _speed_pid;

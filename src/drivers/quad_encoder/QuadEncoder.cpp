@@ -108,7 +108,7 @@ bool QuadEncoder::init()
 
 	// Advertise sensor encoder topic with instance
 	_sensor_quad_encoder_pub = orb_advertise_multi(ORB_ID(sensor_quad_encoder), &sensor_msg,
-		&_sensor_encoder_instance, ORB_PRIO_DEFAULT);
+		&_sensor_encoder_instance);
 
 	if (_sensor_quad_encoder_pub == nullptr) {
 		PX4_ERR("Failed to advertise sensor_quad_encoder");

@@ -54,6 +54,7 @@ else()
 		usb.c
 		mtd.cpp
 		board_qencoder.c
+		board_limit_sensor_config.cpp
 		#encoder_example.c
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)

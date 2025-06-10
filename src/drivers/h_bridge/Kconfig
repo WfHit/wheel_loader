@@ -1,5 +1,0 @@
-menuconfig DRIVERS_H_BRIDGE
-	bool "h_bridge"
-	default n
-	---help---
-		Enable support for DRV8701 H-Bridge motor driver

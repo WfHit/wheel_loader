@@ -116,9 +116,8 @@ set(msg_files
 	GpsDump.msg
 	GpsInjectData.msg
 	Gripper.msg
-	HbridgeChannel.msg
-	HbridgeChannelCmd.msg
-	HbridgeSystem.msg
+	HbridgeCommand.msg
+	HbridgeStatus.msg
 	HealthReport.msg
 	HeaterStatus.msg
 	HoverThrustEstimate.msg
@@ -133,6 +132,7 @@ set(msg_files
 	LandingTargetPose.msg
 	LaunchDetectionStatus.msg
 	LedControl.msg
+	LimitSensor.msg
 	LoggerStatus.msg
 	LogMessage.msg
 	MagnetometerBiasEstimate.msg

@@ -6,14 +6,34 @@ BucketControl::BucketControl() :
     ModuleParams(nullptr),
     WorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
-    _position_pid.set_dt(0.01f); // 100Hz control loop
+    _position_pid.setDt(0.01f); // 100Hz control loop
+
+    // Initialize motion planning components
+    _velocity_smoother.setMaxAccel(200.0f);  // mm/s²
+    _velocity_smoother.setMaxVel(100.0f);    // mm/s
+    _velocity_smoother.setMaxJerk(1000.0f);  // mm/s³
+
+    // Initialize position smoother - using Z-axis for 1D motion
+    _position_smoother.setMaxAccelerationZ(200.0f); // mm/s²
+    _position_smoother.setMaxVelocityZ(100.0f);     // mm/s
+    _position_smoother.setMaxJerkZ(1000.0f);        // mm/s³
 }
 
 bool BucketControl::init()
 {
     // Initialize PID controller
-    _position_pid.set_parameters(_param_pid_p.get(), _param_pid_i.get(), _param_pid_d.get(),
-                                 0.0f, 1.0f); // integral limit, output limit
+    _position_pid.setProportionalGain(_param_pid_p.get());
+    _position_pid.setIntegralGain(_param_pid_i.get());
+    _position_pid.setDerivativeGain(_param_pid_d.get());
+
+    // Configure motion planning with parameters
+    _velocity_smoother.setMaxAccel(_param_max_acceleration.get());
+    _velocity_smoother.setMaxVel(_param_max_velocity.get());
+    _velocity_smoother.setMaxJerk(_param_jerk_limit.get());
+
+    _position_smoother.setMaxAccelerationZ(_param_max_acceleration.get());
+    _position_smoother.setMaxVelocityZ(_param_max_velocity.get());
+    _position_smoother.setMaxJerkZ(_param_jerk_limit.get());
 
     // Load kinematic parameters
     updateKinematicParameters();
@@ -453,13 +473,12 @@ void BucketControl::updateMotionControl()
         return;
     }
 
-    // S-curve trajectory generation
-    float velocity_setpoint, acceleration;
-    float position_setpoint = generateSCurveSetpoint(_current_actuator_length, _target_actuator_length,
-                                                     velocity_setpoint, acceleration);
+    // Update trajectory setpoint using motion planning
+    float dt = 0.01f; // 100Hz control loop
+    updateTrajectorySetpoint(dt);
 
-    // PID control
-    float position_error = position_setpoint - _current_actuator_length;
+    // PID control on position
+    float position_error = _target_actuator_length - _current_actuator_length;
     _control_output = _position_pid.control_error(position_error);
 
     // Apply control output
@@ -469,45 +488,53 @@ void BucketControl::updateMotionControl()
     _state = (fabsf(position_error) < 2.0f) ? State::READY : State::MOVING; // 2mm tolerance
 }
 
-float BucketControl::generateSCurveSetpoint(float current, float target, float &velocity, float &acceleration)
+void BucketControl::updateTrajectorySetpoint(float dt)
 {
-    // Simple S-curve implementation
-    float error = target - current;
-    float max_vel = _param_max_velocity.get();
-    float max_acc = _param_max_acceleration.get();
+    // Configure motion planning constraints
+    _velocity_smoother.setMaxAccel(_param_max_acceleration.get());
+    _velocity_smoother.setMaxVel(_param_max_velocity.get());
+    _velocity_smoother.setMaxJerk(_param_jerk_limit.get());
 
-    // Calculate required deceleration distance
-    float decel_dist = (_current_velocity * _current_velocity) / (2.0f * max_acc);
+    // Set current state for velocity smoother
+    _velocity_smoother.reset(0.0f, _current_velocity, _current_actuator_length);
 
-    if (fabsf(error) < decel_dist) {
-        // Deceleration phase
-        velocity = _current_velocity * 0.95f; // Gradual deceleration
-    } else if (fabsf(_current_velocity) < max_vel) {
-        // Acceleration phase
-        velocity = _current_velocity + (error > 0 ? max_acc : -max_acc) * 0.01f; // dt = 0.01s
-        velocity = math::constrain(velocity, -max_vel, max_vel);
-    } else {
-        // Constant velocity phase
-        velocity = error > 0 ? max_vel : -max_vel;
+    // Calculate velocity setpoint based on position error
+    float position_error = _target_actuator_length - _current_actuator_length;
+    float velocity_setpoint = 0.0f;
+
+    if (fabsf(position_error) > 1.0f) {  // 1mm deadband
+        // Use position smoother for trajectory generation (1D motion using Z-axis)
+        Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
+        Vector3f target_pos{0.0f, 0.0f, _target_actuator_length};
+        Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+
+        PositionSmoothing::PositionSmoothingSetpoints setpoints;
+        _position_smoother.generateSetpoints(current_pos, target_pos, feedforward_velocity,
+                                           dt, false, setpoints);
+
+        // Get smoothed velocity setpoint from Z component
+        velocity_setpoint = setpoints.velocity(2);
+
+        // Apply velocity constraints
+        velocity_setpoint = math::constrain(velocity_setpoint,
+                                          -_param_max_velocity.get(),
+                                          _param_max_velocity.get());
     }
 
-    acceleration = (velocity - _current_velocity) / 0.01f;
-
-    return current + velocity * 0.01f;
+    // Update internal velocity tracking
+    _current_velocity = velocity_setpoint;
 }
 
 void BucketControl::setMotorCommand(float command)
 {
     // Publish HBridge command for bucket motor
-    hbridge_cmd_s cmd{};
+    hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
     cmd.channel = _motor_index;
-    cmd.speed = math::constrain(fabsf(command), 0.0f, 1.0f);
-    cmd.direction = (command >= 0.0f) ? 0 : 1;  // 0=forward, 1=reverse
-    cmd.enable_request = true;
-    cmd.control_mode = 1;  // NORMAL mode
+    cmd.duty_cycle = command;  // Use command directly as duty_cycle (-1.0 to 1.0)
+    cmd.enable = true;
 
-    _hbridge_cmd_pub.publish(cmd);
+    _hbridge_command_pub.publish(cmd);
 }
 
 void BucketControl::readEncoderFeedback()
