@@ -309,19 +309,17 @@ void WheelController::communicate_with_hbridge()
     // Saturate PWM output
     _pwm_output = saturate_pwm(_pwm_output);
 
-    // Publish to H-bridge driver using hbridge_cmd
-    hbridge_cmd_s cmd{};
+    // Publish to H-bridge driver using hbridge_command
+    hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
     cmd.channel = _instance; // 0 for front, 1 for rear
 
     // Convert normalized PWM to H-bridge format
     float normalized_output = _pwm_output / MAX_PWM_OUTPUT; // Normalize to [-1, 1]
-    cmd.speed = fabsf(normalized_output);
-    cmd.direction = (normalized_output >= 0.0f) ? 0 : 1;  // 0: forward, 1: reverse
-    cmd.enable_request = _armed && !_emergency_stop;
-    cmd.control_mode = 1; // NORMAL mode
+    cmd.duty_cycle = normalized_output;  // Use duty_cycle directly (-1.0 to 1.0)
+    cmd.enable = _armed && !_emergency_stop;
 
-    _hbridge_cmd_pub.publish(cmd);
+    _hbridge_command_pub.publish(cmd);
 
     // Also publish actuator_outputs for compatibility
     publish_actuator_outputs();

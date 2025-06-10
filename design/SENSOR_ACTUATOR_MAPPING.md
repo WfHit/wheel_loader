@@ -27,7 +27,7 @@ This document describes the correct sensor and actuator message mapping for the 
 ## Actuator Messages
 
 ### HBridge Driver (DRV8701)
-- **Message**: `hbridge_cmd`
+- **Message**: `hbridge_command`
 - **Usage**: Motor control for wheels and hydraulic valves
 - **Controllers using this**:
   - WheelController (for drive motor control)
@@ -54,9 +54,9 @@ uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors
 **After:**
 ```cpp
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/hbridge_cmd.h>
+#include <uORB/topics/hbridge_command.h>
 uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
-uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
+uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 ```
 
 ### 2. SteeringController
@@ -75,7 +75,7 @@ uORB::SubscriptionData<sensor_mag_s> _as5600_sub{ORB_ID(sensor_mag)};
 #include <uORB/topics/sensor_mag_encoder.h>
 uORB::SubscriptionData<sensor_mag_encoder_s> _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 ```
-**Already using**: `hbridge_cmd` ✓
+**Already using**: `hbridge_command` ✓
 
 ### 4. BucketControl
 **Before:**
@@ -89,9 +89,9 @@ uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors
 **After:**
 ```cpp
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/hbridge_cmd.h>
+#include <uORB/topics/hbridge_command.h>
 uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
-uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
+uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 ```
 
 ## Implementation Notes
@@ -99,14 +99,12 @@ uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
 ### HBridge Command Format
 ```cpp
 void setMotorCommand(float command) {
-    hbridge_cmd_s cmd{};
+    hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
     cmd.channel = _param_motor_index.get();  // 0 or 1
-    cmd.speed = math::constrain(command, -1.0f, 1.0f);
-    cmd.direction = (command >= 0.0f) ? 0 : 1;  // 0=forward, 1=reverse
-    cmd.enable_request = true;
-    cmd.control_mode = 1;  // NORMAL mode
-    _hbridge_cmd_pub.publish(cmd);
+    cmd.duty_cycle = math::constrain(command, -1.0f, 1.0f);  // Direct duty cycle
+    cmd.enable = true;
+    _hbridge_command_pub.publish(cmd);
 }
 ```
 

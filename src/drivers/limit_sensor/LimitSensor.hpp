@@ -8,16 +8,21 @@
 #include <lib/perf/perf_counter.h>
 
 #include <uORB/PublicationMulti.hpp>
+#include <uORB/Subscription.hpp>
 #include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 
 #include <board_config.h>
+#include "limit_sensor_config.h"
 
 using namespace time_literals;
 
 class LimitSensor : public ModuleBase<LimitSensor>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
+    // Maximum number of instances (should match board configs)
+    static constexpr int MAX_INSTANCES = 8;
+
     enum LimitFunction : uint8_t {
         BUCKET_LOAD = 0,
         BUCKET_DUMP = 1,
@@ -39,16 +44,26 @@ public:
     bool init();
     int print_status() override;
 
-    // Add function getter
-    LimitFunction get_function() const { return static_cast<LimitFunction>(_params.function); }
+    // Get function from board config
+    LimitFunction get_function() const {
+        if (_board_config != nullptr) {
+            return static_cast<LimitFunction>(_board_config->function);
+        }
+        return FUNCTION_DISABLED;
+    }
 
     static LimitSensor *instantiate(int argc, char *argv[]);
 
 private:
     void Run() override;
 
+    // Static storage for multiple instances
+    static LimitSensor *_instances[MAX_INSTANCES];
+    static px4::atomic<uint8_t> _num_instances;
+
     // Instance details
     const uint8_t _instance;
+    const limit_sensor_config_t* _board_config{nullptr};
 
     // GPIO state for each switch
     struct SwitchState {
@@ -88,6 +103,10 @@ private:
     void check_redundancy_fault();
     void publish_state();
 
+    // Get board configuration for this instance
+    const limit_sensor_config_t* get_board_config(uint8_t instance);
+    const char* get_function_name(LimitFunction func);
+
     // Debouncing parameters (configurable via parameters)
     uint64_t _debounce_time_us{10000}; // Default 10ms, loaded from LS_DEBOUNCE_US
     static constexpr uint8_t DEBOUNCE_COUNTS = 3; // Need 3 consistent reads
@@ -100,37 +119,16 @@ private:
     // Polling rate (configurable via parameters)
     uint32_t _run_interval_us{5000}; // Default 200Hz, loaded from LS_POLL_RATE
 
-    // Global configuration parameters
+    // Global configuration parameters (runtime adjustable)
     struct {
         param_t poll_rate_handle;
         param_t debounce_us_handle;
-        param_t redundancy_en_handle;
         param_t diag_enable_handle;
 
         int32_t poll_rate;
         int32_t debounce_us;
-        int32_t redundancy_en;
         int32_t diag_enable;
     } _global_params;
-
-    // Parameters per instance (using C API for dynamic parameter names)
-    struct {
-        param_t gpio_pin_1_handle;
-        param_t gpio_pin_2_handle;
-        param_t type_handle;
-        param_t invert_handle;
-        param_t redundancy_handle;
-        param_t enable_handle;
-        param_t function_handle;  // Add function handle
-
-        int32_t gpio_pin_1;
-        int32_t gpio_pin_2;
-        int32_t type;
-        int32_t invert;
-        int32_t redundancy;
-        int32_t enable;
-        int32_t function;  // Add function parameter
-    } _params;
 
     void load_parameters();
     void load_global_parameters();

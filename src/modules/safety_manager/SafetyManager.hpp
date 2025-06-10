@@ -2,28 +2,35 @@
 
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
+#include <px4_platform_common/log.h>
+#include <px4_platform_common/px4_config.h>
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <lib/mathlib/mathlib.h>
 #include <matrix/matrix.hpp>
+#include <drivers/drv_hrt.h>
+#include <px4_platform_common/board_config.h>
+#include <nuttx/arch.h>
+#include <drivers/drv_adc.h>
 
 // uORB message includes - System Status
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/failsafe_flags.h>
-#include <uORB/topics/actuato
-#include <uORB/topics/ModuleStatus.h>
-#include <uORB/topics/SystemSafety.h>
+#include <uORB/topics/actuator_armed.h>
+#include <uORB/topics/module_status.h>
+#include <uORB/topics/system_safety.h>
 #include <uORB/topics/vehicle_command.h>
 
 // uORB message includes - Chassis Control
-#include <uORB/topics/WheelSpeedsSetpoint.h>
-#include <uORB/topics/SteeringSetpoint.h>
-#include <uORB/topics/TractionControl.h>
+#include <uORB/topics/wheel_speeds_setpoint.h>
+#include <uORB/topics/steering_setpoint.h>
+#include <uORB/topics/steering_status.h>
+#include <uORB/topics/traction_control.h>
 
 // uORB message includes - Electric Actuator Systems
-#include <uORB/topics/BoomStatus.h>
-#include <uORB/topics/BucketStatus.h>
-#include <uORB/topics/LoadAwareTorque.h>
+#include <uORB/topics/boom_status.h>
+#include <uORB/topics/bucket_status.h>
+#include <uORB/topics/load_aware_torque.h>
 
 // uORB message includes - Sensors and Navigation
 #include <uORB/topics/vehicle_attitude.h>
@@ -32,11 +39,16 @@
 #include <uORB/topics/sensor_gyro.h>
 
 // uORB message includes - Environmental
-#include <uORB/topics/WheelLoaderStatus.h>
-#include <uORB/topics/SystemSafety.h>
+#include <uORB/topics/wheel_loader_status.h>
 
 // uORB message includes - Limit Sensors
 #include <uORB/topics/limit_sensor.h>
+#include <uORB/topics/hbridge_system.h>
+
+// Additional includes for missing topics that need to be created or exist elsewhere
+// #include <uORB/topics/slip_estimation.h>      // TODO: Create this message
+// #include <uORB/topics/terrain_adaptation.h>   // TODO: Create this message
+#include <uORB/topics/input_rc.h>  // For manual control input
 
 using namespace time_literals;
 
@@ -191,6 +203,23 @@ private:
     void reset_safety_violations();
     void validate_system_recovery();
 
+    /**
+     * Hardware Enable Management (moved from h_bridge driver)
+     */
+    bool init_hardware_enable_manager(uint32_t gpio_enable);
+    void update_hardware_enable_manager(bool ch0_request, bool ch1_request,
+                                       uint8_t ch0_state, uint8_t ch1_state);
+    void set_limit_config(uint8_t channel, uint8_t min_limit_instance, uint8_t max_limit_instance,
+                         bool allow_into_min = false, bool allow_into_max = false);
+    bool check_motion_allowed_for_channel(uint8_t channel, float command);
+    bool is_limit_active(uint8_t instance);
+    void check_safety_override();
+    void publish_hbridge_status(bool ch0_req, bool ch1_req, uint8_t ch0_state, uint8_t ch1_state);
+    float read_board_temperature();
+    void clear_emergency_stop() { _hardware_enable_manager.emergency_stop = false; }
+    bool is_hardware_enabled() const { return _hardware_enable_manager.enabled; }
+    bool is_emergency_stop_active() const { return _hardware_enable_manager.emergency_stop; }
+
     // uORB subscriptions - System status
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _module_status_sub{ORB_ID(module_status)};
@@ -213,21 +242,22 @@ private:
     uORB::Subscription _gyro_sub{ORB_ID(sensor_gyro)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
-    uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
+    // uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};      // TODO: Create this message
     uORB::Subscription _load_aware_torque_sub{ORB_ID(load_aware_torque)};
-    uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)};
+    // uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)}; // TODO: Create this message
 
     // uORB subscriptions - Limit sensors (up to 8 instances)
     uORB::Subscription _limit_sensor_sub[8]{};
 
     // uORB subscriptions - Control commands
-    uORB::Subscription _manual_control_sub{ORB_ID(manual_control_input)};
+    uORB::Subscription _manual_control_sub{ORB_ID(input_rc)};  // Using input_rc for manual control
     uORB::Subscription _vehicle_command_sub{ORB_ID(vehicle_command)};
 
     // uORB publications - Safety outputs
     uORB::Publication<vehicle_command_s> _safety_command_pub{ORB_ID(vehicle_command)};
     uORB::Publication<module_status_s> _safety_status_pub{ORB_ID(module_status)};
     uORB::Publication<system_safety_s> _system_safety_pub{ORB_ID(system_safety)};
+    uORB::Publication<hbridge_system_s> _hbridge_system_pub{ORB_ID(hbridge_system)};
 
     // Safety state
     struct SafetyState {
@@ -450,6 +480,26 @@ private:
         uint64_t last_zeroing_time{0};
         float sensor_health_score{1.0f};
     } _limit_sensor_monitor;
+
+    // Hardware Enable Management (moved from h_bridge driver)
+    struct HardwareEnableManager {
+        bool initialized{false};
+        uint32_t gpio_enable{0};
+        bool enabled{false};
+        bool emergency_stop{false};
+
+        // Limit switch configuration for H-bridge channels
+        struct LimitConfig {
+            uint8_t min_limit_instance{255};  // 255 = not configured
+            uint8_t max_limit_instance{255};
+            bool allow_into_min{false};       // Allow motion into min limit
+            bool allow_into_max{false};       // Allow motion into max limit
+        } limit_config[2];  // For channel 0 and 1
+
+        bool safety_override{false};  // Safety manager can override limits
+        uint64_t last_limit_check{0};
+        uint64_t last_enable_pub_time{0};
+    } _hardware_enable_manager;
 
     // Safety permits for system-level operations
     struct SafetyPermits {

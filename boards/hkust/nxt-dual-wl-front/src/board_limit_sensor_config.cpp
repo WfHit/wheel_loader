@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2024 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,14 +32,38 @@
  ****************************************************************************/
 
 /**
- * @file h_bridge_main.cpp
+ * @file board_limit_sensor_config.cpp
  *
- * Main entry point for the H-Bridge DRV8701 driver
+ * Board-specific limit sensor configuration for NXT-Dual-WL-Front
  */
 
-#include "HBridgeDriver.hpp"
+#include <board_config.h>
+#include <drivers/limit_sensor/limit_sensor_config.h>
 
-extern "C" __EXPORT int h_bridge_main(int argc, char *argv[])
-{
-	return HBridgeDriver::main(argc, argv);
-}
+#ifdef BOARD_HAS_LIMIT_SENSOR_CONFIG
+
+// Define limit sensor instances with their GPIO mappings for front board
+const limit_sensor_config_t g_limit_sensor_config[BOARD_NUM_LIMIT_SENSORS] = {
+    // Instance 0: Bucket Load Limit (WITH REDUNDANCY)
+    {
+        .instance_id = 0,
+        .function = 0,  // BUCKET_LOAD
+        .gpio_pin_1 = BUCKET_LOAD_LIMIT_SW1_GPIO,   // PB10
+        .gpio_pin_2 = BUCKET_LOAD_LIMIT_SW2_GPIO,   // PB11
+        .inverted = false,
+        .redundancy_enabled = true,  // REDUNDANCY ENABLED
+        .name = "bucket_load"
+    },
+    // Instance 1: Bucket Dump Limit (WITH REDUNDANCY)
+    {
+        .instance_id = 1,
+        .function = 1,  // BUCKET_DUMP
+        .gpio_pin_1 = BUCKET_DUMP_LIMIT_SW1_GPIO,   // PB0
+        .gpio_pin_2 = BUCKET_DUMP_LIMIT_SW2_GPIO,   // PB1
+        .inverted = false,
+        .redundancy_enabled = true,  // REDUNDANCY ENABLED
+        .name = "bucket_dump"
+    }
+};
+
+#endif // BOARD_HAS_LIMIT_SENSOR_CONFIG

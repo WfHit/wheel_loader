@@ -1714,7 +1714,165 @@ any control commands to ensure safe operation.
     return 0;
 }
 
-extern "C" __EXPORT int safety_manager_main(int argc, char *argv[])
+/**
+ * Hardware Enable Manager Implementation (moved from h_bridge driver)
+ */
+
+bool SafetyManager::init_hardware_enable_manager(uint32_t gpio_enable)
 {
-    return SafetyManager::main(argc, argv);
+    _hardware_enable_manager.gpio_enable = gpio_enable;
+
+    // Configure enable pin as output, initially disabled
+    px4_arch_configgpio(_hardware_enable_manager.gpio_enable);
+    px4_arch_gpiowrite(_hardware_enable_manager.gpio_enable, 0);
+
+    _hardware_enable_manager.initialized = true;
+    PX4_INFO("Hardware enable manager initialized with GPIO %u", gpio_enable);
+    return true;
+}
+
+void SafetyManager::update_hardware_enable_manager(bool ch0_request, bool ch1_request,
+                                                  uint8_t ch0_state, uint8_t ch1_state)
+{
+    if (!_hardware_enable_manager.initialized) return;
+
+    // Check for emergency stop commands
+    vehicle_command_s vcmd;
+    if (_vehicle_command_sub.update(&vcmd)) {
+        if (vcmd.command == vehicle_command_s::VEHICLE_CMD_DO_MOTOR_TEST) {
+            if (vcmd.param1 < 0) {  // Negative value = emergency stop
+                _hardware_enable_manager.emergency_stop = true;
+                PX4_WARN("Emergency stop activated via vehicle command");
+            }
+        }
+    }
+
+    // Update enable logic based on safety permits and requests
+    bool should_enable = (ch0_request || ch1_request) &&
+                        !_hardware_enable_manager.emergency_stop &&
+                        _safety_permits.motion_permitted &&
+                        _safety_permits.electric_actuator_permitted;
+
+    if (should_enable != _hardware_enable_manager.enabled) {
+        _hardware_enable_manager.enabled = should_enable;
+        px4_arch_gpiowrite(_hardware_enable_manager.gpio_enable, _hardware_enable_manager.enabled ? 1 : 0);
+
+        PX4_INFO("Hardware enable pin: %s", _hardware_enable_manager.enabled ? "HIGH" : "LOW");
+    }
+
+    // Publish H-bridge system status periodically
+    uint64_t now = hrt_absolute_time();
+    if (hrt_elapsed_time(&_hardware_enable_manager.last_enable_pub_time) > 50000) {  // 20Hz
+        publish_hbridge_status(ch0_request, ch1_request, ch0_state, ch1_state);
+        _hardware_enable_manager.last_enable_pub_time = now;
+    }
+}
+
+void SafetyManager::set_limit_config(uint8_t channel, uint8_t min_limit_instance, uint8_t max_limit_instance,
+                                    bool allow_into_min, bool allow_into_max)
+{
+    if (channel < 2) {
+        _hardware_enable_manager.limit_config[channel].min_limit_instance = min_limit_instance;
+        _hardware_enable_manager.limit_config[channel].max_limit_instance = max_limit_instance;
+        _hardware_enable_manager.limit_config[channel].allow_into_min = allow_into_min;
+        _hardware_enable_manager.limit_config[channel].allow_into_max = allow_into_max;
+
+        PX4_INFO("Channel %d limits: min=%d, max=%d, allow_into_min=%s, allow_into_max=%s",
+                                 channel, min_limit_instance, max_limit_instance,
+                 allow_into_min ? "true" : "false", allow_into_max ? "true" : "false");
+    }
+}
+
+bool SafetyManager::check_motion_allowed_for_channel(uint8_t channel, float command)
+{
+    if (channel >= 2 || !_hardware_enable_manager.enabled) {
+        return false;
+    }
+
+    // Update limit states periodically (every 10ms)
+    uint64_t now = hrt_absolute_time();
+    if (now - _hardware_enable_manager.last_limit_check > 10000) {
+        check_safety_override();
+        _hardware_enable_manager.last_limit_check = now;
+    }
+
+    const auto& config = _hardware_enable_manager.limit_config[channel];
+
+    // Check min limit (negative motion)
+    if (command < -0.01f && config.min_limit_instance != 255) {
+        if (is_limit_active(config.min_limit_instance)) {
+            if (!config.allow_into_min && !_hardware_enable_manager.safety_override) {
+                PX4_WARN_THROTTLE(1000, "Ch%d motion blocked by min limit %d",
+                                 channel, config.min_limit_instance);
+                return false;
+            }
+        }
+    }
+
+    // Check max limit (positive motion)
+    if (command > 0.01f && config.max_limit_instance != 255) {
+        if (is_limit_active(config.max_limit_instance)) {
+            if (!config.allow_into_max && !_hardware_enable_manager.safety_override) {
+                PX4_WARN_THROTTLE(1000, "Ch%d motion blocked by max limit %d",
+                                 channel, config.max_limit_instance);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+bool SafetyManager::is_limit_active(uint8_t instance)
+{
+    if (instance >= 8 || instance == 255) {
+        return false;
+    }
+
+    limit_sensor_s sensor;
+    if (_limit_sensor_sub[instance].copy(&sensor)) {
+        // Only trust healthy sensors
+        return sensor.healthy && sensor.state;
+    }
+
+    return false;
+}
+
+void SafetyManager::check_safety_override()
+{
+    system_safety_s safety;
+    if (_system_safety_pub.copy(&safety)) {
+        // Check if we're in a mode that allows limit override
+        _hardware_enable_manager.safety_override = (safety.safety_mode == system_safety_s::SAFETY_MODE_MANUAL_OVERRIDE) ||
+                                                   (safety.safety_mode == system_safety_s::SAFETY_MODE_ZEROING);
+    }
+}
+
+void SafetyManager::publish_hbridge_status(bool ch0_req, bool ch1_req, uint8_t ch0_state, uint8_t ch1_state)
+{
+    hbridge_system_s sys{};
+    sys.timestamp = hrt_absolute_time();
+    sys.enabled = _hardware_enable_manager.enabled;
+    sys.emergency_stop = _hardware_enable_manager.emergency_stop;
+    sys.temperature = read_board_temperature();
+    sys.safety_override = _hardware_enable_manager.safety_override;
+
+    // Channel states
+    sys.channel[0].enabled = ch0_req && _hardware_enable_manager.enabled;
+    sys.channel[0].state = ch0_state;
+    sys.channel[0].limit_min_active = is_limit_active(_hardware_enable_manager.limit_config[0].min_limit_instance);
+    sys.channel[0].limit_max_active = is_limit_active(_hardware_enable_manager.limit_config[0].max_limit_instance);
+
+    sys.channel[1].enabled = ch1_req && _hardware_enable_manager.enabled;
+    sys.channel[1].state = ch1_state;
+    sys.channel[1].limit_min_active = is_limit_active(_hardware_enable_manager.limit_config[1].min_limit_instance);
+    sys.channel[1].limit_max_active = is_limit_active(_hardware_enable_manager.limit_config[1].max_limit_instance);
+
+    _hbridge_system_pub.publish(sys);
+}
+
+float SafetyManager::read_board_temperature()
+{
+    // TODO: Read actual temperature sensor
+    return 25.0f;  // Placeholder
 }

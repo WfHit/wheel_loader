@@ -8,7 +8,9 @@
 
 // PX4 library includes
 #include <lib/pid/PID.hpp>
-#include <lib/trajectory/trajectory.h>
+#include <lib/motion_planning/VelocitySmoothing.hpp>
+#include <lib/motion_planning/PositionSmoothing.hpp>
+#include <lib/motion_planning/TrajectoryConstraints.hpp>
 #include <matrix/matrix/Euler.hpp>
 
 // uORB includes
@@ -17,7 +19,7 @@
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
-#include <uORB/topics/hbridge_cmd.h>
+#include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_quad_encoder.h>
@@ -122,7 +124,7 @@ private:
 
     // Motion control
     void updateMotionControl();
-    float generateSCurveSetpoint(float current, float target, float &velocity, float &acceleration);
+    void updateTrajectorySetpoint(float dt);
 
     // Hardware interface through existing drivers
     void setMotorCommand(float command);
@@ -181,7 +183,11 @@ private:
     // PID controller
     PID _position_pid;
 
-    // S-curve planner parameters
+    // Motion planning components
+    VelocitySmoothing _velocity_smoother;
+    PositionSmoothing _position_smoother;
+
+    // Motion planning parameters
     float _max_velocity{100.0f};             // mm/s
     float _max_acceleration{200.0f};         // mm/s²
     float _jerk_limit{1000.0f};              // mm/s³
@@ -198,7 +204,7 @@ private:
 
     // uORB publications
     uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
-    uORB::Publication<hbridge_cmd_s> _hbridge_cmd_pub{ORB_ID(hbridge_cmd)};
+    uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 
     // Motor and sensor indices
     uint8_t _motor_index{0};
