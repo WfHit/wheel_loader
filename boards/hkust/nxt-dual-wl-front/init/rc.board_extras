@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# NXT-Dual-WL-Front board specific extras init
+# Front wheel and bucket control board
+#------------------------------------------------------------------------------
+
+# Start quadrature encoder driver for front wheel control
+if param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder driver for front wheel"
+	quad_encoder start
+
+	# Wait for driver to initialize
+	sleep 1
+
+	# Verify encoder devices are available
+	if [ -c /dev/qe0 ] && [ -c /dev/qe1 ]
+	then
+		echo "Front wheel quadrature encoders initialized successfully"
+	else
+		echo "Warning: Front wheel quadrature encoder initialization failed"
+	fi
+fi
+
+# Start bucket control module
+if param compare BUCKET_CTRL_EN 1
+then
+	echo "Starting bucket control module"
+	bucket_control start
+
+	# Wait for module to initialize
+	sleep 1
+
+	echo "Bucket control module started successfully"
+fi
+
+# Start H-bridge driver for bucket actuator
+drv8701 start
+
+# Start limit sensor instances for hydraulic component monitoring
+echo "Starting limit sensor instances"
+for instance in $(seq 0 7)
+do
+	# Check if this instance is enabled
+	instance_enable_param="LS${instance}_ENABLE"
+	if param compare $instance_enable_param 1
+	then
+		echo "Starting limit sensor instance $instance"
+		limit_sensor start -i $instance
+	fi
+done
+
+# Initialize front wheel motor control
+echo "Initializing front wheel motor control"
