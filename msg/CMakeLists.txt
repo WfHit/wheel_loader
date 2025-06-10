@@ -47,6 +47,10 @@ set(msg_files
 	Airspeed.msg
 	AirspeedWind.msg
 	AutotuneAttitudeControlStatus.msg
+	BoomCommand.msg
+	BoomStatus.msg
+	BucketCommand.msg
+	BucketStatus.msg
 	ButtonEvent.msg
 	CameraCapture.msg
 	CameraStatus.msg
@@ -111,6 +115,8 @@ set(msg_files
 	GpsDump.msg
 	GpsInjectData.msg
 	Gripper.msg
+	HbridgeCommand.msg
+	HbridgeStatus.msg
 	HealthReport.msg
 	HeaterStatus.msg
 	HoverThrustEstimate.msg
@@ -125,6 +131,7 @@ set(msg_files
 	LandingTargetPose.msg
 	LaunchDetectionStatus.msg
 	LedControl.msg
+	LimitSensor.msg
 	LoggerStatus.msg
 	LogMessage.msg
 	MagnetometerBiasEstimate.msg
@@ -198,6 +205,7 @@ set(msg_files
 	SensorGyroFifo.msg
 	SensorHygrometer.msg
 	SensorMag.msg
+	SensorMagEncoder.msg
 	SensorOpticalFlow.msg
 	SensorPreflightMag.msg
 	SensorSelection.msg
@@ -234,6 +242,18 @@ set(msg_files
 	VehicleTorqueSetpoint.msg
 	VelocityLimits.msg
 	WheelEncoders.msg
+	WheelSpeedsSetpoint.msg
+	SteeringSetpoint.msg
+	SteeringStatus.msg
+	SlipEstimation.msg
+	TractionControl.msg
+	PredictiveTraction.msg
+	LoadAwareTorque.msg
+	TerrainAdaptation.msg
+	ModuleStatus.msg
+	SensorQuadEncoder.msg
+	ServoFeedback.msg
+	RoboticServoCommand.msg
 	Wind.msg
 	YawEstimatorStatus.msg
 	versioned/ActuatorMotors.msg
