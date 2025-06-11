@@ -118,8 +118,8 @@ extern "C"
  *
  ****************************************************************************/
 
-int nuttx_qencoder_initialize(FAR const struct nuttx_qe_config_s *config,
-                             FAR const char *devpath);
+__EXPORT int nuttx_qencoder_initialize(FAR const struct nuttx_qe_config_s *config,
+                                      FAR const char *devpath);
 
 /****************************************************************************
  * Name: nuttx_qencoder_uninitialize
@@ -135,7 +135,7 @@ int nuttx_qencoder_initialize(FAR const struct nuttx_qe_config_s *config,
  *
  ****************************************************************************/
 
-int nuttx_qencoder_uninitialize(uint8_t instance_id);
+__EXPORT int nuttx_qencoder_uninitialize(uint8_t instance_id);
 
 /****************************************************************************
  * Name: nuttx_qencoder_uninitialize_all
@@ -148,7 +148,7 @@ int nuttx_qencoder_uninitialize(uint8_t instance_id);
  *
  ****************************************************************************/
 
-int nuttx_qencoder_uninitialize_all(void);
+__EXPORT int nuttx_qencoder_uninitialize_all(void);
 
 /****************************************************************************
  * Name: nuttx_qencoder_get_instance_count
@@ -161,7 +161,7 @@ int nuttx_qencoder_uninitialize_all(void);
  *
  ****************************************************************************/
 
-int nuttx_qencoder_get_instance_count(void);
+__EXPORT int nuttx_qencoder_get_instance_count(void);
 
 /****************************************************************************
  * Name: nuttx_qencoder_list_instances
@@ -178,8 +178,8 @@ int nuttx_qencoder_get_instance_count(void);
  *
  ****************************************************************************/
 
-int nuttx_qencoder_list_instances(FAR struct nuttx_qe_instance_info_s *instances,
-                                 uint8_t max_count);
+__EXPORT int nuttx_qencoder_list_instances(FAR struct nuttx_qe_instance_info_s *instances,
+                                          uint8_t max_count);
 
 #undef EXTERN
 #ifdef __cplusplus

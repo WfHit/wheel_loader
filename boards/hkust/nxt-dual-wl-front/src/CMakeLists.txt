@@ -53,9 +53,8 @@ else()
 		timer_config.cpp
 		usb.c
 		mtd.cpp
-		board_qencoder.c
+		board_qencoder.cpp
 		board_limit_sensor_config.cpp
-		#encoder_example.c
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)
 
@@ -64,9 +63,11 @@ else()
 			arch_io_pins
 			arch_spi
 			arch_board_hw_info
+			arch_qencoder
 			drivers__led
 			nuttx_arch
 			nuttx_drivers
 			px4_layer
 	)
+
 endif()
