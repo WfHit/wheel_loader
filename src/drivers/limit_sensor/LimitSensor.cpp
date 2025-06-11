@@ -50,8 +50,6 @@
 #include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 
-#define MODULE_NAME "limit_sensor"
-
 // External declaration of board configuration
 #ifdef BOARD_HAS_LIMIT_SENSOR_CONFIG
 extern const limit_sensor_config_t g_limit_sensor_config[];

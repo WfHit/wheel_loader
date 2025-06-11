@@ -42,6 +42,11 @@
 #include <navigator/navigation.h>
 #include <uORB/topics/mission.h>
 
+// Fallback for CONFIG_NUM_MISSION_ITMES_SUPPORTED if not defined by build system
+#ifndef CONFIG_NUM_MISSION_ITMES_SUPPORTED
+#define CONFIG_NUM_MISSION_ITMES_SUPPORTED 500
+#endif
+
 /** Types of items that the data manager can store */
 typedef enum {
 	DM_KEY_SAFE_POINTS_0 = 0,	///< Safe points storage 0

@@ -4,7 +4,7 @@
 #include <drivers/drv_hrt.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
-#include <px4_platform_common/px4_work_queue/WorkItem.hpp>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 // PX4 library includes
 #include <lib/pid/PID.hpp>
@@ -12,6 +12,7 @@
 #include <lib/motion_planning/PositionSmoothing.hpp>
 #include <lib/motion_planning/TrajectoryConstraints.hpp>
 #include <matrix/matrix/Euler.hpp>
+#include <matrix/matrix/Vector3.hpp>
 
 // uORB includes
 #include <uORB/Publication.hpp>
@@ -29,7 +30,7 @@
 
 using namespace time_literals;
 
-class BucketControl : public ModuleBase<BucketControl>, public ModuleParams, public px4::WorkItem
+class BucketControl : public ModuleBase<BucketControl>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
     BucketControl();

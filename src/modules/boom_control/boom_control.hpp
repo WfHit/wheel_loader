@@ -46,11 +46,10 @@
 #include <uORB/Publication.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
-#include <uORB/SubscriptionData.hpp>
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
-#include <uORB/topics/hbridge_channel_cmd.h>
-#include <uORB/topics/hbridge_channel.h>
+#include <uORB/topics/hbridge_command.h>
+#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_mag_encoder.h>
 
@@ -104,43 +103,46 @@ private:
 
 	// Parameters
 	DEFINE_PARAMETERS(
+		// Control update rate
+		(ParamInt<px4::params::BOOM_UPDATE_RATE>) _param_update_rate,
+
 		// PID gains for position control
-		(ParamFloat<px4::params::BOOM_P>) _param_boom_p,
-		(ParamFloat<px4::params::BOOM_I>) _param_boom_i,
-		(ParamFloat<px4::params::BOOM_D>) _param_boom_d,
+		(ParamFloat<px4::params::BOOM_PID_P>) _param_boom_p,
+		(ParamFloat<px4::params::BOOM_PID_I>) _param_boom_i,
+		(ParamFloat<px4::params::BOOM_PID_D>) _param_boom_d,
 
 		// Motion planning limits
-		(ParamFloat<px4::params::BOOM_MAX_VEL>) _param_boom_max_vel,
-		(ParamFloat<px4::params::BOOM_MAX_ACC>) _param_boom_max_acc,
-		(ParamFloat<px4::params::BOOM_MAX_JERK>) _param_boom_max_jerk,
+		(ParamFloat<px4::params::BOOM_VEL>) _param_boom_max_vel,
+		(ParamFloat<px4::params::BOOM_ACCEL>) _param_boom_max_acc,
+		(ParamFloat<px4::params::BOOM_JERK>) _param_boom_max_jerk,
 
 		// Boom angle limits
-		(ParamFloat<px4::params::BOOM_MIN_ANG>) _param_boom_min_angle,
-		(ParamFloat<px4::params::BOOM_MAX_ANG>) _param_boom_max_angle,
+		(ParamFloat<px4::params::BOOM_ANGLE_MIN>) _param_boom_min_angle,
+		(ParamFloat<px4::params::BOOM_ANGLE_MAX>) _param_boom_max_angle,
 
 		// Preset positions
-		(ParamFloat<px4::params::BOOM_POS_GND>) _param_boom_pos_ground,
+		(ParamFloat<px4::params::BOOM_POS_GROUND>) _param_boom_pos_ground,
 		(ParamFloat<px4::params::BOOM_POS_CARRY>) _param_boom_pos_carry,
 		(ParamFloat<px4::params::BOOM_POS_MAX>) _param_boom_pos_max,
 
 		// Kinematic parameters for triangle calculations
 		(ParamFloat<px4::params::BOOM_KIN_L1>) _param_kin_pivot_to_base,
 		(ParamFloat<px4::params::BOOM_KIN_L2>) _param_kin_pivot_to_attach,
-		(ParamFloat<px4::params::BOOM_KIN_THETA>) _param_kin_base_angle,
+		(ParamFloat<px4::params::BOOM_KIN_ANG>) _param_kin_base_angle,
 		(ParamFloat<px4::params::BOOM_ACT_MIN>) _param_actuator_min_length,
 		(ParamFloat<px4::params::BOOM_ACT_MAX>) _param_actuator_max_length,
 
-		// Magnetic encoder sensor calibration
-		(ParamFloat<px4::params::BOOM_MAG_ENC_OFF>) _param_mag_encoder_offset,
-		(ParamFloat<px4::params::BOOM_MAG_ENC_SCALE>) _param_mag_encoder_scale,
-		(ParamInt<px4::params::BOOM_MAG_ENC_ID>) _param_mag_encoder_instance_id,
+		// Magnetic encoder sensor calibration - using available sensor param
+		(ParamInt<px4::params::BOOM_ANGLE_SENS>) _param_mag_encoder_instance_id,
+		(ParamFloat<px4::params::BOOM_MAG_SCALE>) _param_mag_encoder_scale,
+		(ParamFloat<px4::params::BOOM_MAG_OFFSET>) _param_mag_encoder_offset,
 
 		// H-bridge motor configuration
 		(ParamInt<px4::params::BOOM_HBRIDGE_CH>) _param_hbridge_channel,
-		(ParamFloat<px4::params::BOOM_MOTOR_DEADZONE>) _param_motor_deadzone,
+		(ParamFloat<px4::params::BOOM_DEADBAND>) _param_motor_deadzone,
 
-		// Update rate
-		(ParamInt<px4::params::BOOM_UPDATE_RATE>) _param_update_rate
+		// Motor output limit
+		(ParamFloat<px4::params::BOOM_MAX_OUTPUT>) _param_max_output
 	)
 
 	// Control system components
@@ -150,11 +152,11 @@ private:
 	// uORB subscriptions
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _hbridge_channel_status_sub{ORB_ID(hbridge_channel)};
-	uORB::SubscriptionData<sensor_mag_encoder_s> _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
+	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 
 	// uORB publications
-	uORB::PublicationMulti<hbridge_channel_cmd_s> _hbridge_channel_cmd_pub{ORB_ID(hbridge_channel_cmd)};
+	uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 
 	// Performance counters
@@ -168,6 +170,10 @@ private:
 	float _current_actuator_length{0.0f};
 	float _target_actuator_length{0.0f};
 	float _motor_output{0.0f};
+
+	// Trajectory setpoints
+	float _desired_position_m{0.0f};
+	float _desired_velocity_m_s{0.0f};
 
 	bool _upper_limit_reached{false};
 	bool _lower_limit_reached{false};
@@ -186,12 +192,12 @@ private:
 	// Control and sensor functions
 	void update_parameters();
 	void update_sensor_data();
-	void process_hbridge_channel_status();
+	void process_hbridge_status();
 	void process_boom_command();
 	void update_trajectory();
 	void run_position_control();
 	void check_limits_and_safety();
-	void publish_hbridge_channel_command();
+	void publish_hbridge_command();
 	void publish_boom_status();
 
 	// Utility functions

@@ -2,12 +2,12 @@
 #include <px4_platform_common/log.h>
 #include <lib/mathlib/mathlib.h>
 
+using matrix::Vector3f;
+
 BucketControl::BucketControl() :
     ModuleParams(nullptr),
-    WorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
+    ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
-    _position_pid.setDt(0.01f); // 100Hz control loop
-
     // Initialize motion planning components
     _velocity_smoother.setMaxAccel(200.0f);  // mm/s²
     _velocity_smoother.setMaxVel(100.0f);    // mm/s
@@ -22,9 +22,7 @@ BucketControl::BucketControl() :
 bool BucketControl::init()
 {
     // Initialize PID controller
-    _position_pid.setProportionalGain(_param_pid_p.get());
-    _position_pid.setIntegralGain(_param_pid_i.get());
-    _position_pid.setDerivativeGain(_param_pid_d.get());
+    _position_pid.setGains(_param_pid_p.get(), _param_pid_i.get(), _param_pid_d.get());
 
     // Configure motion planning with parameters
     _velocity_smoother.setMaxAccel(_param_max_acceleration.get());
@@ -62,9 +60,9 @@ bool BucketControl::init()
 
     PX4_INFO("Bucket control initialized");
     PX4_INFO("Bellcrank: %.1fmm, Coupler: %.1fmm, Boom: %.1fmm",
-             _kinematics.bellcrank_length, _kinematics.coupler_length, _kinematics.boom_length);
+             (double)_kinematics.bellcrank_length, (double)_kinematics.coupler_length, (double)_kinematics.boom_length);
     PX4_INFO("Bellcrank internal angle: %.2f rad, Bucket arm: %.1fmm",
-             _kinematics.bellcrank_internal_angle, _kinematics.bucket_arm_length);
+             (double)_kinematics.bellcrank_internal_angle, (double)_kinematics.bucket_arm_length);
 
     return true;
 }
@@ -150,7 +148,7 @@ bool BucketControl::solveBucketLinkage(float actuator_length, float boom_angle,
 
     // Step 4: Calculate bucket angle using bucket arm geometry
     // The bucket arm extends from the bucket pivot at bucket_offset angle relative to coupler
-    float bucket_arm_angle = coupler_angle + M_PI + _kinematics.bucket_offset; // +PI because coupler pulls bucket
+    float bucket_arm_angle = coupler_angle + (float)M_PI + _kinematics.bucket_offset; // +PI because coupler pulls bucket
     bucket_angle = bucket_arm_angle; // This is the bucket's orientation
 
     return true;
@@ -259,13 +257,13 @@ void BucketControl::Run()
         }
 
         // Override parameters with command values if provided (not NaN)
-        if (!isnan(cmd.grading_angle)) {
+        if (!std::isnan(cmd.grading_angle)) {
             _grading_angle = cmd.grading_angle;
         } else {
             _grading_angle = _param_grading_angle.get();
         }
 
-        if (!isnan(cmd.transport_angle)) {
+        if (!std::isnan(cmd.transport_angle)) {
             _transport_angle = cmd.transport_angle;
         } else {
             _transport_angle = _param_transport_angle.get();
@@ -301,9 +299,12 @@ void BucketControl::Run()
             break;
         }
 
-        PX4_DEBUG("Cmd: ground=%.2f°, boom=%.2f°, bucket=%.2f°, actuator=%.1fmm, mode=%d",
-                 math::degrees(_target_ground_angle), math::degrees(_current_boom_angle),
-                 math::degrees(_current_bucket_angle), _target_actuator_length, static_cast<int>(_control_mode));
+	PX4_DEBUG("Cmd: ground=%.2f°, boom=%.2f°, bucket=%.2f°, actuator=%.1fmm, mode=%d",
+		 static_cast<double>(math::degrees(_target_ground_angle)),
+		 static_cast<double>(math::degrees(_current_boom_angle)),
+		 static_cast<double>(math::degrees(_current_bucket_angle)),
+		 static_cast<double>(_target_actuator_length),
+		 static_cast<int>(_control_mode));
     }
 
     // Update state machine
@@ -317,14 +318,6 @@ void BucketControl::Run()
 
     // Publish status
     publishStatus();
-    status.current_angle = _current_ground_angle;        // Ground angle for user
-    status.bucket_relative_angle = _current_bucket_angle; // Boom-relative angle
-    status.current_velocity = _current_velocity;
-    status.actuator_length = _current_actuator_length;
-    status.limit_switch_min = _limit_switch_coarse;
-    status.limit_switch_max = _limit_switch_fine;
-    status.state = static_cast<uint8_t>(_state);
-    _bucket_status_pub.publish(status);
 }
 
 void BucketControl::updateStateMachine()
@@ -391,7 +384,7 @@ void BucketControl::performZeroing()
                                  (_kinematics.actuator_max_length - _kinematics.actuator_min_length) * 0.9f;
                 _zeroing_state = ZeroingState::FAST_MOVE_TO_FINE;
                 _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Moving to fine limit, target: %.1fmm", _zeroing_target);
+                PX4_INFO("Moving to fine limit, target: %.1fmm", static_cast<double>(_zeroing_target));
             } else {
                 setMotorCommand(speed);
             }
@@ -400,17 +393,33 @@ void BucketControl::performZeroing()
 
         case ZeroingState::FAST_MOVE_TO_FINE:
         {
-            // Use S-curve planner for smooth fast movement toward fine limit
-            float velocity_setpoint, acceleration;
-            float position_setpoint = generateSCurveSetpoint(_current_actuator_length, _zeroing_target,
-                                                            velocity_setpoint, acceleration);
+            // Use PX4 motion planning library for smooth fast movement toward fine limit
+            float dt = 0.01f; // 100Hz control loop
 
-            // Simple P control for zeroing
+            // Configure motion planning for zeroing (more aggressive parameters)
+            _position_smoother.setMaxAccelerationZ(_param_max_acceleration.get() * 2.0f); // Double acceleration for zeroing
+            _position_smoother.setMaxVelocityZ(_param_max_velocity.get() * 1.5f);         // 1.5x velocity for zeroing
+            _position_smoother.setMaxJerkZ(_param_jerk_limit.get() * 2.0f);               // Double jerk for faster response
+
+            // Use position smoother for trajectory generation (1D motion using Z-axis)
+            matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
+            matrix::Vector3f target_pos{0.0f, 0.0f, _zeroing_target};
+            matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+
+            PositionSmoothing::PositionSmoothingSetpoints setpoints;
+            _position_smoother.generateSetpoints(current_pos, target_pos, feedforward_velocity,
+                                               dt, false, setpoints);
+
+            // Get smoothed position and velocity setpoints from Z component
+            float position_setpoint = setpoints.position(2);
+            float velocity_setpoint = setpoints.velocity(2);
+
+            // Simple P control for zeroing with velocity feedforward
             float position_error = position_setpoint - _current_actuator_length;
-            float control = math::constrain(position_error * 0.01f, -fast_speed, fast_speed);
+            float control = math::constrain(position_error * 0.01f + velocity_setpoint * 0.005f, -fast_speed, fast_speed);
 
             // Check if we're getting close to target or if fine limit is reached
-            if (_limit_switch_fine || fabsf(position_error) < 10.0f) { // Within 10mm
+            if (_limit_switch_fine || fabsf(_zeroing_target - _current_actuator_length) < 10.0f) { // Within 10mm
                 _zeroing_state = ZeroingState::SLOW_APPROACH_FINE;
                 _zeroing_state_start_time = hrt_absolute_time();
                 PX4_INFO("Slow approach to fine limit");
@@ -430,15 +439,17 @@ void BucketControl::performZeroing()
                 setMotorCommand(0.0f);
 
                 // Record this as our maximum position
-                wheel_encoders_s encoders;
-                if (_wheel_encoders_sub.copy(&encoders)) {
+                sensor_quad_encoder_s encoder_data;
+                if (_sensor_quad_encoder_sub.copy(&encoder_data)) {
                     uint8_t encoder_idx = _param_encoder_index.get();
-                    _encoder_zero_offset = encoders.wheel_angle[encoder_idx];
-                    _encoder_count = 0;
-                    _current_actuator_length = _kinematics.actuator_max_length;
-                    _zeroing_state = ZeroingState::COMPLETE;
-                    _zeroing_complete = true;
-                    PX4_INFO("Zeroing complete at fine limit, offset: %lld", _encoder_zero_offset);
+                    if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
+                        _encoder_zero_offset = encoder_data.position[encoder_idx];
+                        _encoder_count = 0;
+                        _current_actuator_length = _kinematics.actuator_max_length;
+                        _zeroing_state = ZeroingState::COMPLETE;
+                        _zeroing_complete = true;
+                        PX4_INFO("Zeroing complete at fine limit, offset: %lld", (long long)_encoder_zero_offset);
+                    }
                 }
             }
 
@@ -478,13 +489,14 @@ void BucketControl::updateMotionControl()
     updateTrajectorySetpoint(dt);
 
     // PID control on position
-    float position_error = _target_actuator_length - _current_actuator_length;
-    _control_output = _position_pid.control_error(position_error);
+    _position_pid.setSetpoint(_target_actuator_length);
+    _control_output = _position_pid.update(_current_actuator_length, dt);
 
     // Apply control output
     setMotorCommand(_control_output);
 
     // Update state
+    float position_error = _target_actuator_length - _current_actuator_length;
     _state = (fabsf(position_error) < 2.0f) ? State::READY : State::MOVING; // 2mm tolerance
 }
 
@@ -504,9 +516,9 @@ void BucketControl::updateTrajectorySetpoint(float dt)
 
     if (fabsf(position_error) > 1.0f) {  // 1mm deadband
         // Use position smoother for trajectory generation (1D motion using Z-axis)
-        Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
-        Vector3f target_pos{0.0f, 0.0f, _target_actuator_length};
-        Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+        matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
+        matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length};
+        matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
 
         PositionSmoothing::PositionSmoothingSetpoints setpoints;
         _position_smoother.generateSetpoints(current_pos, target_pos, feedforward_velocity,
