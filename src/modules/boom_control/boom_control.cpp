@@ -44,7 +44,7 @@ BoomControl::BoomControl() :
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
 	// Initialize PID controller
-	_position_pid.setOutputLimit(-1.0f, 1.0f);
+	_position_pid.setOutputLimit(1.0f);
 }
 
 BoomControl::~BoomControl()
@@ -60,9 +60,9 @@ bool BoomControl::init()
 	update_kinematics_from_params();
 
 	// Initialize trajectory generator
-	_trajectory_generator.setMaxVel(_param_boom_max_vel.get() / 1000.0f); // Convert mm/s to m/s
-	_trajectory_generator.setMaxAccel(_param_boom_max_acc.get() / 1000.0f);
-	_trajectory_generator.setMaxJerk(_param_boom_max_jerk.get() / 1000.0f);
+	_trajectory_generator.setMaxVelocityZ(_param_boom_max_vel.get() / 1000.0f); // Convert mm/s to m/s
+	_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get() / 1000.0f);
+	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get() / 1000.0f);
 
 	// Set initial target to current position
 	_target_boom_angle = _param_boom_pos_carry.get();
@@ -97,7 +97,7 @@ void BoomControl::Run()
 	update_sensor_data();
 
 	// Process H-bridge channel status feedback
-	process_hbridge_channel_status();
+	process_hbridge_status();
 
 	// Process boom command inputs
 	process_boom_command();
@@ -112,7 +112,7 @@ void BoomControl::Run()
 	check_limits_and_safety();
 
 	// Publish H-bridge channel command
-	publish_hbridge_channel_command();
+	publish_hbridge_command();
 
 	// Publish boom status
 	publish_boom_status();
@@ -125,14 +125,12 @@ void BoomControl::update_parameters()
 	updateParams();
 
 	// Update PID gains
-	_position_pid.setKp(_param_boom_p.get());
-	_position_pid.setKi(_param_boom_i.get());
-	_position_pid.setKd(_param_boom_d.get());
+	_position_pid.setGains(_param_boom_p.get(), _param_boom_i.get(), _param_boom_d.get());
 
 	// Update trajectory generator limits
-	_trajectory_generator.setMaxVel(_param_boom_max_vel.get() / 1000.0f);
-	_trajectory_generator.setMaxAccel(_param_boom_max_acc.get() / 1000.0f);
-	_trajectory_generator.setMaxJerk(_param_boom_max_jerk.get() / 1000.0f);
+	_trajectory_generator.setMaxVelocityZ(_param_boom_max_vel.get() / 1000.0f);
+	_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get() / 1000.0f);
+	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get() / 1000.0f);
 }
 
 void BoomControl::update_kinematics_from_params()
@@ -178,29 +176,33 @@ void BoomControl::update_sensor_data()
 	}
 }
 
-void BoomControl::process_hbridge_channel_status()
+void BoomControl::process_hbridge_status()
 {
-	hbridge_channel_s status{};
-	if (_hbridge_channel_status_sub.update(&status) && status.channel_id == static_cast<uint8_t>(_param_hbridge_channel.get())) {
-		// Check for faults from the H-bridge channel
-		if (status.fault_overcurrent || status.fault_overheat) {
-			PX4_WARN("H-bridge channel fault detected: channel %d, overcurrent: %d, overheat: %d",
-					status.channel_id, status.fault_overcurrent, status.fault_overheat);
+	hbridge_status_s status{};
+	if (_hbridge_status_sub.update(&status)) {
+		uint8_t channel = static_cast<uint8_t>(_param_hbridge_channel.get());
+
+		// Check for faults from the H-bridge
+		if (status.fault_detected) {
+			PX4_WARN("H-bridge fault detected: instance %d", status.instance);
 			_state = BoomState::ERROR;
 			emergency_stop();
 		}
 
-		// Monitor channel state
-		if (status.state == 2) { // FAULT state
-			_state = BoomState::ERROR;
+		// Check if our channel is enabled
+		if (channel < 2 && !status.channel_enabled[channel]) {
+			PX4_WARN("H-bridge channel %d is not enabled", channel);
 		}
 
 		// Log runtime information (optional, can be removed for production)
 		static uint64_t last_log_time = 0;
 		if (hrt_elapsed_time(&last_log_time) > 5_s) {
-			PX4_INFO("H-bridge channel status: channel %d, command %.2f, state %d, current %.2fA, temp %.1fC",
-					status.channel_id, (double)status.current_command, status.state,
-					(double)status.actual_current, (double)status.temperature);
+			if (channel < 2) {
+				PX4_INFO("H-bridge status: instance %d, channel %d enabled: %d, duty: %.2f, current: %.2fA, temp: %.1fC",
+						status.instance, channel, status.channel_enabled[channel],
+						(double)status.channel_duty_cycle[channel], (double)status.channel_current[channel],
+						(double)status.temperature);
+			}
 			last_log_time = hrt_absolute_time();
 		}
 	}
@@ -289,14 +291,15 @@ void BoomControl::process_boom_command()
 			                                    _param_boom_max_angle.get());
 
 			// Update trajectory parameters
-			_trajectory_generator.setMaxVelocity(cmd.max_velocity);
-			_trajectory_generator.setMaxAcceleration(_param_boom_max_acc.get());
-			_trajectory_generator.setMaxJerk(_param_boom_max_jerk.get());
+			_trajectory_generator.setMaxVelocityZ(cmd.max_velocity);
+			_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get());
+			_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get());
 
 			_state = BoomState::MOVING;
 			break;
 
 		case 1: // Velocity control
+		{
 			// Direct velocity command - integrate to get position
 			float dt = 0.01f; // Assume 100Hz update rate
 			_target_boom_angle += cmd.target_angle * dt; // target_angle used as velocity
@@ -308,6 +311,7 @@ void BoomControl::process_boom_command()
 
 			_state = BoomState::MOVING;
 			break;
+		}
 
 		case 2: // Force control (not implemented yet)
 			PX4_WARN("Force control mode not implemented");
@@ -357,10 +361,19 @@ void BoomControl::update_trajectory()
 		return;
 	}
 
-	// Update S-curve trajectory generator
-	_trajectory_generator.setCurrentPosition(_current_actuator_length / 1000.0f); // Convert to meters
-	_trajectory_generator.setTargetPosition(_target_actuator_length / 1000.0f);
-	_trajectory_generator.update(1.0f / _param_update_rate.get()); // dt in seconds
+	// Use PositionSmoothing for trajectory generation (1D motion using Z-axis)
+	matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length / 1000.0f}; // Convert to meters
+	matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length / 1000.0f};
+	matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+
+	float dt = 1.0f / _param_update_rate.get();
+	PositionSmoothing::PositionSmoothingSetpoints setpoints;
+	_trajectory_generator.generateSetpoints(current_pos, target_pos, feedforward_velocity,
+	                                       dt, false, setpoints);
+
+	// Store the generated setpoints for use in position control
+	_desired_position_m = setpoints.position(2);
+	_desired_velocity_m_s = setpoints.velocity(2);
 }
 
 void BoomControl::run_position_control()
@@ -370,9 +383,9 @@ void BoomControl::run_position_control()
 		return;
 	}
 
-	// Get smooth position from trajectory generator (in meters)
-	float desired_position_m = _trajectory_generator.getCurrentPosition();
-	float desired_velocity_m_s = _trajectory_generator.getCurrentVelocity();
+	// Use the setpoints from trajectory generator (already in meters)
+	float desired_position_m = _desired_position_m;
+	float desired_velocity_m_s = _desired_velocity_m_s;
 
 	// Convert back to mm for control
 	float desired_position_mm = desired_position_m * 1000.0f;
@@ -438,13 +451,13 @@ void BoomControl::check_limits_and_safety()
 	}
 }
 
-void BoomControl::publish_hbridge_channel_command()
+void BoomControl::publish_hbridge_command()
 {
-	hbridge_channel_cmd_s cmd{};
+	hbridge_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
 
 	// Set channel from parameter
-	cmd.channel_id = static_cast<uint8_t>(_param_hbridge_channel.get());
+	cmd.channel = static_cast<uint8_t>(_param_hbridge_channel.get());
 
 	// Apply deadzone to prevent motor hunting around zero
 	float output = _motor_output;
@@ -452,34 +465,14 @@ void BoomControl::publish_hbridge_channel_command()
 		output = 0.0f;
 	}
 
-	// Set command value (-1.0 to 1.0 range)
+	// Set duty cycle (-1.0 to 1.0 range)
 	// Positive = extend actuator (boom up), Negative = retract actuator (boom down)
-	cmd.command_value = math::constrain(output, -1.0f, 1.0f);
+	cmd.duty_cycle = math::constrain(output, -1.0f, 1.0f);
 
 	// Enable channel if not in error state
 	cmd.enable = (_state != BoomState::ERROR);
 
-	// Set control mode based on state
-	switch (_state) {
-		case BoomState::IDLE:
-			cmd.command_mode = 0; // IDLE/POSITION_HOLD
-			break;
-		case BoomState::MOVING:
-		case BoomState::HOLDING:
-			cmd.command_mode = 1; // VELOCITY
-			break;
-		case BoomState::ERROR:
-			cmd.command_mode = 0; // IDLE
-			cmd.enable = false;
-			break;
-	}
-
-	// Set current limit and safety
-	cmd.max_current = 10.0f; // 10A limit
-	cmd.ignore_limits = false; // Respect limit switches
-	cmd.priority = 1; // Normal priority
-
-	_hbridge_channel_cmd_pub.publish(cmd);
+	_hbridge_command_pub.publish(cmd);
 }
 
 void BoomControl::publish_boom_status()
@@ -487,41 +480,35 @@ void BoomControl::publish_boom_status()
 	boom_status_s status{};
 	status.timestamp = hrt_absolute_time();
 
-	// Current position and state
-	status.current_angle = _current_boom_angle;
-	status.target_angle = _target_boom_angle;
-	status.current_actuator_length = _current_actuator_length;
-	status.target_actuator_length = _target_actuator_length;
+	// Position and velocity in radians and rad/s
+	status.angle = math::radians(_current_boom_angle);
+	status.velocity = _desired_velocity_m_s; // Using desired velocity as current velocity estimate
 
-	// Control state
+	// Load estimation (using motor output as proxy)
+	status.load = fabsf(_motor_output);
+
+	// Motor information
+	status.motor_current = 0.0f; // Not available from H-bridge feedback yet
+	status.motor_voltage = 0.0f; // Not available from H-bridge feedback yet
+	status.motor_temperature_c = 0.0f; // Not available from H-bridge feedback yet
+	status.motor_fault = (_state == BoomState::ERROR);
+	status.encoder_fault = !_sensor_valid;
+
+	// Control state mapping
 	switch (_state) {
 		case BoomState::IDLE:
-			status.state = 0;
+			status.state = 2; // ready
 			break;
 		case BoomState::MOVING:
-			status.state = 1;
+			status.state = 3; // moving
 			break;
 		case BoomState::HOLDING:
-			status.state = 2;
+			status.state = 2; // ready
 			break;
 		case BoomState::ERROR:
-			status.state = 3;
+			status.state = 4; // error
 			break;
 	}
-
-	// Motion status
-	status.is_moving = (_state == BoomState::MOVING);
-	status.at_target = (_state == BoomState::HOLDING);
-
-	// Limits and safety
-	status.lower_limit_reached = _lower_limit_reached;
-	status.upper_limit_reached = _upper_limit_reached;
-	status.sensor_valid = _sensor_valid;
-
-	// Motor output and control
-	status.motor_output = _motor_output;
-	status.last_command_time = _last_command_time;
-	status.last_sensor_update = _last_sensor_update;
 
 	_boom_status_pub.publish(status);
 }
@@ -550,8 +537,10 @@ bool BoomControl::is_sensor_timeout()
 
 void BoomControl::reset_trajectory()
 {
-	_trajectory_generator.setCurrentPosition(_current_actuator_length / 1000.0f);
-	_trajectory_generator.setTargetPosition(_current_actuator_length / 1000.0f);
+	// Reset trajectory to current position
+	// Note: PositionSmoothing doesn't have simple setters, so we reset our internal state
+	_desired_position_m = _current_actuator_length / 1000.0f;
+	_desired_velocity_m_s = 0.0f;
 }
 
 int BoomControl::task_spawn(int argc, char *argv[])

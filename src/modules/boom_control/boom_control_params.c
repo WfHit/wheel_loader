@@ -36,7 +36,7 @@
  *
  * DRV8701 H-bridge channel (0 or 1) used for the boom actuator motor.
  *
- * @unit channel
+ * @unit
  * @min 0
  * @max 1
  * @decimal 0
@@ -46,11 +46,23 @@
 PARAM_DEFINE_INT32(BOOM_HBRIDGE_CH, 0);
 
 /**
+ * Boom control update rate
+ *
+ * Update rate for boom control loop in Hz.
+ *
+ * @unit Hz
+ * @min 10
+ * @max 100
+ * @decimal 0
+ * @group Boom Control
+ */
+PARAM_DEFINE_INT32(BOOM_UPDATE_RATE, 50);
+
+/**
  * Boom angle sensor instance
  *
  * AS5600 magnetic encoder instance for boom angle measurement.
  *
- * @unit instance
  * @min 0
  * @max 3
  * @decimal 0
@@ -132,7 +144,7 @@ PARAM_DEFINE_FLOAT(BOOM_POS_MAX, 70.0f);
  * Proportional gain for boom angle control.
  * Higher values increase responsiveness but may cause oscillation.
  *
- * @unit %/deg
+ * @unit
  * @min 0.0
  * @max 20.0
  * @decimal 3
@@ -146,7 +158,7 @@ PARAM_DEFINE_FLOAT(BOOM_PID_P, 2.5f);
  * Integral gain for boom angle control.
  * Helps eliminate steady-state error.
  *
- * @unit %/(deg*s)
+ * @unit
  * @min 0.0
  * @max 5.0
  * @decimal 3
@@ -160,7 +172,7 @@ PARAM_DEFINE_FLOAT(BOOM_PID_I, 0.1f);
  * Derivative gain for boom angle control.
  * Provides damping and reduces overshoot.
  *
- * @unit %*s/deg
+ * @unit
  * @min 0.0
  * @max 1.0
  * @decimal 3
@@ -174,7 +186,7 @@ PARAM_DEFINE_FLOAT(BOOM_PID_D, 0.05f);
  * Maximum motor output percentage for boom control.
  * Limits motor current to protect mechanical components.
  *
- * @unit %
+ * @unit
  * @min 10.0
  * @max 100.0
  * @decimal 1
@@ -188,7 +200,7 @@ PARAM_DEFINE_FLOAT(BOOM_MAX_OUTPUT, 80.0f);
  * Maximum acceleration for boom motion planning.
  * Controls smoothness of boom movements.
  *
- * @unit deg/s²
+ * @unit
  * @min 5.0
  * @max 100.0
  * @decimal 1
@@ -202,7 +214,7 @@ PARAM_DEFINE_FLOAT(BOOM_ACCEL, 20.0f);
  * Maximum velocity for boom motion planning.
  * Controls speed of boom movements.
  *
- * @unit deg/s
+ * @unit
  * @min 5.0
  * @max 50.0
  * @decimal 1
@@ -216,7 +228,7 @@ PARAM_DEFINE_FLOAT(BOOM_VEL, 15.0f);
  * Maximum jerk for boom motion planning.
  * Controls acceleration smoothness.
  *
- * @unit deg/s³
+ * @unit
  * @min 10.0
  * @max 500.0
  * @decimal 1
@@ -307,3 +319,31 @@ PARAM_DEFINE_FLOAT(BOOM_ACT_MIN, 200.0f);
  * @group Boom Control
  */
 PARAM_DEFINE_FLOAT(BOOM_ACT_MAX, 800.0f);
+
+/**
+ * Boom magnetic encoder scale factor
+ *
+ * Scale factor for calibrating AS5600 magnetic encoder angle readings.
+ * Used to correct for mounting orientation and mechanical linkage.
+ *
+ * @unit
+ * @min -2.0
+ * @max 2.0
+ * @decimal 3
+ * @group Boom Control
+ */
+PARAM_DEFINE_FLOAT(BOOM_MAG_SCALE, 1.0f);
+
+/**
+ * Boom magnetic encoder offset
+ *
+ * Offset angle in degrees for calibrating AS5600 magnetic encoder.
+ * Used to set zero position reference for boom angle measurement.
+ *
+ * @unit deg
+ * @min -180.0
+ * @max 180.0
+ * @decimal 1
+ * @group Boom Control
+ */
+PARAM_DEFINE_FLOAT(BOOM_MAG_OFFSET, 0.0f);
