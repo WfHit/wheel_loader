@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <px4_platform_common/px4_config.h>
 
 // Limit sensor instance configuration
 struct limit_sensor_config_t {
@@ -12,3 +13,6 @@ struct limit_sensor_config_t {
     bool redundancy_enabled;      // True if redundancy checking is enabled
     const char* name;             // Human-readable name
 };
+
+// Board-specific limit sensor configuration (provided by drivers_board)
+__EXPORT extern const limit_sensor_config_t g_limit_sensor_config[];

@@ -34,7 +34,7 @@
 /****************************************************************************
  * Included Files
  ****************************************************************************/
-
+#include <px4_platform_common/px4_config.h>
 #include <nuttx/config.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/sensors/qencoder.h>

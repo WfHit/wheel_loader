@@ -39,7 +39,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include "../../../../../platforms/nuttx/src/px4/stm/stm32_common/include/px4_arch/nuttx_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
 
 /****************************************************************************
  * Public Function Prototypes

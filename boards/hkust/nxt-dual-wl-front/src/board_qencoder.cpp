@@ -44,7 +44,9 @@
 
 #include "stm32_gpio.h"
 #include "board_config.h"
-#include "../../../../../platforms/nuttx/src/px4/stm/stm32_common/include/px4_arch/nuttx_qencoder.h"
+#include "board_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
+
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -56,18 +58,31 @@
 
 #ifdef CONFIG_BOARD_NXT_QENCODER
 
-/* Encoder configurations for nxt-dual-wl-rear motor encoder */
+/* Encoder configurations for nxt-dual-wl-front motor encoders */
 static const struct nuttx_qe_config_s g_motor_encoders[] =
 {
-  /* Motor Encoder - GPIO mode */
+  /* Motor Encoder 1 - GPIO mode */
   {
     .gpio = {
-      .phase_a = QENCODER_A_GPIO_RAW,
-      .phase_b = QENCODER_B_GPIO_RAW,
+      .phase_a = QENCODER1_A_GPIO_RAW,
+      .phase_b = QENCODER1_B_GPIO_RAW,
       .index = 0,  /* No index signal */
     },
     .resolution = 1024,    /* 1024 CPR encoder */
-    .use_index = false,    /* No index signal for motor encoder */
+    .use_index = false,    /* No index signal for motor encoders */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
+    .invert_dir = false,
+  },
+
+  /* Motor Encoder 2 - GPIO mode */
+  {
+    .gpio = {
+      .phase_a = QENCODER2_A_GPIO_RAW,
+      .phase_b = QENCODER2_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
+    },
+    .resolution = 1024,    /* 1024 CPR encoder */
+    .use_index = false,    /* No index signal for motor encoders */
     .x4_mode = true,       /* 4x counting mode for higher resolution */
     .invert_dir = false,
   },
@@ -132,7 +147,7 @@ int board_qencoder_initialize(void)
   /* Initialize each encoder */
   for (unsigned int i = 0; i < NUM_ENCODERS; i++)
     {
-      snprintf(devpath, sizeof(devpath), "/dev/qe%d", i);
+      snprintf(devpath, sizeof(devpath), "/dev/qe%u", i);
 
       ret = nuttx_qencoder_initialize(&g_motor_encoders[i], devpath);
       if (ret < 0)

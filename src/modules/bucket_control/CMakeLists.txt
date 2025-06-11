@@ -8,4 +8,5 @@ px4_add_module(
         px4_work_queue
         PID
         mathlib
+	motion_planning
 )
