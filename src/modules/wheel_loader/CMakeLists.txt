@@ -39,6 +39,5 @@ px4_add_module(
 		wheel_loader_main.cpp
 	DEPENDS
 		PID
-		motion_planning
 		mathlib
 	)

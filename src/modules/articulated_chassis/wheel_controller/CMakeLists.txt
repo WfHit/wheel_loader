@@ -6,9 +6,7 @@ px4_add_module(
     SRCS
         wheel_controller.cpp
         wheel_controller_main.cpp
-    MODULE_CONFIG
-        module.yaml
     DEPENDS
         px4_work_queue
-        pid
+        PID
 )

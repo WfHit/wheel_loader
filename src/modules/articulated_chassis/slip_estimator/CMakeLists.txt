@@ -40,8 +40,4 @@ px4_add_module(
 		slip_estimator_main.cpp
 	DEPENDS
 		mathlib
-		matrix
-		ecl
-	MODULE_CONFIG
-		MODULE_STACKSIZE=2048
 )

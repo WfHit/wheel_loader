@@ -117,7 +117,7 @@ def parse_yaml_parameters_config(yaml_config, ethernet_supported):
                     max_val = max(key for key in param['bit'])
                     tags += '\n * @min 0'
                     tags += '\n * @max {:}'.format((1<<(max_val+1)) - 1)
-                elif param['type'] == 'boolean':
+                elif param['type'] == 'boolean' or param['type'] == 'bool':
                     param_type = 'INT32'
                     tags += '\n * @boolean'
                 elif param['type'] == 'int32':

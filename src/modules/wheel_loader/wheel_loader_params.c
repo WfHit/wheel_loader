@@ -94,7 +94,7 @@ PARAM_DEFINE_FLOAT(WL_MAX_SPEED, 2.0f);
  * @decimal 1
  * @group Wheel Loader Chassis
  */
-PARAM_DEFINE_FLOAT(WL_MAX_STEER_RATE, 90.0f);
+PARAM_DEFINE_FLOAT(WL_MAX_STER_RAT, 90.0f);
 
 /**
  * Steering controller P gain
@@ -156,7 +156,7 @@ PARAM_DEFINE_FLOAT(WL_BOOM_SPEED, 15.0f);
  * @decimal 1
  * @group Wheel Loader Boom
  */
-PARAM_DEFINE_FLOAT(WL_BOOM_MIN_ANGLE, -10.0f);
+PARAM_DEFINE_FLOAT(WL_BOM_MIN_ANG, -10.0f);
 
 /**
  * Maximum boom angle
@@ -169,7 +169,7 @@ PARAM_DEFINE_FLOAT(WL_BOOM_MIN_ANGLE, -10.0f);
  * @decimal 1
  * @group Wheel Loader Boom
  */
-PARAM_DEFINE_FLOAT(WL_BOOM_MAX_ANGLE, 75.0f);
+PARAM_DEFINE_FLOAT(WL_BOM_MAX_ANG, 75.0f);
 
 /**
  * Boom loading position angle
@@ -182,7 +182,7 @@ PARAM_DEFINE_FLOAT(WL_BOOM_MAX_ANGLE, 75.0f);
  * @decimal 1
  * @group Wheel Loader Boom
  */
-PARAM_DEFINE_FLOAT(WL_BOOM_LOAD_ANGLE, 10.0f);
+PARAM_DEFINE_FLOAT(WL_BOM_LOAD_ANG, 10.0f);
 
 /**
  * Boom dumping position angle
@@ -195,7 +195,7 @@ PARAM_DEFINE_FLOAT(WL_BOOM_LOAD_ANGLE, 10.0f);
  * @decimal 1
  * @group Wheel Loader Boom
  */
-PARAM_DEFINE_FLOAT(WL_BOOM_DUMP_ANGLE, 50.0f);
+PARAM_DEFINE_FLOAT(WL_BOM_DUMP_ANG, 50.0f);
 
 /**
  * Default bucket movement speed
@@ -208,7 +208,7 @@ PARAM_DEFINE_FLOAT(WL_BOOM_DUMP_ANGLE, 50.0f);
  * @decimal 1
  * @group Wheel Loader Bucket
  */
-PARAM_DEFINE_FLOAT(WL_BUCKET_SPEED, 30.0f);
+PARAM_DEFINE_FLOAT(WL_BUCK_SPED, 30.0f);
 
 /**
  * Minimum bucket angle
@@ -221,7 +221,7 @@ PARAM_DEFINE_FLOAT(WL_BUCKET_SPEED, 30.0f);
  * @decimal 1
  * @group Wheel Loader Bucket
  */
-PARAM_DEFINE_FLOAT(WL_BUCKET_MIN_ANGLE, -30.0f);
+PARAM_DEFINE_FLOAT(WL_BUCK_MIN_ANG, -30.0f);
 
 /**
  * Maximum bucket angle
@@ -234,7 +234,7 @@ PARAM_DEFINE_FLOAT(WL_BUCKET_MIN_ANGLE, -30.0f);
  * @decimal 1
  * @group Wheel Loader Bucket
  */
-PARAM_DEFINE_FLOAT(WL_BUCKET_MAX_ANGLE, 90.0f);
+PARAM_DEFINE_FLOAT(WL_BUCK_MAX_ANG, 90.0f);
 
 /**
  * Bucket curl position angle
@@ -247,7 +247,7 @@ PARAM_DEFINE_FLOAT(WL_BUCKET_MAX_ANGLE, 90.0f);
  * @decimal 1
  * @group Wheel Loader Bucket
  */
-PARAM_DEFINE_FLOAT(WL_BUCKET_CURL_ANGLE, -20.0f);
+PARAM_DEFINE_FLOAT(WL_BUCK_CURL_ANG, -20.0f);
 
 /**
  * Bucket dump position angle
@@ -260,7 +260,7 @@ PARAM_DEFINE_FLOAT(WL_BUCKET_CURL_ANGLE, -20.0f);
  * @decimal 1
  * @group Wheel Loader Bucket
  */
-PARAM_DEFINE_FLOAT(WL_BUCKET_DUMP_ANGLE, 80.0f);
+PARAM_DEFINE_FLOAT(WL_BUCK_DUMP_ANG, 80.0f);
 
 /**
  * Autonomous approach distance
@@ -273,7 +273,7 @@ PARAM_DEFINE_FLOAT(WL_BUCKET_DUMP_ANGLE, 80.0f);
  * @decimal 1
  * @group Wheel Loader Autonomous
  */
-PARAM_DEFINE_FLOAT(WL_AUTO_APPROACH_DIST, 2.0f);
+PARAM_DEFINE_FLOAT(WL_AUTO_APR_DIST, 2.0f);
 
 /**
  * Autonomous loading time
@@ -286,7 +286,7 @@ PARAM_DEFINE_FLOAT(WL_AUTO_APPROACH_DIST, 2.0f);
  * @decimal 1
  * @group Wheel Loader Autonomous
  */
-PARAM_DEFINE_FLOAT(WL_AUTO_LOAD_TIME, 8.0f);
+PARAM_DEFINE_FLOAT(WL_AUTO_LD_TIME, 8.0f);
 
 /**
  * Autonomous dumping time
@@ -299,7 +299,7 @@ PARAM_DEFINE_FLOAT(WL_AUTO_LOAD_TIME, 8.0f);
  * @decimal 1
  * @group Wheel Loader Autonomous
  */
-PARAM_DEFINE_FLOAT(WL_AUTO_DUMP_TIME, 5.0f);
+PARAM_DEFINE_FLOAT(WL_AUTO_DP_TIME, 5.0f);
 
 /**
  * Autonomous cycle count
@@ -311,7 +311,7 @@ PARAM_DEFINE_FLOAT(WL_AUTO_DUMP_TIME, 5.0f);
  * @decimal 0
  * @group Wheel Loader Autonomous
  */
-PARAM_DEFINE_INT32(WL_AUTO_CYCLE_COUNT, 5);
+PARAM_DEFINE_INT32(WL_AUTO_CYC_CT, 5);
 
 /**
  * Emergency brake deceleration
@@ -324,7 +324,7 @@ PARAM_DEFINE_INT32(WL_AUTO_CYCLE_COUNT, 5);
  * @decimal 1
  * @group Wheel Loader Safety
  */
-PARAM_DEFINE_FLOAT(WL_EMERG_BRAKE_DECEL, 3.0f);
+PARAM_DEFINE_FLOAT(WL_EMERG_BK_DECL, 3.0f);
 
 /**
  * Maximum tilt angle
@@ -337,7 +337,7 @@ PARAM_DEFINE_FLOAT(WL_EMERG_BRAKE_DECEL, 3.0f);
  * @decimal 1
  * @group Wheel Loader Safety
  */
-PARAM_DEFINE_FLOAT(WL_MAX_TILT_ANGLE, 25.0f);
+PARAM_DEFINE_FLOAT(WL_MAX_TILT_ANG, 25.0f);
 
 /**
  * Health check frequency
@@ -350,4 +350,4 @@ PARAM_DEFINE_FLOAT(WL_MAX_TILT_ANGLE, 25.0f);
  * @decimal 1
  * @group Wheel Loader Safety
  */
-PARAM_DEFINE_FLOAT(WL_HEALTH_CHECK_FREQ, 10.0f);
+PARAM_DEFINE_FLOAT(WL_HEAL_CK_FREQ, 10.0f);

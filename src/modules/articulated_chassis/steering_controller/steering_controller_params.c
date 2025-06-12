@@ -107,7 +107,7 @@ PARAM_DEFINE_INT32(STEER_REVERSE, 0);
  * @boolean
  * @group Steering Controller
  */
-PARAM_DEFINE_INT32(STEER_SLIP_COMP_EN, 1);
+PARAM_DEFINE_INT32(STEER_SLP_CP_EN, 1);
 
 /**
  * Slip compensation gain
@@ -120,7 +120,7 @@ PARAM_DEFINE_INT32(STEER_SLIP_COMP_EN, 1);
  * @decimal 2
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_SLIP_COMP_GAIN, 0.5f);
+PARAM_DEFINE_FLOAT(STEER_SLP_CP_GN, 0.5f);
 
 /**
  * Maximum slip compensation
@@ -135,7 +135,7 @@ PARAM_DEFINE_FLOAT(STEER_SLIP_COMP_GAIN, 0.5f);
  * @decimal 4
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_SLIP_COMP_MAX, 0.174533f);
+PARAM_DEFINE_FLOAT(STEER_SLP_CP_MA, 0.174533f);
 
 /**
  * Feedforward gain
@@ -161,7 +161,7 @@ PARAM_DEFINE_FLOAT(STEER_FF_GAIN, 0.2f);
  * @decimal 2
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_FF_SPEED_SCALE, 0.1f);
+PARAM_DEFINE_FLOAT(STEER_FF_SPD_SC, 0.1f);
 
 /**
  * Servo minimum PWM
@@ -203,7 +203,7 @@ PARAM_DEFINE_FLOAT(STEER_PWM_MAX, 2000.0f);
  * @decimal 1
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_CURR_LIMIT, 2.0f);
+PARAM_DEFINE_FLOAT(STEER_CURR_LT, 2.0f);
 
 /**
  * Enable limit sensors
@@ -226,7 +226,7 @@ PARAM_DEFINE_INT32(STEER_LIMIT_EN, 1);
  * @max 255
  * @group Steering Controller
  */
-PARAM_DEFINE_INT32(STEER_LIMIT_LEFT_IDX, 0);
+PARAM_DEFINE_INT32(STEER_LT_LF_ID, 0);
 
 /**
  * Right limit sensor instance
@@ -238,7 +238,7 @@ PARAM_DEFINE_INT32(STEER_LIMIT_LEFT_IDX, 0);
  * @max 255
  * @group Steering Controller
  */
-PARAM_DEFINE_INT32(STEER_LIMIT_RIGHT_IDX, 1);
+PARAM_DEFINE_INT32(STEER_LT_RT_ID, 1);
 
 /**
  * Limit sensor margin
@@ -252,7 +252,7 @@ PARAM_DEFINE_INT32(STEER_LIMIT_RIGHT_IDX, 1);
  * @decimal 3
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_LIMIT_MARGIN, 0.087f);
+PARAM_DEFINE_FLOAT(STEER_LIMIT_MARG, 0.087f);
 
 /**
  * Enable safety manager
@@ -291,7 +291,7 @@ PARAM_DEFINE_FLOAT(STEER_SAFE_POS, 0.0f);
  * @decimal 0
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_FAULT_TIMEOUT, 5000.0f);
+PARAM_DEFINE_FLOAT(STEER_FT_TIMEOUT, 5000.0f);
 
 /**
  * Maximum violations
@@ -303,4 +303,4 @@ PARAM_DEFINE_FLOAT(STEER_FAULT_TIMEOUT, 5000.0f);
  * @max 100
  * @group Steering Controller
  */
-PARAM_DEFINE_INT32(STEER_MAX_VIOLATIONS, 10);
+PARAM_DEFINE_INT32(STEER_MAX_VIOL, 10);
