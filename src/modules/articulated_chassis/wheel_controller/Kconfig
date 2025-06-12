@@ -1,0 +1,5 @@
+menuconfig MODULES_WHEEL_CONTROLLER
+	bool "wheel_controller"
+	default n
+	---help---
+		Enable support for wheel_controller

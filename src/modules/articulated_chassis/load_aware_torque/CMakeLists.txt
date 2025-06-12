@@ -40,7 +40,4 @@ px4_add_module(
 		load_aware_torque_main.cpp
 	DEPENDS
 		mathlib
-		matrix
-	MODULE_CONFIG
-		MODULE_STACKSIZE=2048
 )

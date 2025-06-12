@@ -9,9 +9,3 @@ menuconfig MODULES_WHEEL_LOADER
 		and articulated chassis coordination. It supports manual, semi-automatic,
 		and fully autonomous operation modes.
 
-menuconfig USER_WHEEL_LOADER
-	bool "wheel_loader running as userspace module"
-	default n
-	depends on BOARD_PROTECTED && MODULES_WHEEL_LOADER
-	---help---
-		Put wheel_loader in userspace memory
