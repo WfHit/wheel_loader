@@ -36,7 +36,7 @@ px4_add_module(
 	MAIN predictive_traction
 	STACK_MAIN 2048
 	SRCS
-		PredictiveTractionControl.cpp
+		predictive_traction_control.cpp
 		predictive_traction_main.cpp
 	DEPENDS
 		mathlib

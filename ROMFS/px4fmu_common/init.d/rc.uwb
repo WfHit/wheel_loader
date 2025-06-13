@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# UWB LinkTrack startup script
+#
+
+# Check if UWB is enabled
+if param compare SENS_UWB_EN 1
+then
+    # Get UWB parameters
+    set UWB_PORT $SENS_UWB_PORT
+    set UWB_BAUD $SENS_UWB_BAUD
+
+    # Default port if not set
+    if [ -z "$UWB_PORT" ]
+    then
+        set UWB_PORT /dev/ttyS6
+    fi
+
+    # Check if anchor config file exists
+    set UWB_ANCHOR_FILE /fs/microsd/uwb_anchors.conf
+    if [ ! -f $UWB_ANCHOR_FILE ]
+    then
+        echo "UWB: No anchor config found, using default positions"
+        set UWB_ANCHOR_FILE ""
+    fi
+
+    # Start the LinkTrack driver
+    if [ -n "$UWB_ANCHOR_FILE" ]
+    then
+        nooploop_linktrack start -d $UWB_PORT -a $UWB_ANCHOR_FILE
+    else
+        nooploop_linktrack start -d $UWB_PORT
+    fi
+
+    if [ $? -eq 0 ]
+    then
+        echo "UWB LinkTrack driver started on $UWB_PORT"
+    else
+        echo "ERROR: Failed to start UWB LinkTrack driver"
+    fi
+else
+    echo "UWB positioning disabled"
+fi

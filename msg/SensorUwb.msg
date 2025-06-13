@@ -1,24 +1,28 @@
-# UWB distance contains the distance information measured by an ultra-wideband positioning system,
-# such as Pozyx or NXP Rddrone.
+# UWB sensor data with enhanced diagnostics for indoor positioning
 
-uint64 	timestamp		# time since system start (microseconds)
+uint64 timestamp          # time since system start (microseconds)
+uint32 sessionid          # UWB session id
+uint32 time_offset        # Time offset in microseconds for batch measurements
+uint8 anchor_id           # Anchor ID
+uint8 tag_id              # Tag ID
 
-uint32 	sessionid		# UWB SessionID
-uint32 	time_offset		# Time between Ranging Rounds in ms
-uint32 	counter			# Number of Ranges since last Start of Ranging
-uint16 	mac			# MAC adress of Initiator (controller)
+float32 range             # Distance in meters
 
-uint16 	mac_dest		# MAC adress of Responder (Controlee)
-uint16 	status			# status feedback #
-uint8 	nlos			# None line of site condition y/n
-float32 distance		# distance in m to the UWB receiver
+# Signal quality metrics
+int8 rssi                 # Received Signal Strength Indicator (dBm)
+uint8 los_confidence      # Line-of-sight confidence (0-100)
+uint16 first_path_power   # First path signal amplitude
+uint16 total_path_power   # Total received power
 
+# Anchor position (if known)
+float32 anchor_x          # Anchor X position in meters
+float32 anchor_y          # Anchor Y position in meters
+float32 anchor_z          # Anchor Z position in meters
+bool anchor_pos_valid     # True if anchor position is valid
 
-#Angle of arrival, Angle in Degree -60..+60; FOV in both axis is 120 degrees
-float32 aoa_azimuth_dev	# Angle of arrival of first incomming RX msg
-float32 aoa_elevation_dev	# Angle of arrival of first incomming RX msg
-float32 aoa_azimuth_resp	# Angle of arrival of first incomming RX msg at the responder
-float32 aoa_elevation_resp	# Angle of arrival of first incomming RX msg at the responder
+# Additional diagnostics
+uint8 multipath_count     # Number of detected multipaths
+float32 range_bias        # Estimated range bias due to NLOS
 
 # Figure of merit for the angle measurements
 uint8 aoa_azimuth_fom		# AOA Azimuth FOM

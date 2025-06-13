@@ -32,3 +32,9 @@
 ############################################################################
 
 add_subdirectory(uwb_sr150)
+
+px4_add_git_submodule(TARGET git_libdw1000 PATH "libdw1000")
+
+if(CONFIG_DRIVERS_UWB_NOOPLOOP_LINKTRACK)
+	add_subdirectory(nooploop_linktrack)
+endif()

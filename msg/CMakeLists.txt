@@ -252,9 +252,11 @@ set(msg_files
 	TerrainAdaptation.msg
 	ModuleStatus.msg
 	SensorQuadEncoder.msg
-	ServoFeedback.msg
+	RoboticServoFeedback.msg
 	RoboticServoCommand.msg
 	Wind.msg
+	WheelLoaderSetpoint.msg
+	WheelLoaderStatus.msg
 	YawEstimatorStatus.msg
 	versioned/ActuatorMotors.msg
 	versioned/ActuatorServos.msg

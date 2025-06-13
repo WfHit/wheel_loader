@@ -5,5 +5,12 @@ menu "UWB"
         select DRIVERS_UWB_UWB_SR150
         ---help---
             Enable support for uwb drivers
+
+    config DRIVERS_UWB_NOOPLOOP_LINKTRACK
+        bool "Nooploop LinkTrack UWB driver"
+        default n
+        ---help---
+            Enable support for Nooploop LinkTrack UWB positioning system
+
     rsource "*/Kconfig"
 endmenu

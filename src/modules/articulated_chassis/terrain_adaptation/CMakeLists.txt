@@ -36,9 +36,8 @@ px4_add_module(
 	MAIN terrain_adaptation
 	STACK_MAIN 2048
 	SRCS
-		TerrainAdaptation.cpp
+		terrain_adaptation.cpp
 		terrain_adaptation_main.cpp
 	DEPENDS
 		mathlib
-
 )

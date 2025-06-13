@@ -132,7 +132,7 @@ st3125_servo stop
 Enable logging of servo feedback:
 
 ```bash
-logger start -t -b 200 -e servo_feedback
+logger start -t -b 200 -e robotic_servo_feedback
 ```
 
 ## Performance

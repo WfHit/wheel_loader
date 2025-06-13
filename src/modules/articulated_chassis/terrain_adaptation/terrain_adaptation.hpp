@@ -9,9 +9,9 @@
 #include <lib/geo/geo.h>
 
 // uORB message includes
-#include <uORB/topics/TerrainAdaptation.h>
-#include <uORB/topics/SlipEstimation.h>
-#include <uORB/topics/ModuleStatus.h>
+#include <uORB/topics/terrain_adaptation.h>
+#include <uORB/topics/slip_estimation.h>
+#include <uORB/topics/module_status.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/sensor_combined.h>
 

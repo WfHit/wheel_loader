@@ -36,7 +36,7 @@ px4_add_module(
 	MAIN slip_estimator
 	STACK_MAIN 2048
 	SRCS
-		SlipEstimator.cpp
+		slip_estimator.cpp
 		slip_estimator_main.cpp
 	DEPENDS
 		mathlib

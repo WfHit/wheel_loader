@@ -1,4 +1,4 @@
-#include "TerrainAdaptation.hpp"
+#include "terrain_adaptation.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>

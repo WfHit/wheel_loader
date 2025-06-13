@@ -63,6 +63,10 @@
 #include "aid_sources/ZeroGyroUpdate.hpp"
 #include "aid_sources/ZeroVelocityUpdate.hpp"
 
+#if defined(CONFIG_EKF2_UWB)
+# include "aid_sources/uwb/uwb_checks.hpp"
+#endif // CONFIG_EKF2_UWB
+
 #if defined(CONFIG_EKF2_AUX_GLOBAL_POSITION)
 # include "aid_sources/aux_global_position/aux_global_position.hpp"
 #endif // CONFIG_EKF2_AUX_GLOBAL_POSITION
@@ -413,6 +417,10 @@ public:
 	const auto &aid_src_aux_vel() const { return _aid_src_aux_vel; }
 #endif // CONFIG_EKF2_AUXVEL
 
+	// UWB range fusion
+	void controlUwbFusion();
+	const auto &aid_src_uwb() const { return _aid_src_uwb; }
+
 	bool resetGlobalPosToExternalObservation(double latitude, double longitude, float altitude, float eph, float epv,
 			uint64_t timestamp_observation);
 
@@ -576,6 +584,23 @@ private:
 #if defined(CONFIG_EKF2_AUXVEL)
 	estimator_aid_source2d_s _aid_src_aux_vel {};
 #endif // CONFIG_EKF2_AUXVEL
+
+#if defined(CONFIG_EKF2_UWB)
+	// UWB range fusion
+	estimator_aid_source1d_s _aid_src_uwb {};
+	bool _uwb_data_ready{false};
+	bool _uwb_range_sensor_intermittent{false};
+	uint64_t _time_last_uwb_buffer_push{0};
+	uwbSample _uwb_sample_delayed{};
+	UwbChecks _uwb_checks;
+
+	void controlUwbFusion(const imuSample &imu_delayed);
+	void updateUwbRange(const uwbSample &uwb_sample, estimator_aid_source1d_s &aid_src);
+	void fuseUwbRange(const uwbSample &uwb_sample);
+	void resetUwbFusion();
+	void stopUwbFusion();
+	bool isUwbDataReady();
+#endif // CONFIG_EKF2_UWB
 
 	// Variables used by the initial filter alignment
 	bool _is_first_imu_sample{true};

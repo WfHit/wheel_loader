@@ -2,33 +2,36 @@
 
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <lib/mathlib/mathlib.h>
-#include <matrix/matrix.hpp>
+#include <drivers/drv_hrt.h>
+#include <px4_platform_common/defines.h>
 
 // uORB message includes
-#include <uORB/topics/WheelLoaderSetpoint.h>
-#include <uORB/topics/WheelLoaderStatus.h>
-#include <uORB/topics/SteeringStatus.h>
-#include <uORB/topics/RoboticServoCommand.h>
-#include <uORB/topics/ServoFeedback.h>
+#include <uORB/topics/steering_setpoint.h>
+#include <uORB/topics/steering_status.h>
+#include <uORB/topics/robotic_servo_command.h>
+#include <uORB/topics/robotic_servo_feedback.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/PredictiveTraction.h>
+#include <uORB/topics/predictive_traction.h>
 #include <uORB/topics/limit_sensor.h>
 
 using namespace time_literals;
 
 /**
- * @brief Simplified Steering Controller for articulated wheel loader
+ * @brief Steering Controller for articulated wheel loader
  *
  * Controls the steering servo via ST3125 servo controller with:
  * - Direct position commands (ST3125 handles internal PID)
  * - Slip compensation based on PredictiveTraction data
  * - Rate limiting and safety monitoring
  * - Feedforward control for improved dynamic response
+ * - Limit sensor integration for safety
+ * - Comprehensive safety management
  */
-class SteeringController : public ModuleBase<SteeringController>, public ModuleParams
+class SteeringController : public ModuleBase<SteeringController>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
     SteeringController();
@@ -36,6 +39,9 @@ public:
 
     /** @see ModuleBase */
     static int task_spawn(int argc, char *argv[]);
+
+    /** @see ModuleBase */
+    static SteeringController *instantiate(int argc, char *argv[]);
 
     /** @see ModuleBase */
     static int custom_command(int argc, char *argv[]);
@@ -51,20 +57,8 @@ private:
     static constexpr float CONTROL_RATE_HZ = 50.0f;
     static constexpr uint64_t CONTROL_INTERVAL_US = 1_s / CONTROL_RATE_HZ;
 
-    // ST3125 servo specifications
-    static constexpr uint8_t ST3125_SERVO_ID = 1;
-    static constexpr float ST3125_MAX_ANGLE_RAD = math::radians(45.0f);
-    static constexpr float ST3125_MAX_VELOCITY_RAD_S = math::radians(60.0f);
-    static constexpr float ST3125_CURRENT_LIMIT_A = 2.0f;
-    static constexpr float ST3125_DEADBAND_RAD = math::radians(0.1f);
-
-    // Safety limits
-    static constexpr float MAX_POSITION_ERROR_RAD = math::radians(10.0f);
-    static constexpr uint64_t COMMAND_TIMEOUT_US = 500_ms;
-    static constexpr uint64_t SERVO_FEEDBACK_TIMEOUT_US = 100_ms;
-    static constexpr uint64_t SENSOR_TIMEOUT_US = 200_ms;
-
-    void run() override;
+    void Run() override;  // ScheduledWorkItem interface
+    void run() override;  // ModuleBase interface
 
     /**
      * Core control functions
@@ -95,10 +89,10 @@ private:
     void update_status();
 
     // uORB subscriptions
-    uORB::Subscription _wheel_loader_setpoint_sub{ORB_ID(wheel_loader_setpoint)};
+    uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _predictive_traction_sub{ORB_ID(predictive_traction)};
-    uORB::Subscription _servo_feedback_sub{ORB_ID(servo_feedback)};
+    uORB::Subscription _servo_feedback_sub{ORB_ID(robotic_servo_feedback)};
     uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
 
     // uORB publications
@@ -189,41 +183,49 @@ private:
     // Parameters
     DEFINE_PARAMETERS(
         // Basic control
-        (ParamFloat<px4::params::STEER_MAX_ANGLE>) _max_steering_angle,
+        (ParamFloat<px4::params::STEER_MAX_ANG>) _max_steering_angle,
         (ParamFloat<px4::params::STEER_MAX_RATE>) _max_steering_rate,
         (ParamFloat<px4::params::STEER_DEADBAND>) _steering_deadband,
         (ParamFloat<px4::params::STEER_TRIM>) _steering_trim,
-        (ParamBool<px4::params::STEER_REVERSE>) _steering_reverse,
+        (ParamInt<px4::params::STEER_REVERSE>) _steering_reverse,
 
         // Slip compensation
-        (ParamBool<px4::params::STEER_SLIP_COMP_EN>) _slip_comp_enabled,
-        (ParamFloat<px4::params::STEER_SLIP_COMP_GAIN>) _slip_comp_gain,
-        (ParamFloat<px4::params::STEER_SLIP_COMP_MAX>) _slip_comp_max,
+        (ParamInt<px4::params::STEER_SLP_CP_EN>) _slip_comp_enabled,
+        (ParamFloat<px4::params::STEER_SLP_CP_GN>) _slip_comp_gain,
+        (ParamFloat<px4::params::STEER_SLP_CP_MA>) _slip_comp_max,
 
         // Feedforward
         (ParamFloat<px4::params::STEER_FF_GAIN>) _feedforward_gain,
-        (ParamFloat<px4::params::STEER_FF_SPEED_SCALE>) _feedforward_speed_scale,
+        (ParamFloat<px4::params::STEER_FF_SPD_SC>) _feedforward_speed_scale,
 
-        // ST3125 calibration
+        // ST3125 servo specifications
+        (ParamInt<px4::params::STEER_ST3125_ID>) _st3125_servo_id,
+        (ParamFloat<px4::params::STEER_ST3125_AN>) _st3125_max_angle,
+        (ParamFloat<px4::params::STEER_ST3125_VL>) _st3125_max_velocity,
+        (ParamFloat<px4::params::STEER_ST3125_CR>) _st3125_current_limit,
+        (ParamFloat<px4::params::STEER_ST3125_DB>) _st3125_deadband,
+
+        // Safety limits
+        (ParamFloat<px4::params::STEER_MAX_POS>) _max_position_error,
+        (ParamFloat<px4::params::STEER_CMD_TO>) _command_timeout_ms,
+        (ParamFloat<px4::params::STEER_FB_TO>) _feedback_timeout_ms,
+        (ParamFloat<px4::params::STEER_SENS_TO>) _sensor_timeout_ms,
+
+        // Legacy servo calibration (deprecated)
         (ParamFloat<px4::params::STEER_PWM_MIN>) _servo_pwm_min,
         (ParamFloat<px4::params::STEER_PWM_MAX>) _servo_pwm_max,
-        (ParamFloat<px4::params::STEER_CURR_LIMIT>) _servo_current_limit,
-
-        // AS5600 sensor calibration
-        (ParamInt32<px4::params::AS5600_INSTANCE_ID>) _param_as5600_instance_id,
-        (ParamFloat<px4::params::AS5600_SCALE>) _param_as5600_scale,
-        (ParamFloat<px4::params::AS5600_OFFSET>) _param_as5600_offset,
+        (ParamFloat<px4::params::STEER_CURR_LT>) _servo_current_limit,
 
         // Limit sensor configuration
-        (ParamBool<px4::params::STEER_LIMIT_EN>) _limit_sensors_enabled,
-        (ParamInt32<px4::params::STEER_LIMIT_LEFT_IDX>) _limit_left_instance,
-        (ParamInt32<px4::params::STEER_LIMIT_RIGHT_IDX>) _limit_right_instance,
-        (ParamFloat<px4::params::STEER_LIMIT_MARGIN>) _limit_margin_rad,
+        (ParamInt<px4::params::STEER_LIMIT_EN>) _limit_sensors_enabled,
+        (ParamInt<px4::params::STEER_LT_LF_ID>) _limit_left_instance,
+        (ParamInt<px4::params::STEER_LT_RT_ID>) _limit_right_instance,
+        (ParamFloat<px4::params::STEER_LIMIT_MAR>) _limit_margin_rad,
 
         // Safety manager configuration
-        (ParamBool<px4::params::STEER_SAFETY_EN>) _safety_manager_enabled,
+        (ParamInt<px4::params::STEER_SAFETY_EN>) _safety_manager_enabled,
         (ParamFloat<px4::params::STEER_SAFE_POS>) _safety_position_rad,
-        (ParamFloat<px4::params::STEER_FAULT_TIMEOUT>) _fault_timeout_ms,
-        (ParamInt32<px4::params::STEER_MAX_VIOLATIONS>) _max_violations
+        (ParamFloat<px4::params::STEER_FT_TO>) _fault_timeout_ms,
+        (ParamInt<px4::params::STEER_MAX_VIOL>) _max_violations
     )
 };

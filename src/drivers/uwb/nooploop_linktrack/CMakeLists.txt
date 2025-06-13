@@ -32,16 +32,12 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__articulated_chassis__load_aware_torque
-	MAIN load_aware_torque
-	STACK_MAIN 2048
+	MODULE drivers__uwb__nooploop_linktrack
+	MAIN nooploop_linktrack
+	COMPILE_FLAGS
+		-Wno-cast-align # TODO: fix and enable
 	SRCS
-		load_aware_torque_distribution.cpp
-		load_aware_torque_main.cpp
-		load_aware_torque_params.c
+		nooploop_linktrack.cpp
 	DEPENDS
-		mathlib
-		matrix
-	MODULE_CONFIG
-		MODULE_STACKSIZE=2048
+		px4_work_queue
 )

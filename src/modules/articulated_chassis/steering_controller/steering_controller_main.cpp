@@ -1,80 +1,65 @@
+/****************************************************************************
+ *
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name PX4 nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
+
+/**
+ * @file main.cpp
+ * Steering controller main entry point for articulated wheel loader.
+ *
+ * @author PX4 Development Team
+ */
+
 #include "steering_controller.hpp"
 
-#include <px4_platform_common/getopt.h>
-#include <px4_platform_common/log.h>
+extern "C" __EXPORT int steering_controller_main(int argc, char *argv[]);
 
-int SteeringController::print_usage(const char *reason)
-{
-    if (reason) {
-        PX4_WARN("%s\n", reason);
-    }
+/**
+ * @brief Main entry point for the steering controller module
+ *
+ * Controls the steering servo via ST3125 servo controller with:
+ * - Direct position commands (ST3125 handles internal PID)
+ * - Slip compensation based on PredictiveTraction data
+ * - Rate limiting and safety monitoring
+ * - Feedforward control for improved dynamic response
+ * - Limit sensor integration for safety
+ * - Comprehensive safety management
+ *
+ * Usage examples:
+ * $ steering_controller start
+ * $ steering_controller stop
+ * $ steering_controller status
+ */
 
-    PRINT_MODULE_DESCRIPTION(
-        R"DESCR_STR(
-### Description
-Simplified steering controller for articulated wheel loader with ST3125 servo.
-
-Features:
-- Direct position commands to ST3125 (servo handles internal PID)
-- Slip compensation using PredictiveTraction data
-- Feedforward control for improved dynamic response
-- Rate limiting and safety monitoring
-
-### Implementation
-The module runs at 50Hz and provides:
-- Direct servo position control via RoboticServoCommand
-- Real-time servo feedback monitoring via ServoFeedback
-- Advanced slip compensation using slip estimator data
-- Safety monitoring and emergency stop functionality
-
-### Examples
-Start steering controller:
-$ steering_controller start
-
-Check status:
-$ steering_controller status
-)DESCR_STR");
-
-    PRINT_MODULE_USAGE_NAME("steering_controller", "controller");
-    PRINT_MODULE_USAGE_COMMAND("start");
-    PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print status information");
-    PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-    return 0;
-}
-
-int SteeringController::custom_command(int argc, char *argv[])
-{
-    if (!is_running()) {
-        print_usage("module not running");
-        return 1;
-    }
-
-    if (!strcmp(argv[0], "status")) {
-        return get_instance()->print_status();
-    }
-
-    return print_usage("unknown command");
-}
-
-int SteeringController::task_spawn(int argc, char *argv[])
-{
-    _task_id = px4_task_spawn_cmd("steering_controller",
-                                  SCHED_DEFAULT,
-                                  SCHED_PRIORITY_FAST_DRIVER,
-                                  2048,
-                                  (px4_main_t)&run_trampoline,
-                                  (char *const *)argv);
-
-    if (_task_id < 0) {
-        _task_id = -1;
-        return -errno;
-    }
-
-    return 0;
-}
-
-extern "C" __EXPORT int steering_controller_main(int argc, char *argv[])
+int steering_controller_main(int argc, char *argv[])
 {
     return SteeringController::main(argc, argv);
 }
