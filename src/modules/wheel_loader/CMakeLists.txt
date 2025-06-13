@@ -35,7 +35,7 @@ px4_add_module(
 	MAIN wheel_loader
 	EXTERNAL
 	SRCS
-		WheelLoaderController.cpp
+		wheel_loader_controller.cpp
 		wheel_loader_main.cpp
 	DEPENDS
 		PID

@@ -1,6 +1,0 @@
-module_name: Load Aware Torque Distribution
-serial_config:
-    - command: load_aware_torque start
-      port_config_param:
-          name: LAT_CONFIG
-          group: Load Aware Torque

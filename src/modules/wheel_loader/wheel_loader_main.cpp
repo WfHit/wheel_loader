@@ -38,7 +38,7 @@
  * @author PX4 Development Team
  */
 
-#include "WheelLoaderController.hpp"
+#include "wheel_loader_controller.hpp"
 
 extern "C" __EXPORT int wheel_loader_main(int argc, char *argv[]);
 
