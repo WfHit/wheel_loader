@@ -49,7 +49,7 @@
  * @increment 0.01
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_MIN_FRONT_RATIO, 0.2f);
+PARAM_DEFINE_FLOAT(LAT_MIN_FRONT, 0.2f);
 
 /**
  * Maximum front axle torque ratio
@@ -62,7 +62,7 @@ PARAM_DEFINE_FLOAT(LAT_MIN_FRONT_RATIO, 0.2f);
  * @increment 0.01
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_MAX_FRONT_RATIO, 0.8f);
+PARAM_DEFINE_FLOAT(LAT_MAX_FRONT, 0.8f);
 
 /**
  * Distribution filter time constant
@@ -103,7 +103,7 @@ PARAM_DEFINE_FLOAT(LAT_RATE_LIMIT, 1.0f);
  * @increment 0.1
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_STABILITY_GAIN, 0.5f);
+PARAM_DEFINE_FLOAT(LAT_STAB_GAIN, 0.5f);
 
 /**
  * Dynamic adjustment gain
@@ -116,7 +116,7 @@ PARAM_DEFINE_FLOAT(LAT_STABILITY_GAIN, 0.5f);
  * @increment 0.1
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_DYNAMIC_GAIN, 0.8f);
+PARAM_DEFINE_FLOAT(LAT_DYN_GAIN, 0.8f);
 
 /**
  * Terrain adaptation gain
@@ -129,7 +129,7 @@ PARAM_DEFINE_FLOAT(LAT_DYNAMIC_GAIN, 0.8f);
  * @increment 0.1
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_TERRAIN_GAIN, 0.3f);
+PARAM_DEFINE_FLOAT(LAT_TERR_GAIN, 0.3f);
 
 /**
  * Efficiency optimization weight
@@ -142,7 +142,7 @@ PARAM_DEFINE_FLOAT(LAT_TERRAIN_GAIN, 0.3f);
  * @increment 0.1
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_EFFICIENCY_WEIGHT, 0.4f);
+PARAM_DEFINE_FLOAT(LAT_EFF_WEIGHT, 0.4f);
 
 /**
  * Traction optimization weight
@@ -155,7 +155,7 @@ PARAM_DEFINE_FLOAT(LAT_EFFICIENCY_WEIGHT, 0.4f);
  * @increment 0.1
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_TRACTION_WEIGHT, 0.6f);
+PARAM_DEFINE_FLOAT(LAT_TRAC_WEIGHT, 0.6f);
 
 /**
  * Center of gravity X offset
@@ -169,7 +169,7 @@ PARAM_DEFINE_FLOAT(LAT_TRACTION_WEIGHT, 0.6f);
  * @unit m
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_COG_X_OFFSET, 0.0f);
+PARAM_DEFINE_FLOAT(LAT_COG_X_OFF, 0.0f);
 
 /**
  * Center of gravity Z offset
@@ -183,7 +183,7 @@ PARAM_DEFINE_FLOAT(LAT_COG_X_OFFSET, 0.0f);
  * @unit m
  * @group Load Aware Torque
  */
-PARAM_DEFINE_FLOAT(LAT_COG_Z_OFFSET, 0.0f);
+PARAM_DEFINE_FLOAT(LAT_COG_Z_OFF, 0.0f);
 
 /**
  * Adaptive control enable
@@ -193,7 +193,7 @@ PARAM_DEFINE_FLOAT(LAT_COG_Z_OFFSET, 0.0f);
  * @boolean
  * @group Load Aware Torque
  */
-PARAM_DEFINE_INT32(LAT_ADAPTIVE_EN, 1);
+PARAM_DEFINE_INT32(LAT_ADAPTIVE, 1);
 
 /**
  * Efficiency optimization enable
@@ -203,4 +203,4 @@ PARAM_DEFINE_INT32(LAT_ADAPTIVE_EN, 1);
  * @boolean
  * @group Load Aware Torque
  */
-PARAM_DEFINE_INT32(LAT_EFFICIENCY_OPT, 1);
+PARAM_DEFINE_INT32(LAT_EFF_OPT, 1);

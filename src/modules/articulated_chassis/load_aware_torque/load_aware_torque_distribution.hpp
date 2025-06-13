@@ -216,18 +216,18 @@ private:
 
 	// Parameters
 	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::LAT_MIN_FRONT_RATIO>) _min_front_ratio,
-		(ParamFloat<px4::params::LAT_MAX_FRONT_RATIO>) _max_front_ratio,
+		(ParamFloat<px4::params::LAT_MIN_FRONT>) _min_front_ratio,
+		(ParamFloat<px4::params::LAT_MAX_FRONT>) _max_front_ratio,
 		(ParamFloat<px4::params::LAT_FILTER_TC>) _distribution_filter_tc,
 		(ParamFloat<px4::params::LAT_RATE_LIMIT>) _distribution_rate_limit,
-		(ParamFloat<px4::params::LAT_STABILITY_GAIN>) _stability_gain,
-		(ParamFloat<px4::params::LAT_DYNAMIC_GAIN>) _dynamic_gain,
-		(ParamFloat<px4::params::LAT_TERRAIN_GAIN>) _terrain_gain,
-		(ParamFloat<px4::params::LAT_EFFICIENCY_WEIGHT>) _efficiency_weight,
-		(ParamFloat<px4::params::LAT_TRACTION_WEIGHT>) _traction_weight,
-		(ParamFloat<px4::params::LAT_COG_X_OFFSET>) _cog_x_offset,
-		(ParamFloat<px4::params::LAT_COG_Z_OFFSET>) _cog_z_offset,
-		(ParamBool<px4::params::LAT_ADAPTIVE_EN>) _adaptive_enable,
-		(ParamBool<px4::params::LAT_EFFICIENCY_OPT>) _efficiency_optimize
+		(ParamFloat<px4::params::LAT_STAB_GAIN>) _stability_gain,
+		(ParamFloat<px4::params::LAT_DYN_GAIN>) _dynamic_gain,
+		(ParamFloat<px4::params::LAT_TERR_GAIN>) _terrain_gain,
+		(ParamFloat<px4::params::LAT_EFF_WEIGHT>) _efficiency_weight,
+		(ParamFloat<px4::params::LAT_TRAC_WEIGHT>) _traction_weight,
+		(ParamFloat<px4::params::LAT_COG_X_OFF>) _cog_x_offset,
+		(ParamFloat<px4::params::LAT_COG_Z_OFF>) _cog_z_offset,
+		(ParamBool<px4::params::LAT_ADAPTIVE>) _adaptive_enable,
+		(ParamBool<px4::params::LAT_EFF_OPT>) _efficiency_optimize
 	)
 };

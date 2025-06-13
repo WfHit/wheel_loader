@@ -38,7 +38,7 @@ px4_add_module(
 	SRCS
 		load_aware_torque_distribution.cpp
 		load_aware_torque_main.cpp
-		load_aware_torque_params.c
+		# DO NOT include load_aware_torque_params.c here
 	DEPENDS
 		mathlib
 		matrix
