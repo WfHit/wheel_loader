@@ -36,7 +36,7 @@
  *
  * Default control mode for wheel loader operations (0=Manual, 1=Semi-Auto, 2=Auto)
  *
- * @unit mode
+ * @unit
  * @min 0
  * @max 2
  * @decimal 0
@@ -318,7 +318,7 @@ PARAM_DEFINE_INT32(WL_AUTO_CYC_CT, 5);
  *
  * Maximum deceleration in m/s² during emergency braking
  *
- * @unit m/s²
+ * @unit
  * @min 1.0
  * @max 10.0
  * @decimal 1
@@ -331,7 +331,7 @@ PARAM_DEFINE_FLOAT(WL_EMERG_BK_DECL, 3.0f);
  *
  * Maximum allowed vehicle tilt angle in degrees before triggering safety stop
  *
- * @unit deg
+ * @unit
  * @min 10.0
  * @max 45.0
  * @decimal 1

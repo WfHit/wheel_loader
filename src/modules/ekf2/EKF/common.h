@@ -199,6 +199,18 @@ struct gnssSample {
 	bool        spoofed{};    ///< true if GNSS data is spoofed
 };
 
+struct uwbSample {
+	uint64_t    time_us{};           ///< timestamp of the measurement (uSec)
+	uint8_t     anchor_id{};         ///< ID of the anchor providing this measurement
+	float       range_m{};           ///< measured range to anchor (m)
+	float       range_accuracy{};    ///< 1-std range measurement error (m)
+	float       rssi{};              ///< received signal strength indicator (dBm)
+	float       los_confidence{};    ///< line-of-sight confidence (0.0-1.0, 1.0 = clear LOS)
+	Vector3f    anchor_pos{};        ///< known anchor position in NED frame (m)
+	bool        anchor_pos_valid{};  ///< true if anchor position is known and valid
+	uint8_t     quality{};           ///< overall measurement quality (0-100)
+};
+
 struct magSample {
 	uint64_t    time_us{};  ///< timestamp of the measurement (uSec)
 	Vector3f    mag{};      ///< NED magnetometer body frame measurements (Gauss)
@@ -428,6 +440,20 @@ struct parameters {
 	Vector3f rng_pos_body{};                ///< xyz position of range sensor in body frame (m)
 #endif // CONFIG_EKF2_RANGE_FINDER
 
+#if defined(CONFIG_EKF2_UWB)
+	// UWB range fusion
+	int32_t uwb_check_mask{255};            ///< bitmask used to control which UWB quality checks are used
+	float uwb_delay_ms{5.0f};               ///< UWB measurement delay relative to the IMU (mSec)
+	float uwb_noise{0.1f};                  ///< observation noise for UWB range measurements (m)
+	float uwb_innov_gate{5.0f};            ///< UWB range innovation consistency gate size (STD)
+	float req_range_accuracy{0.5f};         ///< maximum acceptable range measurement error (m)
+	float req_rssi_threshold{-85.0f};       ///< minimum required RSSI for valid measurement (dBm)
+	float req_los_confidence{0.7f};         ///< minimum required line-of-sight confidence (0.0-1.0)
+	float max_range_drift{5.0f};            ///< maximum allowed range drift rate (m/s)
+	uint32_t min_health_time_us{1000000};   ///< minimum time for measurement to be considered healthy (uSec)
+	Vector3f uwb_pos_body{};                ///< xyz position of UWB sensor in body frame (m)
+#endif // CONFIG_EKF2_UWB
+
 #if defined(CONFIG_EKF2_EXTERNAL_VISION)
 	// vision position fusion
 	int32_t ev_ctrl{0};
@@ -604,6 +630,7 @@ uint64_t mag_heading_consistent  :
 		uint64_t constant_pos            : 1; ///< 42 - true if the vehicle is at a constant position
 		uint64_t baro_fault              : 1; ///< 43 - true when the baro has been declared faulty and is no longer being used
 		uint64_t gnss_vel                : 1; ///< 44 - true if GNSS velocity measurement fusion is intended
+		uint64_t uwb                     : 1; ///< 45 - true when UWB range measurements are being fused
 	} flags;
 	uint64_t value;
 };

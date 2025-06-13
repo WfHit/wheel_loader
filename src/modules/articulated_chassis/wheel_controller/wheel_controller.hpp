@@ -4,10 +4,9 @@
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/perf/perf_counter.h>
-#include <lib/pid/pid.h>
+#include <lib/pid/PID.hpp>
 #include <lib/mathlib/mathlib.h>
 #include <lib/mathlib/math/filter/LowPassFilter2p.hpp>
-#include <matrix/matrix.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/PublicationMulti.hpp>
 
@@ -104,7 +103,7 @@ private:
     uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 
     // Control system
-    PID_t _speed_pid;
+    PID _speed_pid;
 
     // State variables - matching existing RearWheelController
     float _current_speed_rpm{0.0f};
@@ -129,6 +128,7 @@ private:
 
     // Module status for health reporting
     module_status_s _status{};
+    float _health_score{100.0f}; // Local health score calculation
 
     // Performance monitoring - matching existing structure
     struct {
@@ -145,8 +145,8 @@ private:
     } _performance;
 
     // Filters for signal processing
-    math::LowPassFilter2p _speed_filter{CONTROL_RATE_HZ, 10.0f};
-    math::LowPassFilter2p _current_filter{CONTROL_RATE_HZ, 5.0f};
+    math::LowPassFilter2p<float> _speed_filter{CONTROL_RATE_HZ, 10.0f};
+    math::LowPassFilter2p<float> _current_filter{CONTROL_RATE_HZ, 5.0f};
 
     // Performance counters
     perf_counter_t _loop_perf;
@@ -161,10 +161,10 @@ private:
         (ParamFloat<px4::params::WC_I_MAX>) _speed_i_max,
         (ParamFloat<px4::params::WC_MAX_SPEED>) _max_wheel_speed,
         (ParamFloat<px4::params::WC_RAMP_RATE>) _speed_ramp_rate,
-        (ParamBool<px4::params::WC_TRACTION_EN>) _traction_control_enable,
-        (ParamFloat<px4::params::WC_SLIP_THRESH>) _slip_threshold,
-        (ParamFloat<px4::params::WC_CURR_LIMIT>) _current_limit,
-        (ParamFloat<px4::params::WC_GEAR_RATIO>) _gear_ratio,
+        (ParamInt<px4::params::WC_TRACT_EN>) _traction_control_enable,
+        (ParamFloat<px4::params::WC_SLIP_THRS>) _slip_threshold,
+        (ParamFloat<px4::params::WC_CURR_LIM>) _current_limit,
+        (ParamFloat<px4::params::WC_GEAR_RAT>) _gear_ratio,
         (ParamInt<px4::params::WC_ENC_CPR>) _encoder_cpr
     )
 

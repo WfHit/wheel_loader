@@ -1,4 +1,4 @@
-#include "SlipEstimator.hpp"
+#include "slip_estimator.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
@@ -49,8 +49,6 @@ int SlipEstimator::custom_command(int argc, char *argv[])
 
 int SlipEstimator::task_spawn(int argc, char *argv[])
 {
-    int method = 1; // Default to EKF
-
     int myoptind = 1;
     int ch;
     const char *myoptarg = nullptr;
@@ -58,7 +56,8 @@ int SlipEstimator::task_spawn(int argc, char *argv[])
     while ((ch = px4_getopt(argc, argv, "m:", &myoptind, &myoptarg)) != EOF) {
         switch (ch) {
         case 'm':
-            method = atoi(myoptarg);
+            // Estimation method (currently unused in this implementation)
+            break;
             break;
         case '?':
             return print_usage("unknown option");

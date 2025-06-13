@@ -49,7 +49,7 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/robotic_servo_command.h>
-#include <uORB/topics/servo_feedback.h>
+#include <uORB/topics/robotic_servo_feedback.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -153,7 +153,7 @@ private:
     uint8_t _active_servo_ids[MAX_SERVOS];
 
     // Publications
-    uORB::PublicationMulti<servo_feedback_s> _servo_feedback_pub{ORB_ID(servo_feedback)};
+    uORB::PublicationMulti<robotic_servo_feedback_s> _servo_feedback_pub{ORB_ID(robotic_servo_feedback)};
 
     // Subscriptions
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};

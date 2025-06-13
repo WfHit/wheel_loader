@@ -11,10 +11,10 @@ WheelController::WheelController(uint8_t instance, bool is_front) :
     _control_latency_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": latency")),
     _encoder_timeout_perf(perf_alloc(PC_COUNT, MODULE_NAME": enc_timeout"))
 {
-    // Initialize module status
-    _status.module_id = _is_front_wheel ? module_status_s::MODULE_ID_FRONT_WHEEL : module_status_s::MODULE_ID_REAR_WHEEL;
-    _status.enabled = false;
+    // Initialize module status (0=front_wheel, 1=rear_wheel based on ModuleStatus.msg)
+    _status.module_id = _is_front_wheel ? 0 : 1;
     _status.healthy = true;
+    _status.initialized = false;
 }
 
 WheelController::~WheelController()
@@ -26,8 +26,11 @@ WheelController::~WheelController()
 
 bool WheelController::init()
 {
-    // Initialize PID controller
-    pid_init(&_speed_pid, PID_MODE_DERIVATIV_CALC, 0.01f);
+    // Initialize PID controller - PX4 PID uses object-oriented approach
+    // Set initial gains (will be updated from parameters)
+    _speed_pid.setGains(1.0f, 0.0f, 0.0f);
+    _speed_pid.setOutputLimit(100.0f);  // Set reasonable output limit
+    _speed_pid.setIntegralLimit(10.0f); // Set reasonable integral limit
 
     // Update parameters
     parameters_update();
@@ -35,7 +38,8 @@ bool WheelController::init()
     // Schedule at 100Hz (matching existing rear wheel controller)
     ScheduleOnInterval(CONTROL_INTERVAL_US);
 
-    _status.enabled = true;
+    _status.initialized = true;
+    _status.healthy = true;
     _performance.last_health_check = hrt_absolute_time();
 
     return true;
@@ -44,7 +48,6 @@ bool WheelController::init()
 void WheelController::Run()
 {
     if (should_exit()) {
-        _status.enabled = false;
         ScheduleClear();
         exit_and_cleanup();
         return;
@@ -181,15 +184,16 @@ void WheelController::update_speed_control()
     const float speed_error = _target_speed_rpm - _current_speed_rpm;
 
     // Update PID parameters
-    pid_set_parameters(&_speed_pid,
-                      _speed_p_gain.get(),
-                      _speed_i_gain.get(),
-                      _speed_d_gain.get(),
-                      _speed_i_max.get(),
-                      MAX_PWM_OUTPUT);
+    _speed_pid.setGains(_speed_p_gain.get(),
+                       _speed_i_gain.get(),
+                       _speed_d_gain.get());
+    _speed_pid.setIntegralLimit(_speed_i_max.get());
+    _speed_pid.setOutputLimit(MAX_PWM_OUTPUT);
+    _speed_pid.setSetpoint(_target_speed_rpm);
 
-    // Calculate control output
-    _pwm_output = pid_calculate(&_speed_pid, speed_error, _current_speed_rpm, 0.0f, 0.01f);
+    // Calculate control output using PX4 PID
+    const float dt = 0.01f; // 10ms control interval
+    _pwm_output = _speed_pid.update(_current_speed_rpm, dt);
 
     // Apply traction limit
     _pwm_output *= _traction_limit_factor;
@@ -297,7 +301,7 @@ void WheelController::reset_emergency_stop()
 {
     _emergency_stop = false;
     // Reset PID integrator
-    pid_reset_integral(&_speed_pid);
+    _speed_pid.resetIntegral();
 }
 
 void WheelController::communicate_with_hbridge()
@@ -370,9 +374,9 @@ void WheelController::update_controller_status()
     _status.last_update_time = hrt_absolute_time();
 
     // Set performance level based on health
-    if (_status.health_score > 90.0f) {
+    if (_health_score > 90.0f) {
         _status.performance_level = 2; // Optimal
-    } else if (_status.health_score > 70.0f) {
+    } else if (_health_score > 70.0f) {
         _status.performance_level = 1; // Normal
     } else {
         _status.performance_level = 0; // Degraded
@@ -435,7 +439,7 @@ void WheelController::calculate_health_score()
     }
 
     // Ensure health score is in valid range
-    _status.health_score = math::constrain(health, 0.0f, 100.0f);
+    _health_score = math::constrain(health, 0.0f, 100.0f);
 }
 
 void WheelController::parameters_update()
@@ -468,7 +472,7 @@ int WheelController::print_status()
     PX4_INFO("Wheel Controller %s (Instance %d)", _is_front_wheel ? "FRONT" : "REAR", _instance);
     PX4_INFO("  Status: %s, Health: %.1f%%",
              _controller_healthy ? "OK" : "ERROR",
-             (double)_status.health_score);
+             (double)_health_score);
     PX4_INFO("  Speed: %.1f RPM (Target: %.1f RPM)",
              (double)_current_speed_rpm,
              (double)_target_speed_rpm);
@@ -480,8 +484,8 @@ int WheelController::print_status()
     PX4_INFO("  Performance:");
     PX4_INFO("    Speed Error RMS: %.2f RPM", (double)_performance.speed_error_rms);
     PX4_INFO("    Control Effort: %.1f%%", (double)(_performance.control_effort_avg * 100.0f));
-    PX4_INFO("    Slip Events: %u", _performance.slip_events);
-    PX4_INFO("    Safety Violations: %u", _performance.safety_violations);
+    PX4_INFO("    Slip Events: %lu", _performance.slip_events);
+    PX4_INFO("    Safety Violations: %lu", _performance.safety_violations);
 
     perf_print_counter(_loop_perf);
     perf_print_counter(_control_latency_perf);

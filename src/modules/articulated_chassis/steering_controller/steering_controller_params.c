@@ -31,6 +31,8 @@
  *
  ****************************************************************************/
 
+#include <px4_platform_common/px4_config.h>
+
 /**
  * Maximum steering angle
  *
@@ -43,7 +45,7 @@
  * @decimal 3
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_MAX_ANGLE, 0.785398f);
+PARAM_DEFINE_FLOAT(STEER_MAX_ANG, 0.785398f);
 
 /**
  * Maximum steering rate
@@ -164,6 +166,131 @@ PARAM_DEFINE_FLOAT(STEER_FF_GAIN, 0.2f);
 PARAM_DEFINE_FLOAT(STEER_FF_SPD_SC, 0.1f);
 
 /**
+ * ST3125 Servo ID
+ *
+ * CAN ID for the ST3125 steering servo.
+ * Must match the configured ID on the servo.
+ *
+ * @min 1
+ * @max 254
+ * @group Steering Controller
+ */
+PARAM_DEFINE_INT32(STEER_ST3125_ID, 1);
+
+/**
+ * ST3125 Maximum angle
+ *
+ * Maximum steering angle supported by the ST3125 servo in radians.
+ * Default corresponds to ±45 degrees (±0.785 rad).
+ *
+ * @unit rad
+ * @min 0.1
+ * @max 1.57
+ * @decimal 3
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_ST3125_AN, 0.785398f);
+
+/**
+ * ST3125 Maximum velocity
+ *
+ * Maximum angular velocity supported by the ST3125 servo in rad/s.
+ * Default corresponds to 60°/s (1.047 rad/s).
+ *
+ * @unit rad/s
+ * @min 0.1
+ * @max 5.0
+ * @decimal 3
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_ST3125_VL, 1.047198f);
+
+/**
+ * ST3125 Current limit
+ *
+ * Maximum current limit for the ST3125 servo.
+ * Should not exceed servo specifications to prevent damage.
+ *
+ * @unit A
+ * @min 0.5
+ * @max 10.0
+ * @decimal 1
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_ST3125_CR, 2.0f);
+
+/**
+ * ST3125 Deadband
+ *
+ * Position deadband for the ST3125 servo in radians.
+ * Servo won't move if within this range of target position.
+ * Default corresponds to 0.1 degrees (0.00175 rad).
+ *
+ * @unit rad
+ * @min 0.0
+ * @max 0.1
+ * @decimal 5
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_ST3125_DB, 0.00175f);
+
+/**
+ * Maximum position error
+ *
+ * Maximum allowable position error before triggering safety violation.
+ * Default corresponds to 10 degrees (0.174533 rad).
+ *
+ * @unit rad
+ * @min 0.05
+ * @max 0.5
+ * @decimal 4
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_MAX_POS, 0.174533f);
+
+/**
+ * Command timeout
+ *
+ * Timeout for steering commands in milliseconds.
+ * Controller returns to center if no commands received within this time.
+ *
+ * @unit ms
+ * @min 100
+ * @max 5000
+ * @decimal 0
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_CMD_TO, 500.0f);
+
+/**
+ * Servo feedback timeout
+ *
+ * Timeout for servo feedback in milliseconds.
+ * Servo is considered unhealthy if no feedback received within this time.
+ *
+ * @unit ms
+ * @min 50
+ * @max 1000
+ * @decimal 0
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_FB_TO, 100.0f);
+
+/**
+ * Sensor timeout
+ *
+ * Timeout for limit sensor data in milliseconds.
+ * Sensors are considered unhealthy if no data received within this time.
+ *
+ * @unit ms
+ * @min 100
+ * @max 2000
+ * @decimal 0
+ * @group Steering Controller
+ */
+PARAM_DEFINE_FLOAT(STEER_SENS_TO, 200.0f);
+
+/**
  * Servo minimum PWM
  *
  * Minimum PWM value for servo (deprecated - kept for compatibility).
@@ -252,7 +379,7 @@ PARAM_DEFINE_INT32(STEER_LT_RT_ID, 1);
  * @decimal 3
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_LIMIT_MARG, 0.087f);
+PARAM_DEFINE_FLOAT(STEER_LIMIT_MAR, 0.087f);
 
 /**
  * Enable safety manager
@@ -291,7 +418,7 @@ PARAM_DEFINE_FLOAT(STEER_SAFE_POS, 0.0f);
  * @decimal 0
  * @group Steering Controller
  */
-PARAM_DEFINE_FLOAT(STEER_FT_TIMEOUT, 5000.0f);
+PARAM_DEFINE_FLOAT(STEER_FT_TO, 5000.0f);
 
 /**
  * Maximum violations

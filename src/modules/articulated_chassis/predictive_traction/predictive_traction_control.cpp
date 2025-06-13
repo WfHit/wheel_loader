@@ -138,11 +138,11 @@ void PredictiveTractionControl::update_vehicle_state()
         slip_estimation_s slip_data;
         _slip_estimation_sub.copy(&slip_data);
 
-        _sensor_data.slip_front = slip_data.longitudinal_slip_front;
-        _sensor_data.slip_rear = slip_data.longitudinal_slip_rear;
-        _sensor_data.lateral_slip_rad = slip_data.lateral_slip_angle_rad;
-        _sensor_data.friction_estimate = slip_data.surface_friction_estimate;
-        _sensor_data.vehicle_speed_ms = slip_data.estimated_vehicle_speed;
+        _sensor_data.slip_front = slip_data.slip_ratio_front;
+        _sensor_data.slip_rear = slip_data.slip_ratio_rear;
+        _sensor_data.lateral_slip_rad = slip_data.slip_angle_front_rad;
+        _sensor_data.friction_estimate = slip_data.friction_coefficient;
+        _sensor_data.vehicle_speed_ms = slip_data.longitudinal_slip_velocity;
 
         state_updated = true;
     }

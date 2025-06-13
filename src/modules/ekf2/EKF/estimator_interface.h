@@ -422,6 +422,17 @@ protected:
 # endif // CONFIG_EKF2_GNSS_YAW
 #endif // CONFIG_EKF2_GNSS
 
+#if defined(CONFIG_EKF2_UWB)
+	UwbChecks _uwb_checks{_params.uwb_check_mask,
+			  _params.req_range_accuracy,
+			  _params.req_rssi_threshold,
+			  _params.req_los_confidence,
+			  _params.max_range_drift,
+			  _params.uwb_innov_gate,
+			  _params.min_health_time_us,
+			  _control_status};
+#endif // CONFIG_EKF2_UWB
+
 #if defined(CONFIG_EKF2_DRAG_FUSION)
 	RingBuffer<dragSample> *_drag_buffer {nullptr};
 	dragSample _drag_down_sampled{};	// down sampled drag specific force data (filter prediction rate -> observation rate)

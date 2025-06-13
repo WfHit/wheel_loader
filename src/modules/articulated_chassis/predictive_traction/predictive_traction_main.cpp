@@ -1,4 +1,4 @@
-#include "PredictiveTractionControl.hpp"
+#include "predictive_traction_control.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>

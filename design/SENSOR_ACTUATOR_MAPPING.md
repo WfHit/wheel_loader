@@ -124,7 +124,7 @@ void readMagneticEncoder() {
 ### Robotic Servo Reading (ST3125 internal feedback)
 ```cpp
 void processServoFeedback() {
-    servo_feedback_s feedback{};
+    robotic_servo_feedback_s feedback{};
     if (_servo_feedback_sub.update(&feedback)) {
         if (feedback.id == ST3125_SERVO_ID) {
             _current_angle_rad = feedback.position;

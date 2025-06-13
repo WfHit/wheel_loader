@@ -585,7 +585,7 @@ void ST3125Servo::publish_servo_feedback()
         ServoInfo &servo = _servos[id];
 
         if (servo.error_count < 10) { // Only publish if servo is responsive
-            servo_feedback_s feedback{};
+            robotic_servo_feedback_s feedback{};
             feedback.timestamp = hrt_absolute_time();
             feedback.id = id;
             feedback.position = servo.last_position;

@@ -5,15 +5,18 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <lib/mathlib/mathlib.h>
-#include <matrix/matrix.hpp>
+#include <matrix/math.hpp>
 
 // uORB message includes
-#include <uORB/topics/WheelSpeedsSetpoint.h>
-#include <uORB/topics/SlipEstimation.h>
-#include <uORB/topics/TractionControl.h>
-#include <uORB/topics/PredictiveTraction.h>
-#include <uORB/topics/ModuleStatus.h>
+#include <uORB/topics/wheel_speeds_setpoint.h>
+#include <uORB/topics/slip_estimation.h>
+#include <uORB/topics/traction_control.h>
+#include <uORB/topics/predictive_traction.h>
+#include <uORB/topics/module_status.h>
 #include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/steering_status.h>
+#include <uORB/topics/terrain_adaptation.h>
+#include <uORB/topics/load_sensing.h>
 
 using namespace time_literals;
 using namespace matrix;
@@ -209,15 +212,15 @@ private:
     DEFINE_PARAMETERS(
         (ParamFloat<px4::params::PTC_SLIP_WARN>) _slip_warning_threshold,
         (ParamFloat<px4::params::PTC_SLIP_CRIT>) _slip_critical_threshold,
-        (ParamFloat<px4::params::PTC_PRED_HORIZON>) _prediction_horizon_s,
+        (ParamFloat<px4::params::PTC_PRED_HOR>) _prediction_horizon_s,
         (ParamFloat<px4::params::PTC_WEIGHT_SLIP>) _weight_slip,
         (ParamFloat<px4::params::PTC_WEIGHT_STAB>) _weight_stability,
         (ParamFloat<px4::params::PTC_WEIGHT_CTRL>) _weight_control,
-        (ParamFloat<px4::params::PTC_MAX_TORQUE_RATE>) _max_torque_rate,
-        (ParamFloat<px4::params::PTC_MAX_STEER_RATE>) _max_steering_rate,
+        (ParamFloat<px4::params::PTC_MAX_TQ_RATE>) _max_torque_rate,
+        (ParamFloat<px4::params::PTC_MAX_ST_RATE>) _max_steering_rate,
         (ParamBool<px4::params::PTC_LEARNING_EN>) _learning_enable,
         (ParamFloat<px4::params::PTC_ADAPT_RATE>) _adaptation_rate,
-        (ParamInt32<px4::params::PTC_MAX_ITER>) _max_iterations,
+        (ParamInt<px4::params::PTC_MAX_ITER>) _max_iterations,
         (ParamFloat<px4::params::PTC_CONV_TOL>) _convergence_tolerance
     )
 };
