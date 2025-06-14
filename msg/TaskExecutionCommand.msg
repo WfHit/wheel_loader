@@ -50,6 +50,7 @@ bool task_enable              # Enable task execution
 bool task_pause               # Pause current task
 bool task_abort               # Abort current task
 bool manual_override          # Allow manual intervention
+bool emergency_stop           # Emergency stop command
 
 # Progress and feedback
 float32 estimated_completion  # Estimated completion percentage (0-1)
