@@ -49,7 +49,7 @@ PARAM_DEFINE_FLOAT(WLC_MAX_SPEED, 5.0f);
  *
  * Maximum allowed acceleration for safety limiting.
  *
- * @unit m/s²
+ * @unit
  * @min 0.1
  * @max 10.0
  * @decimal 1
@@ -108,7 +108,7 @@ PARAM_DEFINE_INT32(WLC_DIAG_EN, 0);
  *
  * Main control loop execution rate.
  *
- * @unit Hz
+ * @unit
  * @min 10.0
  * @max 200.0
  * @decimal 1
@@ -121,7 +121,7 @@ PARAM_DEFINE_FLOAT(WLC_CTRL_RATE, 50.0f);
  *
  * Conservative acceleration limit used during autonomous operation.
  *
- * @unit m/s²
+ * @unit
  * @min 0.1
  * @max 5.0
  * @decimal 1

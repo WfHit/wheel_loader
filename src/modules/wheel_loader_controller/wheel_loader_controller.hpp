@@ -163,7 +163,7 @@ private:
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
 	uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
-	uORB::SubscriptionMultiArray<wheel_status_s, 2> _wheel_status_subs{ORB_ID(wheel_status)};
+	uORB::SubscriptionMultiArray<wheel_status_s, 2> _wheel_status_subs{ORB_ID::wheel_status};
 
 	// uORB publications
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_pub{ORB_ID(wheel_loader_status)};

@@ -39,7 +39,6 @@
 #include <cstring>
 
 WheelLoaderController::WheelLoaderController() :
-	ModuleBase(MODULE_NAME),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
 {
@@ -189,18 +188,18 @@ void WheelLoaderController::processVehicleCommand()
 
 			// Map manual control inputs to wheel loader commands
 			// Scale manual inputs (-1 to 1) to appropriate ranges
-			cmd.front_left_wheel_speed = manual.x * _max_speed.get();
-			cmd.front_right_wheel_speed = manual.x * _max_speed.get();
-			cmd.rear_left_wheel_speed = manual.x * _max_speed.get();
-			cmd.rear_right_wheel_speed = manual.x * _max_speed.get();
+			cmd.front_left_wheel_speed = manual.pitch * _max_speed.get();
+			cmd.front_right_wheel_speed = manual.pitch * _max_speed.get();
+			cmd.rear_left_wheel_speed = manual.pitch * _max_speed.get();
+			cmd.rear_right_wheel_speed = manual.pitch * _max_speed.get();
 
-			cmd.steering_angle_cmd = manual.y * 0.5f; // Max ±0.5 rad
-			cmd.boom_lift_cmd = manual.z * 0.1f; // Manual boom control
-			cmd.bucket_angle_cmd = manual.r * 0.2f; // Manual bucket control
+			cmd.steering_angle_cmd = manual.roll * 0.5f; // Max ±0.5 rad
+			cmd.boom_lift_cmd = manual.throttle * 0.1f; // Manual boom control
+			cmd.bucket_angle_cmd = manual.yaw * 0.2f; // Manual bucket control
 
 			cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_MANUAL;
 			cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_MANUAL;
-			cmd.emergency_stop = manual.kill_switch;
+			cmd.emergency_stop = (manual.buttons & (1 << 0)) != 0; // Use button 0 for emergency stop
 
 			_manual_command = cmd;
 			_last_command_time = hrt_absolute_time();
@@ -581,12 +580,12 @@ void WheelLoaderController::publishStatus()
 	// Current wheel speeds (from wheel status feedback)
 	wheel_status_s front_wheel_status, rear_wheel_status;
 
-	if (_wheel_status_subs.update(0, &front_wheel_status)) {
+	if (_wheel_status_subs[0].updated() && _wheel_status_subs[0].copy(&front_wheel_status)) {
 		status.front_wheel_speed = front_wheel_status.current_speed_rpm * (2.0f * M_PI_F / 60.0f); // Convert to rad/s
 		status.front_motor_current = front_wheel_status.motor_current_amps;
 	}
 
-	if (_wheel_status_subs.update(1, &rear_wheel_status)) {
+	if (_wheel_status_subs[1].updated() && _wheel_status_subs[1].copy(&rear_wheel_status)) {
 		status.rear_wheel_speed = rear_wheel_status.current_speed_rpm * (2.0f * M_PI_F / 60.0f); // Convert to rad/s
 		status.rear_motor_current = rear_wheel_status.motor_current_amps;
 	}
@@ -667,7 +666,17 @@ void WheelLoaderController::updateSubsystemHealth()
 
 		if (_boom_status_sub.copy(&boom_status)) {
 			_last_boom_status_time = now;
-			_boom_health = static_cast<HealthState>(boom_status.system_health);
+
+			// Determine boom health based on status fields
+			if (boom_status.motor_fault || boom_status.encoder_fault) {
+				_boom_health = HealthState::ERROR;
+			} else if (boom_status.state == 4) {  // Error state
+				_boom_health = HealthState::ERROR;
+			} else if (boom_status.state == 2 || boom_status.state == 3) {  // Ready or Moving
+				_boom_health = HealthState::HEALTHY;
+			} else {
+				_boom_health = HealthState::WARNING;  // Uninitialized or zeroing
+			}
 		}
 
 	} else if ((now - _last_boom_status_time) > health_timeout_us) {
@@ -717,7 +726,7 @@ void WheelLoaderController::updateSubsystemHealth()
 	for (int i = 0; i < 2; i++) {
 		wheel_status_s wheel_status;
 
-		if (_wheel_status_subs.update(i, &wheel_status)) {
+		if (_wheel_status_subs[i].updated() && _wheel_status_subs[i].copy(&wheel_status)) {
 			_last_wheel_status_time[i] = now;
 			HealthState wheel_health = wheel_status.controller_healthy ? HealthState::HEALTHY : HealthState::ERROR;
 
@@ -781,7 +790,7 @@ WheelLoaderController::HealthState WheelLoaderController::evaluateOverallHealth(
 
 void WheelLoaderController::updateParams()
 {
-	updateParameters();
+	updateParams();
 
 	// Update control rate if parameter changed
 	float new_rate = _control_rate.get();
