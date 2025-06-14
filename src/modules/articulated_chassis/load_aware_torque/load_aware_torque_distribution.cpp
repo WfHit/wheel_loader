@@ -8,7 +8,6 @@
 #include <mathlib/mathlib.h>
 
 LoadAwareTorqueDistribution::LoadAwareTorqueDistribution() :
-	ModuleBase(MODULE_NAME, px4::wq_configurations::hp_default),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default)
 {
@@ -115,7 +114,7 @@ int LoadAwareTorqueDistribution::print_status()
 void LoadAwareTorqueDistribution::Run()
 {
 	if (should_exit()) {
-		ScheduleStop();
+		ScheduleClear();
 		exit_and_cleanup();
 		return;
 	}
@@ -177,8 +176,10 @@ void LoadAwareTorqueDistribution::update_load_state()
 		vehicle_attitude_s att;
 		_vehicle_attitude_sub.copy(&att);
 
-		_dynamics_state.pitch_angle_rad = att.pitch;
-		_dynamics_state.roll_angle_rad = att.roll;
+		// Convert quaternion to Euler angles
+		matrix::Eulerf euler(matrix::Quatf(att.q));
+		_dynamics_state.pitch_angle_rad = euler.theta(); // pitch
+		_dynamics_state.roll_angle_rad = euler.phi();    // roll
 		_dynamics_state.dynamics_valid = true;
 	}
 
@@ -269,9 +270,9 @@ void LoadAwareTorqueDistribution::apply_terrain_adaptations()
 		traction_control_s traction;
 		_traction_control_sub.copy(&traction);
 
-		_traction_state.traction_control_active = traction.active;
-		_traction_state.slip_front = traction.front_slip;
-		_traction_state.slip_rear = traction.rear_slip;
+		_traction_state.traction_control_active = traction.traction_control_active;
+		_traction_state.slip_front = traction.slip_ratio_front;
+		_traction_state.slip_rear = traction.slip_ratio_rear;
 	}
 
 	float terrain_gain = _terrain_gain.get();
@@ -345,7 +346,8 @@ void LoadAwareTorqueDistribution::optimize_for_traction()
 	float traction_weight = _traction_weight.get();
 	float avg_slip = (_traction_state.slip_front + _traction_state.slip_rear) / 2.0f;
 
-	_performance.traction_utilization = math::constrain(1.0f - avg_slip, 0.0f, 1.0f);
+	// Apply traction weight to optimization
+	_performance.traction_utilization = math::constrain(1.0f - avg_slip * traction_weight, 0.0f, 1.0f);
 }
 
 void LoadAwareTorqueDistribution::balance_axle_loading()
@@ -396,7 +398,10 @@ void LoadAwareTorqueDistribution::publish_torque_commands()
 	_torque_output.front_axle_load_n = _load_state.front_axle_load_kg * 9.81f;
 	_torque_output.rear_axle_load_n = _load_state.rear_axle_load_kg * 9.81f;
 	_torque_output.weight_distribution = (_torque_distribution.final_distribution - 0.5f) * 2.0f;
+	_torque_output.articulation_angle_rad = 0.0f; // TODO: Get from chassis articulation sensor
 	_torque_output.optimal_torque_split = _torque_distribution.final_distribution;
+	_torque_output.traction_limit_front = _performance.traction_utilization * _torque_distribution.final_distribution;
+	_torque_output.traction_limit_rear = _performance.traction_utilization * (1.0f - _torque_distribution.final_distribution);
 	_torque_output.stability_margin = _performance.stability_margin;
 	_torque_output.stability_warning = (_performance.stability_margin < STABILITY_MARGIN_MIN);
 	_torque_output.load_shift_detected = !_load_state.load_stable;

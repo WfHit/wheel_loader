@@ -9,6 +9,7 @@ float32 terrain_confidence    # Confidence in terrain classification [0, 1]
 float32 surface_roughness     # Surface roughness estimate [0, 1]
 float32 friction_coefficient  # Surface friction coefficient [0, 1]
 float32 penetration_resistance # Terrain penetration resistance [0, 1]
+float32 slope_angle_rad       # Terrain slope angle in radians
 
 float32 adapted_max_speed     # Adapted maximum speed for terrain
 float32 adapted_acceleration  # Adapted acceleration limit
@@ -19,7 +20,6 @@ float32 learning_confidence   # Confidence in learned parameters
 uint32 terrain_transitions    # Number of terrain transitions detected
 
 float32[8] terrain_features   # Terrain feature vector for classification
-float32 slope_angle_rad       # Estimated terrain slope in radians
 float32 banking_angle_rad     # Estimated terrain banking in radians
 
 bool hazard_detected          # True if terrain hazard detected

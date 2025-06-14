@@ -2,10 +2,10 @@
 
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <lib/mathlib/mathlib.h>
-#include <matrix/math.hpp>
 
 // uORB message includes
 #include <uORB/topics/wheel_speeds_setpoint.h>
@@ -13,10 +13,13 @@
 #include <uORB/topics/traction_control.h>
 #include <uORB/topics/predictive_traction.h>
 #include <uORB/topics/module_status.h>
-#include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_angular_velocity.h>
+#include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/terrain_adaptation.h>
 #include <uORB/topics/load_sensing.h>
+#include <uORB/topics/parameter_update.h>
 
 using namespace time_literals;
 using namespace matrix;
@@ -30,7 +33,7 @@ using namespace matrix;
  * - Learning-based terrain adaptation
  * - Risk assessment and intervention timing
  */
-class PredictiveTractionControl : public ModuleBase<PredictiveTractionControl>, public ModuleParams
+class PredictiveTractionControl : public ModuleBase<PredictiveTractionControl>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
     PredictiveTractionControl();
@@ -38,6 +41,9 @@ public:
 
     /** @see ModuleBase */
     static int task_spawn(int argc, char *argv[]);
+
+    /** @see ModuleBase */
+    static PredictiveTractionControl *instantiate(int argc, char *argv[]);
 
     /** @see ModuleBase */
     static int custom_command(int argc, char *argv[]);
@@ -48,6 +54,11 @@ public:
     bool init();
 
     int print_status() override;
+
+    /**
+     * Reset learned parameters and model adaptations
+     */
+    void reset_learned_parameters();
 
 private:
     static constexpr float CONTROL_RATE_HZ = 20.0f;
@@ -65,7 +76,7 @@ private:
     static constexpr float SLIP_CRITICAL_THRESHOLD = 0.25f;
     static constexpr float STABILITY_WARNING_THRESHOLD = 0.3f;
 
-    void run() override;
+    void Run() override;
 
     /**
      * MPC functions
@@ -109,6 +120,11 @@ private:
     void reset_mpc_state();
     void publish_prediction_results();
 
+    /**
+     * Control interface
+     */
+    void set_learning_enabled(bool enabled);
+
     // uORB subscriptions
     uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
     uORB::Subscription _wheel_speeds_sub{ORB_ID(wheel_speeds_setpoint)};
@@ -116,7 +132,9 @@ private:
     uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)};
     uORB::Subscription _load_sensing_sub{ORB_ID(load_sensing)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+    uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
     uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
+    uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
     // uORB publications
     uORB::Publication<predictive_traction_s> _predictive_traction_pub{ORB_ID(predictive_traction)};

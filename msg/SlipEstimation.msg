@@ -12,6 +12,7 @@ float32 longitudinal_slip_velocity # Longitudinal slip velocity in m/s
 
 float32 friction_coefficient   # Estimated friction coefficient [0, 1]
 float32 surface_roughness      # Estimated surface roughness [0, 1]
+float32 wheel_speed_variance   # Wheel speed variance based on surface type [0, 1]
 
 bool slip_detected             # True if significant slip detected
 bool critical_slip             # True if slip above critical threshold

@@ -484,8 +484,8 @@ int WheelController::print_status()
     PX4_INFO("  Performance:");
     PX4_INFO("    Speed Error RMS: %.2f RPM", (double)_performance.speed_error_rms);
     PX4_INFO("    Control Effort: %.1f%%", (double)(_performance.control_effort_avg * 100.0f));
-    PX4_INFO("    Slip Events: %lu", _performance.slip_events);
-    PX4_INFO("    Safety Violations: %lu", _performance.safety_violations);
+    PX4_INFO("    Slip Events: %lu", (unsigned long)_performance.slip_events);
+    PX4_INFO("    Safety Violations: %lu", (unsigned long)_performance.safety_violations);
 
     perf_print_counter(_loop_perf);
     perf_print_counter(_control_latency_perf);

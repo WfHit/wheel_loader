@@ -15,7 +15,6 @@
 #include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/slip_estimation.h>
 #include <uORB/topics/module_status.h>
-#include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/steering_status.h>
 
 class SlipEstimator : public ModuleBase<SlipEstimator>, public ModuleParams

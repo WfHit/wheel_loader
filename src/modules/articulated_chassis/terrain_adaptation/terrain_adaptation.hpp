@@ -2,6 +2,7 @@
 
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <lib/matrix/matrix/Matrix.hpp>
@@ -11,29 +12,57 @@
 // uORB message includes
 #include <uORB/topics/terrain_adaptation.h>
 #include <uORB/topics/slip_estimation.h>
+#include <uORB/topics/traction_control.h>
+#include <uORB/topics/wheel_speeds_setpoint.h>
+#include <uORB/topics/load_sensing.h>
+#include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/sensor_accel.h>
+#include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/module_status.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/sensor_combined.h>
 
-class TerrainAdaptation : public ModuleBase<TerrainAdaptation>, public ModuleParams
+class TerrainAdaptation : public ModuleBase<TerrainAdaptation>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
     TerrainAdaptation();
-    ~TerrainAdaptation() = default;
+    ~TerrainAdaptation() override = default;
 
+    /** @see ModuleBase */
     static int task_spawn(int argc, char *argv[]);
-    void run() override;
+
+    /** @see ModuleBase */
+    static TerrainAdaptation *instantiate(int argc, char *argv[]);
+
+    /** @see ModuleBase */
+    static int custom_command(int argc, char *argv[]);
+
+    /** @see ModuleBase */
+    static int print_usage(const char *reason = nullptr);
+
+    void Run() override;
+    bool init();
+
+    /**
+     * Set classifier method (0=basic, 1=ML, 2=advanced)
+     */
+    void set_classifier_method(int method);
+
+    /**
+     * Reset terrain memory and calibration
+     */
+    void reset_terrain_memory();
 
 private:
     // Parameters
     DEFINE_PARAMETERS(
-        (ParamFloat<px4::params::TA_ROUGHNESS_THRESHOLD>) _param_roughness_threshold,
-        (ParamFloat<px4::params::TA_SLOPE_THRESHOLD>) _param_slope_threshold,
-        (ParamFloat<px4::params::TA_FRICTION_ALPHA>) _param_friction_alpha,
-        (ParamFloat<px4::params::TA_SPEED_REDUCTION>) _param_speed_reduction,
-        (ParamFloat<px4::params::TA_STABILITY_MARGIN>) _param_stability_margin,
-        (ParamInt<px4::params::TA_CLASSIFIER_METHOD>) _param_classifier_method,
-        (ParamBool<px4::params::TA_ENABLE>) _param_enable
+        (ParamInt<px4::params::TA_ENABLE>) _param_enable,
+        (ParamFloat<px4::params::TA_ROUGH_THR>) _param_roughness_threshold,
+        (ParamFloat<px4::params::TA_SLOPE_THR>) _param_slope_threshold,
+        (ParamFloat<px4::params::TA_FRIC_ALPHA>) _param_friction_alpha,
+        (ParamFloat<px4::params::TA_SPEED_RED>) _param_speed_reduction,
+        (ParamFloat<px4::params::TA_STAB_MARGIN>) _param_stability_margin,
+        (ParamInt<px4::params::TA_CLASSIFIER>) _param_classifier_method
     )
 
     // Subscriptions

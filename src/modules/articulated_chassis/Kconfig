@@ -50,13 +50,6 @@ config ARTICULATED_CHASSIS_TERRAIN_ADAPTATION
 		Intelligent terrain classification and adaptation system
 		for optimized performance across different surface types.
 
-config ARTICULATED_CHASSIS_SAFETY_MANAGER
-	bool "Enable safety manager"
-	default y
-	help
-		Comprehensive safety monitoring system with emergency stop,
-		watchdog timers, and fault detection capabilities.
-
 config ARTICULATED_CHASSIS_CHASSIS_CONTROLLER
 	bool "Enable main chassis controller"
 	default y

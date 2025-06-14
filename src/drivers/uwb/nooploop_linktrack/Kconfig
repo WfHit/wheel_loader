@@ -1,0 +1,27 @@
+menuconfig DRIVERS_UWB_NOOPLOOP_LINKTRACK
+	bool "NoopLoop LinkTrack UWB driver"
+	default n
+	---help---
+		Enable support for NoopLoop LinkTrack UWB ranging module
+
+config NOOPLOOP_LINKTRACK_DEFAULT_PORT
+	string "Default serial port"
+	depends on DRIVERS_UWB_NOOPLOOP_LINKTRACK
+	default "/dev/ttyS1"
+	---help---
+		Default serial port for NoopLoop LinkTrack module
+
+config NOOPLOOP_LINKTRACK_BAUD_RATE
+	int "Serial baud rate"
+	depends on DRIVERS_UWB_NOOPLOOP_LINKTRACK
+	default 921600
+	---help---
+		Baud rate for serial communication with LinkTrack module
+
+config NOOPLOOP_LINKTRACK_UPDATE_RATE
+	int "Update rate (Hz)"
+	depends on DRIVERS_UWB_NOOPLOOP_LINKTRACK
+	range 1 100
+	default 50
+	---help---
+		Update rate for processing UWB measurements

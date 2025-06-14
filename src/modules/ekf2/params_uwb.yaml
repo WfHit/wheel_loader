@@ -1,0 +1,319 @@
+module_name: ekf2
+parameters:
+- group: EKF2
+  definitions:
+    EKF2_UWB_EN:
+      description:
+        short: Enable UWB range fusion
+        long: 'Enables fusion of UWB range measurements for position estimation.'
+      type: boolean
+      default: 0
+
+    EKF2_UWB_CHECK:
+      description:
+        short: UWB range quality check bitmask
+        long: 'Bitmask used to control which UWB quality checks are enabled.
+          Set bits to 1 to enable, set to 0 to disable.
+          Bit 0: Check if UWB range is within reasonable bounds
+          Bit 1: Check if UWB signal strength (RSSI) is sufficient
+          Bit 2: Check if UWB line-of-sight confidence is sufficient'
+      type: bitmask
+      bit:
+        0: Range bounds check
+        1: RSSI check
+        2: Line-of-sight check
+      default: 255
+      min: 0
+      max: 255
+
+    EKF2_UWB_DELAY:
+      description:
+        short: UWB measurement delay
+        long: 'UWB measurement delay relative to the IMU measurements'
+      type: float
+      default: 5.0
+      min: 0.0
+      max: 100.0
+      unit: ms
+      decimal: 1
+
+    EKF2_UWB_NOISE:
+      description:
+        short: UWB range measurement noise
+        long: 'Observation noise for UWB range measurements'
+      type: float
+      default: 0.1
+      min: 0.01
+      max: 1.0
+      unit: m
+      decimal: 3
+
+    EKF2_UWB_GATE:
+      description:
+        short: UWB range innovation gate
+        long: 'UWB range innovation consistency gate size in standard deviations'
+      type: float
+      default: 5.0
+      min: 1.0
+      max: 10.0
+      decimal: 1
+
+    EKF2_UWB_MAX_RNG:
+      description:
+        short: UWB maximum range
+        long: 'Maximum expected UWB range for measurement validation'
+      type: float
+      default: 100.0
+      min: 1.0
+      max: 500.0
+      unit: m
+      decimal: 1
+
+    EKF2_UWB_RSSI:
+      description:
+        short: UWB minimum RSSI
+        long: 'Minimum RSSI threshold for UWB measurement acceptance'
+      type: float
+      default: -90.0
+      min: -120.0
+      max: -20.0
+      decimal: 1
+
+    EKF2_UWB_NLOS:
+      description:
+        short: UWB NLOS RSSI threshold
+        long: 'RSSI threshold below which measurements are considered NLOS'
+      type: float
+      default: -85.0
+      min: -120.0
+      max: -20.0
+      decimal: 1
+
+    EKF2_UWB_LOS_THR:
+      description:
+        short: UWB LOS confidence threshold
+        long: 'LOS confidence threshold for measurement acceptance (0-100)'
+      type: int32
+      default: 70
+      min: 0
+      max: 100
+
+    EKF2_UWB_PWR_THR:
+      description:
+        short: UWB power ratio threshold
+        long: 'First path to total path power ratio threshold for multipath detection'
+      type: float
+      default: 0.6
+      min: 0.1
+      max: 1.0
+      decimal: 2
+
+    EKF2_UWB_MAX_RR:
+      description:
+        short: UWB maximum range rate
+        long: 'Maximum expected range rate for outlier detection'
+      type: float
+      default: 20.0
+      min: 1.0
+      max: 100.0
+      unit: m/s
+      decimal: 1
+
+    EKF2_UWB_HUBER:
+      description:
+        short: UWB Huber threshold
+        long: 'Threshold for robust Huber loss function'
+      type: float
+      default: 2.0
+      min: 0.5
+      max: 5.0
+      unit: m
+      decimal: 1
+
+    EKF2_UWB_MAX_VEL:
+      description:
+        short: UWB maximum velocity
+        long: 'Maximum velocity constraint for state updates'
+      type: float
+      default: 50.0
+      min: 5.0
+      max: 100.0
+      unit: m/s
+      decimal: 1
+
+    EKF2_UWB_MAX_ACC:
+      description:
+        short: UWB maximum acceleration
+        long: 'Maximum acceleration constraint for state updates'
+      type: float
+      default: 20.0
+      min: 1.0
+      max: 50.0
+      unit: m/s^2
+      decimal: 1
+
+    # Anchor positions (first 4 anchors with default positions)
+    EKF2_UWB_A0_X:
+      description:
+        short: UWB Anchor 0 X position
+        long: 'X coordinate of UWB anchor 0 in local frame'
+      type: float
+      default: 0.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A0_Y:
+      description:
+        short: UWB Anchor 0 Y position
+        long: 'Y coordinate of UWB anchor 0 in local frame'
+      type: float
+      default: 0.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A0_Z:
+      description:
+        short: UWB Anchor 0 Z position
+        long: 'Z coordinate of UWB anchor 0 in local frame'
+      type: float
+      default: 2.5
+      min: -100.0
+      max: 100.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A1_X:
+      description:
+        short: UWB Anchor 1 X position
+        long: 'X coordinate of UWB anchor 1 in local frame'
+      type: float
+      default: 10.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A1_Y:
+      description:
+        short: UWB Anchor 1 Y position
+        long: 'Y coordinate of UWB anchor 1 in local frame'
+      type: float
+      default: 0.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A1_Z:
+      description:
+        short: UWB Anchor 1 Z position
+        long: 'Z coordinate of UWB anchor 1 in local frame'
+      type: float
+      default: 2.5
+      min: -100.0
+      max: 100.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A2_X:
+      description:
+        short: UWB Anchor 2 X position
+        long: 'X coordinate of UWB anchor 2 in local frame'
+      type: float
+      default: 10.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A2_Y:
+      description:
+        short: UWB Anchor 2 Y position
+        long: 'Y coordinate of UWB anchor 2 in local frame'
+      type: float
+      default: 10.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A2_Z:
+      description:
+        short: UWB Anchor 2 Z position
+        long: 'Z coordinate of UWB anchor 2 in local frame'
+      type: float
+      default: 2.5
+      min: -100.0
+      max: 100.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A3_X:
+      description:
+        short: UWB Anchor 3 X position
+        long: 'X coordinate of UWB anchor 3 in local frame'
+      type: float
+      default: 0.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A3_Y:
+      description:
+        short: UWB Anchor 3 Y position
+        long: 'Y coordinate of UWB anchor 3 in local frame'
+      type: float
+      default: 10.0
+      min: -1000.0
+      max: 1000.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_A3_Z:
+      description:
+        short: UWB Anchor 3 Z position
+        long: 'Z coordinate of UWB anchor 3 in local frame'
+      type: float
+      default: 2.5
+      min: -100.0
+      max: 100.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_POS_X:
+      description:
+        short: UWB sensor X position in body frame
+        long: 'X position of UWB sensor in body frame'
+      type: float
+      default: 0.0
+      min: -5.0
+      max: 5.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_POS_Y:
+      description:
+        short: UWB sensor Y position in body frame
+        long: 'Y position of UWB sensor in body frame'
+      type: float
+      default: 0.0
+      min: -5.0
+      max: 5.0
+      unit: m
+      decimal: 2
+
+    EKF2_UWB_POS_Z:
+      description:
+        short: UWB sensor Z position in body frame
+        long: 'Z position of UWB sensor in body frame'
+      type: float
+      default: 0.0
+      min: -5.0
+      max: 5.0
+      unit: m
+      decimal: 2

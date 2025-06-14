@@ -8,14 +8,12 @@
 #include <lib/mathlib/mathlib.h>
 #include <drivers/drv_hrt.h>
 #include <px4_platform_common/defines.h>
-#include <matrix/matrix.hpp>
 
 // uORB message includes
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/load_aware_torque.h>
 #include <uORB/topics/traction_control.h>
 #include <uORB/topics/module_status.h>
-#include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/boom_status.h>

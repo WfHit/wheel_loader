@@ -38,6 +38,7 @@ px4_add_module(
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
 		nooploop_linktrack.cpp
+		nooploop_linktrack_main.cpp
 	DEPENDS
 		px4_work_queue
 )
