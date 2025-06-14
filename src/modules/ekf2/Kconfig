@@ -136,6 +136,13 @@ depends on MODULES_EKF2
 	---help---
 		EKF2 terrain estimator support.
 
+menuconfig EKF2_UWB
+depends on MODULES_EKF2
+	bool "UWB range fusion support"
+	default n
+	---help---
+		EKF2 UWB (Ultra-Wideband) range measurement fusion support for position estimation.
+
 menuconfig EKF2_WIND
 depends on MODULES_EKF2
 	bool "wind estimation support"

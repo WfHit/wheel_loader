@@ -119,6 +119,10 @@
 # include <uORB/topics/distance_sensor.h>
 #endif // CONFIG_EKF2_RANGE_FINDER
 
+#if defined(CONFIG_EKF2_UWB)
+# include <uORB/topics/sensor_uwb.h>
+#endif // CONFIG_EKF2_UWB
+
 #if defined(CONFIG_EKF2_WIND)
 # include <uORB/topics/wind.h>
 #endif // CONFIG_EKF2_WIND
@@ -229,6 +233,9 @@ private:
 #if defined(CONFIG_EKF2_RANGE_FINDER)
 	void UpdateRangeSample(ekf2_timestamps_s &ekf2_timestamps);
 #endif // CONFIG_EKF2_RANGE_FINDER
+#if defined(CONFIG_EKF2_UWB)
+	void UpdateUwbSample(ekf2_timestamps_s &ekf2_timestamps);
+#endif // CONFIG_EKF2_UWB
 
 	void UpdateSystemFlagsSample(ekf2_timestamps_s &ekf2_timestamps);
 
@@ -405,6 +412,10 @@ private:
 	hrt_abstime _last_range_sensor_update{0};
 	int _distance_sensor_selected{-1}; // because we can have several distance sensor instances with different orientations
 #endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_UWB)
+	uORB::Subscription _sensor_uwb_sub{ORB_ID(sensor_uwb)};
+#endif // CONFIG_EKF2_UWB
 
 	bool _callback_registered{false};
 
@@ -626,6 +637,16 @@ private:
 		(ParamExtFloat<px4::params::EKF2_RNG_POS_Y>) _param_ekf2_rng_pos_y,
 		(ParamExtFloat<px4::params::EKF2_RNG_POS_Z>) _param_ekf2_rng_pos_z,
 #endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_UWB)
+		// UWB range fusion
+		(ParamExtInt<px4::params::EKF2_UWB_CHECK>) _param_ekf2_uwb_check,
+		(ParamExtFloat<px4::params::EKF2_UWB_DELAY>) _param_ekf2_uwb_delay,
+		(ParamExtFloat<px4::params::EKF2_UWB_NOISE>) _param_ekf2_uwb_noise,
+		(ParamExtFloat<px4::params::EKF2_UWB_GATE>) _param_ekf2_uwb_gate,
+		(ParamExtFloat<px4::params::EKF2_UWB_RSSI>) _param_ekf2_uwb_rssi,
+		(ParamExtFloat<px4::params::EKF2_UWB_NLOS>) _param_ekf2_uwb_nlos,
+#endif // CONFIG_EKF2_UWB
 
 #if defined(CONFIG_EKF2_EXTERNAL_VISION)
 		// vision estimate fusion

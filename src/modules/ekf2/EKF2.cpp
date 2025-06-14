@@ -168,6 +168,14 @@ EKF2::EKF2(bool multi_mode, const px4::wq_config_t &config, bool replay_mode):
 	_param_ekf2_rng_pos_y(_params->rng_pos_body(1)),
 	_param_ekf2_rng_pos_z(_params->rng_pos_body(2)),
 #endif // CONFIG_EKF2_RANGE_FINDER
+#if defined(CONFIG_EKF2_UWB)
+	_param_ekf2_uwb_check(_params->uwb_check_mask),
+	_param_ekf2_uwb_delay(_params->uwb_delay_ms),
+	_param_ekf2_uwb_noise(_params->uwb_noise),
+	_param_ekf2_uwb_gate(_params->uwb_innov_gate),
+	_param_ekf2_uwb_rssi(_params->req_rssi_threshold),
+	_param_ekf2_uwb_nlos(_params->req_nlos_threshold),
+#endif // CONFIG_EKF2_UWB
 #if defined(CONFIG_EKF2_EXTERNAL_VISION)
 	_param_ekf2_ev_delay(_params->ev_delay_ms),
 	_param_ekf2_ev_ctrl(_params->ev_ctrl),
@@ -778,6 +786,9 @@ void EKF2::Run()
 #if defined(CONFIG_EKF2_RANGE_FINDER)
 		UpdateRangeSample(ekf2_timestamps);
 #endif // CONFIG_EKF2_RANGE_FINDER
+#if defined(CONFIG_EKF2_UWB)
+		UpdateUwbSample(ekf2_timestamps);
+#endif // CONFIG_EKF2_UWB
 		UpdateSystemFlagsSample(ekf2_timestamps);
 
 		// run the EKF update and output
@@ -2576,6 +2587,36 @@ void EKF2::UpdateRangeSample(ekf2_timestamps_s &ekf2_timestamps)
 	}
 }
 #endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_UWB)
+void EKF2::UpdateUwbSample(ekf2_timestamps_s &ekf2_timestamps)
+{
+	sensor_uwb_s sensor_uwb;
+
+	if (_sensor_uwb_sub.update(&sensor_uwb)) {
+		// Convert sensor_uwb message to uwbSample
+		uwbSample uwb_sample {
+			.time_us = sensor_uwb.timestamp,
+			.anchor_id = sensor_uwb.anchor_id,
+			.range_m = sensor_uwb.range,
+			.range_accuracy = _param_ekf2_uwb_noise.get(), // Use parameter for range accuracy
+			.rssi = static_cast<float>(sensor_uwb.rssi),
+			.los_confidence = static_cast<float>(sensor_uwb.los_confidence) / 100.0f, // Convert from percentage to 0-1
+			.anchor_pos = {sensor_uwb.anchor_x, sensor_uwb.anchor_y, sensor_uwb.anchor_z},
+			.anchor_pos_valid = sensor_uwb.anchor_pos_valid
+		};
+
+		// Only process if anchor position is valid
+		if (uwb_sample.anchor_pos_valid) {
+			_ekf.setUwbData(uwb_sample);
+
+			// Update timestamp for logging
+			ekf2_timestamps.uwb_timestamp_rel = (int16_t)((int64_t)sensor_uwb.timestamp / 100 -
+						(int64_t)ekf2_timestamps.timestamp / 100);
+		}
+	}
+}
+#endif // CONFIG_EKF2_UWB
 
 void EKF2::UpdateSystemFlagsSample(ekf2_timestamps_s &ekf2_timestamps)
 {

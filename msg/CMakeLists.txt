@@ -250,6 +250,7 @@ set(msg_files
 	TractionControl.msg
 	PredictiveTraction.msg
 	LoadAwareTorque.msg
+	LoadSensing.msg
 	TerrainAdaptation.msg
 	ModuleStatus.msg
 	SensorQuadEncoder.msg

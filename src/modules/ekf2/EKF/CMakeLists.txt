@@ -134,6 +134,13 @@ if(CONFIG_EKF2_SIDESLIP)
 	list(APPEND EKF_SRCS aid_sources/sideslip/sideslip_fusion.cpp)
 endif()
 
+if(CONFIG_EKF2_UWB)
+	list(APPEND EKF_SRCS
+		aid_sources/uwb/uwb_control.cpp
+		aid_sources/uwb/uwb_checks.cpp
+	)
+endif()
+
 if(CONFIG_EKF2_TERRAIN)
 	list(APPEND EKF_SRCS terrain_control.cpp)
 endif()

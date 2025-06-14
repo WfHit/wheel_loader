@@ -417,9 +417,9 @@ public:
 	const auto &aid_src_aux_vel() const { return _aid_src_aux_vel; }
 #endif // CONFIG_EKF2_AUXVEL
 
-	// UWB range fusion
-	void controlUwbFusion();
+#if defined(CONFIG_EKF2_UWB)
 	const auto &aid_src_uwb() const { return _aid_src_uwb; }
+#endif // CONFIG_EKF2_UWB
 
 	bool resetGlobalPosToExternalObservation(double latitude, double longitude, float altitude, float eph, float epv,
 			uint64_t timestamp_observation);
@@ -592,7 +592,6 @@ private:
 	bool _uwb_range_sensor_intermittent{false};
 	uint64_t _time_last_uwb_buffer_push{0};
 	uwbSample _uwb_sample_delayed{};
-	UwbChecks _uwb_checks;
 
 	void controlUwbFusion(const imuSample &imu_delayed);
 	void updateUwbRange(const uwbSample &uwb_sample, estimator_aid_source1d_s &aid_src);

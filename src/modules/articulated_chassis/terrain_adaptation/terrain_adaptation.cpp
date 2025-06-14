@@ -1,41 +1,63 @@
-#include "TerrainAdaptation.hpp"
+#include "terrain_adaptation.hpp"
 #include <px4_platform_common/log.h>
+#include <px4_platform_common/getopt.h>
+#include <px4_platform_common/px4_config.h>
+#include <drivers/drv_hrt.h>
+
+using namespace time_literals;
 
 TerrainAdaptation::TerrainAdaptation() :
-    ModuleParams(nullptr)
+    ModuleParams(nullptr),
+    ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default)
 {
 }
 
-int TerrainAdaptation::task_spawn(int argc, char *argv[])
+bool TerrainAdaptation::init()
 {
-    TerrainAdaptation *instance = new TerrainAdaptation();
+    // Update parameters
+    updateParams();
 
-    if (instance) {
-        _object.store(instance);
-        _task_id = task_id_is_work_queue;
+    // Start the work queue task
+    ScheduleOnInterval(50_ms); // Run at 20 Hz
 
-        if (instance->init()) {
-            return PX4_OK;
-        }
+    PX4_INFO("Terrain Adaptation initialized - running at 20 Hz");
 
+    return true;
+}
+
+void TerrainAdaptation::set_classifier_method(int method)
+{
+    if (method >= 0 && method <= 2) {
+        _param_classifier_method.set(method);
+        _param_classifier_method.commit();
+        PX4_INFO("Classifier method set to %d", method);
     } else {
-        PX4_ERR("alloc failed");
+        PX4_WARN("Invalid classifier method: %d. Must be 0, 1, or 2", method);
     }
-
-    delete instance;
-    _object.store(nullptr);
-    _task_id = -1;
-
-    return PX4_ERROR;
 }
 
-void TerrainAdaptation::run()
+void TerrainAdaptation::reset_terrain_memory()
+{
+    // Reset terrain state
+    _terrain_state.current_surface = SurfaceClassifier::UNKNOWN;
+    _terrain_state.current_roughness = 0.0f;
+    _terrain_state.adaptation_confidence = 0.5f;
+    _terrain_state.adaptation_active = false;
+    _terrain_state.last_classification_time = 0;
+
+    // Reset vibration analyzer
+    _vibration_analyzer._buffer_index = 0;
+
+    PX4_INFO("Terrain memory and calibration reset");
+}
+
+void TerrainAdaptation::Run()
 {
     if (!_param_enable.get()) {
         // Publish inactive status and exit
         terrain_adaptation_s adaptation{};
         adaptation.timestamp = hrt_absolute_time();
-        adaptation.adaptation_active = false;
+        adaptation.terrain_adaptation_active = false;
         _terrain_adaptation_pub.publish(adaptation);
         return;
     }
@@ -55,7 +77,7 @@ void TerrainAdaptation::run()
         _terrain_adaptation_pub.publish(adaptation);
 
         // Apply terrain-specific adaptations
-        if (adaptation.adaptation_active) {
+        if (adaptation.terrain_adaptation_active) {
             applyTerrainAdaptation(adaptation);
         }
 
@@ -83,9 +105,14 @@ void TerrainAdaptation::updateTerrainClassification()
     // Get slip characteristics
     slip_estimation_s slip;
     if (_slip_estimation_sub.copy(&slip)) {
-        features.friction_coefficient = slip.surface_friction_estimate;
-        features.slip_characteristics = (fabsf(slip.longitudinal_slip_front) +
-                                       fabsf(slip.longitudinal_slip_rear)) / 2.0f;
+        features.friction_coefficient = slip.friction_coefficient;
+        features.slip_characteristics = (fabsf(slip.slip_ratio_front) +
+                                       fabsf(slip.slip_ratio_rear)) / 2.0f;
+
+        // Use surface roughness from slip estimator if available
+        if (slip.surface_roughness > 0.0f) {
+            features.vibration_amplitude = math::max(features.vibration_amplitude, slip.surface_roughness);
+        }
     }
 
     // Environmental estimation
@@ -128,10 +155,10 @@ void TerrainAdaptation::updateSlopeAnalysis()
 void TerrainAdaptation::computeAdaptiveStrategy(terrain_adaptation_s &output)
 {
     output.timestamp = hrt_absolute_time();
-    output.surface_type = static_cast<uint8_t>(_terrain_state.current_surface);
+    output.terrain_type = static_cast<uint8_t>(_terrain_state.current_surface);
     output.surface_roughness = _terrain_state.current_roughness;
     output.slope_angle_rad = _terrain_state.current_slope.grade_angle_rad;
-    output.slope_direction_rad = _terrain_state.current_slope.slope_direction_rad;
+    output.banking_angle_rad = _terrain_state.current_slope.cross_slope_rad;
 
     // Get current load information
     float load_factor = 1.0f; // Default
@@ -156,29 +183,83 @@ void TerrainAdaptation::computeAdaptiveStrategy(terrain_adaptation_s &output)
     );
 
     // Fill output message
-    output.traction_coefficient = _surface_classifier.getExpectedFriction(_terrain_state.current_surface);
-    output.recommended_speed_ms = strategy.max_speed_ms;
+    output.friction_coefficient = _surface_classifier.getExpectedFriction(_terrain_state.current_surface);
+    output.adapted_max_speed = strategy.max_speed_ms;
+    output.adapted_acceleration = strategy.max_speed_ms * 0.5f; // Estimate acceleration limit
+    output.adapted_traction_mode = strategy.traction_control_gain;
 
-    // Calculate overall stability factor
+    // Add penetration resistance based on terrain type
+    switch (_terrain_state.current_surface) {
+        case SurfaceClassifier::ASPHALT:
+            output.penetration_resistance = 0.1f;
+            break;
+        case SurfaceClassifier::GRAVEL:
+            output.penetration_resistance = 0.3f;
+            break;
+        case SurfaceClassifier::MUD:
+            output.penetration_resistance = 0.8f;
+            break;
+        case SurfaceClassifier::SAND:
+            output.penetration_resistance = 0.6f;
+            break;
+        case SurfaceClassifier::SNOW:
+            output.penetration_resistance = 0.4f;
+            break;
+        case SurfaceClassifier::ICE:
+            output.penetration_resistance = 0.1f;
+            break;
+        default:
+            output.penetration_resistance = 0.5f;
+            break;
+    }
+
+    // Calculate overall confidence based on terrain detection
     float slope_stability = 1.0f - fabsf(_terrain_state.current_slope.grade_angle_rad) / 0.5f; // Max 28.6 degrees
-    float surface_stability = output.traction_coefficient;
+    float surface_stability = output.friction_coefficient;
     float load_stability = 2.0f - load_factor; // Higher load = lower stability
 
-    output.stability_factor = math::constrain(
+    output.terrain_confidence = math::constrain(
         slope_stability * surface_stability * load_stability, 0.0f, 1.0f);
 
     // Determine if adaptation should be active
-    output.adaptation_active = (output.stability_factor < _param_stability_margin.get()) ||
+    output.terrain_adaptation_active = (output.terrain_confidence < _param_stability_margin.get()) ||
                               (output.surface_roughness > _param_roughness_threshold.get()) ||
                               (fabsf(output.slope_angle_rad) > _param_slope_threshold.get());
 
-    output.terrain_classified = (_terrain_state.current_surface != SurfaceClassifier::UNKNOWN);
+    // Set learning mode status
+    output.learning_mode_active = (_terrain_state.current_surface != SurfaceClassifier::UNKNOWN);
+    output.learning_confidence = _performance_monitor.getAdaptationConfidence();
+    output.terrain_transitions = 0; // TODO: implement transition counting
 
-    _terrain_state.adaptation_active = output.adaptation_active;
+    // Set terrain features (simplified)
+    for (int i = 0; i < 8; i++) {
+        output.terrain_features[i] = 0.0f; // TODO: implement feature extraction
+    }
+
+    // Basic hazard detection
+    output.hazard_detected = false;
+    output.hazard_type = 0; // none
+    output.hazard_severity = 0.0f;
+
+    // Check for slope hazards
+    if (fabsf(output.slope_angle_rad) > 0.4f) { // > 23 degrees
+        output.hazard_detected = true;
+        output.hazard_type = 1; // slope
+        output.hazard_severity = fabsf(output.slope_angle_rad) / 0.5f; // normalized
+    }
+
+    // Check for low friction hazards
+    if (output.friction_coefficient < 0.3f) {
+        output.hazard_detected = true;
+        output.hazard_type = 3; // ice/low friction
+        output.hazard_severity = math::max(output.hazard_severity, (0.3f - output.friction_coefficient) / 0.3f);
+    }
+
+    _terrain_state.adaptation_active = output.terrain_adaptation_active;
     _terrain_state.adaptation_confidence = _performance_monitor.getAdaptationConfidence();
 
     // Store strategy for application
-    if (output.adaptation_active) {
+    if (output.terrain_adaptation_active) {
         publishAdaptationCommands(strategy);
     }
 }
@@ -193,8 +274,8 @@ void TerrainAdaptation::applyTerrainAdaptation(const terrain_adaptation_s &adapt
         float speed_magnitude = sqrtf(current_setpoint.front_wheel_speed_rad_s * current_setpoint.front_wheel_speed_rad_s +
                                      current_setpoint.rear_wheel_speed_rad_s * current_setpoint.rear_wheel_speed_rad_s);
 
-        if (speed_magnitude > adaptation.recommended_speed_ms) {
-            float reduction_factor = adaptation.recommended_speed_ms / speed_magnitude;
+        if (speed_magnitude > adaptation.adapted_max_speed) {
+            float reduction_factor = adaptation.adapted_max_speed / speed_magnitude;
 
             wheel_speeds_setpoint_s adapted_setpoint = current_setpoint;
             adapted_setpoint.front_wheel_speed_rad_s *= reduction_factor;
@@ -225,8 +306,9 @@ void TerrainAdaptation::publishAdaptationCommands(const AdaptiveController::Cont
             tc_cmd.torque_distribution *= 0.7f; // Reduce torque demand
         }
 
-        tc_cmd.slip_detected = (fabsf(slip.longitudinal_slip_front) > 0.1f * strategy.traction_control_gain) ||
-                              (fabsf(slip.longitudinal_slip_rear) > 0.1f * strategy.traction_control_gain);
+        tc_cmd.slip_detected = slip.slip_detected ||
+                              (fabsf(slip.slip_ratio_front) > 0.1f * strategy.traction_control_gain) ||
+                              (fabsf(slip.slip_ratio_rear) > 0.1f * strategy.traction_control_gain);
     }
 
     _traction_control_pub.publish(tc_cmd);
@@ -240,11 +322,12 @@ void TerrainAdaptation::monitorPerformance()
     slip_estimation_s slip;
     if (_slip_estimation_sub.copy(&slip)) {
         // Traction efficiency: lower slip = higher efficiency
-        float avg_slip = (fabsf(slip.longitudinal_slip_front) + fabsf(slip.longitudinal_slip_rear)) / 2.0f;
+        float avg_slip = (fabsf(slip.slip_ratio_front) + fabsf(slip.slip_ratio_rear)) / 2.0f;
         metrics.traction_efficiency = 1.0f - math::constrain(avg_slip, 0.0f, 1.0f);
 
         // Stability score based on lateral slip and overall vehicle dynamics
-        metrics.stability_score = 1.0f - math::constrain(fabsf(slip.lateral_slip_angle_rad), 0.0f, 0.5f) / 0.5f;
+        float lateral_slip = (fabsf(slip.slip_angle_front_rad) + fabsf(slip.slip_angle_rear_rad)) / 2.0f;
+        metrics.stability_score = 1.0f - math::constrain(lateral_slip, 0.0f, 0.5f) / 0.5f;
     }
 
     // Energy efficiency (simplified - based on speed vs terrain difficulty)
@@ -389,7 +472,7 @@ float TerrainAdaptation::SurfaceClassifier::calculateFeatureDistance(
 
 float TerrainAdaptation::SurfaceClassifier::getSurfaceRoughness(SurfaceType type)
 {
-    if (type >= 0 && type < 7) {
+    if (type < 7) {
         return _surface_models[type].roughness_level;
     }
     return 0.3f; // Default
@@ -397,7 +480,7 @@ float TerrainAdaptation::SurfaceClassifier::getSurfaceRoughness(SurfaceType type
 
 float TerrainAdaptation::SurfaceClassifier::getExpectedFriction(SurfaceType type)
 {
-    if (type >= 0 && type < 7) {
+    if (type < 7) {
         const SurfaceModel &model = _surface_models[type];
         return (model.friction_range[0] + model.friction_range[1]) / 2.0f;
     }

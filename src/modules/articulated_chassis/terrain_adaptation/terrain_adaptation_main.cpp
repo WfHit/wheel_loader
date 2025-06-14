@@ -77,6 +77,18 @@ int TerrainAdaptation::custom_command(int argc, char *argv[])
     return print_usage("unknown command");
 }
 
+TerrainAdaptation *TerrainAdaptation::instantiate(int argc, char *argv[])
+{
+    TerrainAdaptation *controller = new TerrainAdaptation();
+
+    if (controller && !controller->init()) {
+        delete controller;
+        controller = nullptr;
+    }
+
+    return controller;
+}
+
 int TerrainAdaptation::task_spawn(int argc, char *argv[])
 {
     TerrainAdaptation *controller = new TerrainAdaptation();

@@ -71,6 +71,18 @@ int PredictiveTractionControl::custom_command(int argc, char *argv[])
     return print_usage("unknown command");
 }
 
+PredictiveTractionControl *PredictiveTractionControl::instantiate(int argc, char *argv[])
+{
+    PredictiveTractionControl *controller = new PredictiveTractionControl();
+
+    if (controller && !controller->init()) {
+        delete controller;
+        controller = nullptr;
+    }
+
+    return controller;
+}
+
 int PredictiveTractionControl::task_spawn(int argc, char *argv[])
 {
     PredictiveTractionControl *controller = new PredictiveTractionControl();

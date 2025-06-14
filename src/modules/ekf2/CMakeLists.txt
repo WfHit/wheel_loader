@@ -228,6 +228,14 @@ if(CONFIG_EKF2_TERRAIN)
 	list(APPEND EKF_MODULE_PARAMS params_terrain.yaml)
 endif()
 
+if(CONFIG_EKF2_UWB)
+	list(APPEND EKF_SRCS
+		EKF/aid_sources/uwb/uwb_control.cpp
+		EKF/aid_sources/uwb/uwb_checks.cpp
+	)
+	list(APPEND EKF_MODULE_PARAMS params_uwb.yaml)
+endif()
+
 if(CONFIG_EKF2_WIND)
 	list(APPEND EKF_SRCS EKF/wind.cpp)
 	list(APPEND EKF_MODULE_PARAMS params_wind.yaml)

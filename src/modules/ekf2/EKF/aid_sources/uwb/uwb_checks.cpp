@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "uwb_checks.hpp"
+#include "aid_sources/uwb/uwb_checks.hpp"
 #include <math.h>
 
 using namespace estimator;
@@ -181,7 +181,7 @@ bool UwbChecks::runMultipathCheck(const uwbSample &uwb)
 		const float frequency_hz = 6.5e9f; // Center frequency for UWB
 		const float c = 299792458.0f; // Speed of light
 		const float wavelength = c / frequency_hz;
-		const float expected_path_loss_db = 20.0f * log10f((4.0f * M_PI * uwb.range_m) / wavelength);
+		const float expected_path_loss_db = 20.0f * log10f((4.0f * static_cast<float>(M_PI) * uwb.range_m) / wavelength);
 
 		// Assuming 0 dBm transmit power and some margin for multipath
 		const float expected_rssi = -expected_path_loss_db - 10.0f; // 10dB margin

@@ -1,4 +1,4 @@
-#include "SlipEstimator.hpp"
+#include "slip_estimator.hpp"
 #include <px4_platform_common/log.h>
 
 SlipEstimator::SlipEstimator() :
@@ -10,52 +10,6 @@ bool SlipEstimator::init()
 {
     // Initialize the slip estimation module
     return true;
-}
-
-int SlipEstimator::task_spawn(int argc, char *argv[])
-{
-    SlipEstimator *instance = new SlipEstimator();
-
-    if (instance) {
-        _object.store(instance);
-        _task_id = task_id_is_work_queue;
-
-        if (        matrix::Matrix<float, 2, 1> k = _P * phi / denom;
-        _theta += k * error;
-
-        // Standard RLS covariance update: P = (P - k * phi^T * P) / lambda
-        matrix::Matrix<float, 2, 1> P_phi = _P * phi;
-        for (int i = 0; i < 2; i++) {
-            for (int j = 0; j < 2; j++) {
-                _P(i, j) = (_P(i, j) - k(i, 0) * P_phi(j, 0)) / _lambda;
-            }
-        }
-    }
-
-    // Extract friction coefficient
-    _mu = math::constrain(_theta(0, 0), 0.1f, 1.5f);e->init()) {
-            return PX4_OK;
-        }
-
-    } else {
-        PX4_ERR("alloc failed");
-    }
-
-    delete instance;
-    _object.store(nullptr);
-    _task_id = -1;
-
-    return PX4_ERROR;
-}
-
-SlipEstimator *SlipEstimator::instantiate(int argc, char *argv[])
-{
-    return new SlipEstimator();
-}
-
-int SlipEstimator::custom_command(int argc, char *argv[])
-{
-    return print_usage("unknown command");
 }
 
 void SlipEstimator::run()
@@ -459,7 +413,7 @@ void SlipEstimator::FrictionEstimator::update(float slip, float normalized_force
     }
 
     // Extract friction coefficient
-    _mu = math::constrain(_theta(0), 0.1f, 1.5f);
+    _mu = math::constrain(_theta(0, 0), 0.1f, 1.5f);
 
     // Update confidence based on error magnitude
     _confidence = 1.0f / (1.0f + fabsf(error));
@@ -470,27 +424,27 @@ void SlipEstimator::detectSurfaceChange(slip_estimation_s &slip)
     static float last_friction = 0.8f;
     static uint64_t last_change_time = 0;
 
-    float friction_change = fabsf(slip.surface_friction_estimate - last_friction);
+    float friction_change = fabsf(slip.friction_coefficient - last_friction);
 
     // Detect significant friction change
     if (friction_change > 0.2f) {
         uint64_t now = hrt_absolute_time();
         if (now - last_change_time > 1000000) { // 1 second debounce
             PX4_INFO("Surface change detected: friction %.2f -> %.2f",
-                     (double)last_friction, (double)slip.surface_friction_estimate);
-            last_friction = slip.surface_friction_estimate;
+                     (double)last_friction, (double)slip.friction_coefficient);
+            last_friction = slip.friction_coefficient;
             last_change_time = now;
         }
     }
 
     // Classify surface type based on friction
-    if (slip.surface_friction_estimate > 0.9f) {
+    if (slip.friction_coefficient > 0.9f) {
         // Dry asphalt/concrete
         slip.wheel_speed_variance = 0.05f;
-    } else if (slip.surface_friction_estimate > 0.6f) {
+    } else if (slip.friction_coefficient > 0.6f) {
         // Wet surface or gravel
         slip.wheel_speed_variance = 0.1f;
-    } else if (slip.surface_friction_estimate > 0.3f) {
+    } else if (slip.friction_coefficient > 0.3f) {
         // Mud or snow
         slip.wheel_speed_variance = 0.2f;
     } else {

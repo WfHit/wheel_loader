@@ -75,6 +75,10 @@
 # include "aid_sources/gnss/gnss_checks.hpp"
 #endif // CONFIG_EKF2_GNSS
 
+#if defined(CONFIG_EKF2_UWB)
+# include "aid_sources/uwb/uwb_checks.hpp"
+#endif // CONFIG_EKF2_UWB
+
 #include <lib/atmosphere/atmosphere.h>
 #include <lib/lat_lon_alt/lat_lon_alt.hpp>
 #include <matrix/math.hpp>
@@ -123,6 +127,10 @@ public:
 
 	const estimator::sensor::rangeSample &get_rng_sample_delayed() { return *(_range_sensor.getSampleAddress()); }
 #endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_UWB)
+	void setUwbData(const uwbSample &uwb_sample);
+#endif // CONFIG_EKF2_UWB
 
 #if defined(CONFIG_EKF2_OPTICAL_FLOW)
 	// if optical flow sensor gyro delta angles are not available, set gyro_rate vector fields to NaN and the EKF will use its internal gyro data instead
@@ -376,6 +384,11 @@ protected:
 	sensor::SensorRangeFinder _range_sensor{};
 	RangeFinderConsistencyCheck _rng_consistency_check;
 #endif // CONFIG_EKF2_RANGE_FINDER
+
+#if defined(CONFIG_EKF2_UWB)
+	RingBuffer<uwbSample> *_uwb_buffer {nullptr};
+	uint64_t _time_last_uwb_buffer_push{0};
+#endif // CONFIG_EKF2_UWB
 
 #if defined(CONFIG_EKF2_OPTICAL_FLOW)
 	RingBuffer<flowSample> 	*_flow_buffer {nullptr};

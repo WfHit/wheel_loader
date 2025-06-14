@@ -448,6 +448,7 @@ struct parameters {
 	float uwb_innov_gate{5.0f};            ///< UWB range innovation consistency gate size (STD)
 	float req_range_accuracy{0.5f};         ///< maximum acceptable range measurement error (m)
 	float req_rssi_threshold{-85.0f};       ///< minimum required RSSI for valid measurement (dBm)
+	float req_nlos_threshold{-85.0f};       ///< RSSI threshold below which measurements are considered NLOS (dBm)
 	float req_los_confidence{0.7f};         ///< minimum required line-of-sight confidence (0.0-1.0)
 	float max_range_drift{5.0f};            ///< maximum allowed range drift rate (m/s)
 	uint32_t min_health_time_us{1000000};   ///< minimum time for measurement to be considered healthy (uSec)

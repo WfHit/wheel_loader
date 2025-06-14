@@ -38,13 +38,16 @@
  */
 
 #include "ekf.h"
-#include <mathlib/mathlib.h>
+#include <lib/mathlib/mathlib.h>
 
 using namespace estimator;
 
 void Ekf::controlUwbFusion(const imuSample &imu_delayed)
 {
 #if defined(CONFIG_EKF2_UWB)
+	// Check for UWB data that has fallen behind the fusion time horizon
+	_uwb_data_ready = _uwb_buffer && _uwb_buffer->pop_first_older_than(imu_delayed.time_us, &_uwb_sample_delayed);
+
 	// Check if we have new UWB data that has fallen behind the fusion time horizon
 	if (_uwb_data_ready) {
 		// Run UWB checks
@@ -196,7 +199,7 @@ void Ekf::fuseUwbRange(const uwbSample &uwb_sample)
 void Ekf::resetUwbFusion()
 {
 	ECL_INFO("Resetting UWB fusion");
-	_aid_src_uwb.reset();
+	resetAidSourceStatusZeroInnovation(_aid_src_uwb);
 	_uwb_checks.resetHard();
 	_control_status.flags.uwb = false;
 }
@@ -205,7 +208,7 @@ void Ekf::stopUwbFusion()
 {
 	ECL_INFO("Stopping UWB fusion");
 	_control_status.flags.uwb = false;
-	_aid_src_uwb.reset();
+	resetAidSourceStatusZeroInnovation(_aid_src_uwb);
 }
 
 bool Ekf::isUwbDataReady()
