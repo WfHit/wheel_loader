@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,102 +31,54 @@
  *
  ****************************************************************************/
 
-/**
- * @file timer_config.cpp
- *
- * Configuration data for the stm32 pwm_servo, input capture and pwm input driver for
- * CUAV X7+ WL (Wheel Loader) Controller
- */
+#include <px4_arch/io_timer_hw_description.h>
 
-#include <px4_platform_common/px4_config.h>
-#include <nuttx/arch.h>
-#include <nuttx/irq.h>
-
-#include <drivers/drv_pwm_output.h>
-#include <px4_arch/io_timer.h>
-
-#include "board_config.h"
-
-__EXPORT const io_timers_t io_timers[MAX_IO_TIMERS] = {
-	{
-		.base = STM32_TIM1_BASE,
-		.clock_register = STM32_RCC_APB2ENR,
-		.clock_bit = RCC_APB2ENR_TIM1EN,
-		.clock_freq = STM32_APB2_TIM1_CLKFREQ,
-		.vectorno =  STM32_IRQ_TIM1CC,
-	},
-	{
-		.base = STM32_TIM4_BASE,
-		.clock_register = STM32_RCC_APB1ENR,
-		.clock_bit = RCC_APB1ENR_TIM4EN,
-		.clock_freq = STM32_APB1_TIM4_CLKFREQ,
-		.vectorno =  STM32_IRQ_TIM4,
-	}
+constexpr io_timers_t io_timers[MAX_IO_TIMERS] = {
+	initIOTimer(Timer::Timer5, DMA{DMA::Index1}),
+	initIOTimer(Timer::Timer4, DMA{DMA::Index1}),
+	initIOTimer(Timer::Timer1, DMA{DMA::Index1}),
+	initIOTimer(Timer::Timer12),
 };
 
-__EXPORT const timer_io_channels_t timer_io_channels[MAX_TIMER_IO_CHANNELS] = {
-	{
-		.gpio_out = TIM1_CH1OUT,
-		.gpio_in  = 0,
-		.timer_index = 0,
-		.timer_channel = 1,
-		.ccr_offset = STM32_GTIM_CCR1_OFFSET,
-		.masks  = GTIM_SR_CC1IF | GTIM_SR_CC1OF
-	},
-	{
-		.gpio_out = TIM1_CH2OUT,
-		.gpio_in  = 0,
-		.timer_index = 0,
-		.timer_channel = 2,
-		.ccr_offset = STM32_GTIM_CCR2_OFFSET,
-		.masks  = GTIM_SR_CC2IF | GTIM_SR_CC2OF
-	},
-	{
-		.gpio_out = TIM1_CH3OUT,
-		.gpio_in  = 0,
-		.timer_index = 0,
-		.timer_channel = 3,
-		.ccr_offset = STM32_GTIM_CCR3_OFFSET,
-		.masks  = GTIM_SR_CC3IF | GTIM_SR_CC3OF
-	},
-	{
-		.gpio_out = TIM1_CH4OUT,
-		.gpio_in  = 0,
-		.timer_index = 0,
-		.timer_channel = 4,
-		.ccr_offset = STM32_GTIM_CCR4_OFFSET,
-		.masks  = GTIM_SR_CC4IF | GTIM_SR_CC4OF
-	},
-	{
-		.gpio_out = TIM4_CH1OUT,
-		.gpio_in  = 0,
-		.timer_index = 1,
-		.timer_channel = 1,
-		.ccr_offset = STM32_GTIM_CCR1_OFFSET,
-		.masks  = GTIM_SR_CC1IF | GTIM_SR_CC1OF
-	},
-	{
-		.gpio_out = TIM4_CH2OUT,
-		.gpio_in  = GPIO_PWM_IN,
-		.timer_index = 1,
-		.timer_channel = 2,
-		.ccr_offset = STM32_GTIM_CCR2_OFFSET,
-		.masks  = GTIM_SR_CC2IF | GTIM_SR_CC2OF
-	},
-	{
-		.gpio_out = TIM4_CH3OUT,
-		.gpio_in  = 0,
-		.timer_index = 1,
-		.timer_channel = 3,
-		.ccr_offset = STM32_GTIM_CCR3_OFFSET,
-		.masks  = GTIM_SR_CC3IF | GTIM_SR_CC3OF
-	},
-	{
-		.gpio_out = TIM4_CH4OUT,
-		.gpio_in  = 0,
-		.timer_index = 1,
-		.timer_channel = 4,
-		.ccr_offset = STM32_GTIM_CCR4_OFFSET,
-		.masks  = GTIM_SR_CC4IF | GTIM_SR_CC4OF
-	}
+constexpr timer_io_channels_t timer_io_channels[MAX_TIMER_IO_CHANNELS] = {
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel1}, {GPIO::PortH, GPIO::Pin10}),
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel2}, {GPIO::PortH, GPIO::Pin11}),
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel3}, {GPIO::PortH, GPIO::Pin12}),
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel4}, {GPIO::PortI, GPIO::Pin0}),
+	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel1}, {GPIO::PortD, GPIO::Pin12}),
+	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel2}, {GPIO::PortD, GPIO::Pin13}),
+	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel3}, {GPIO::PortD, GPIO::Pin14}),
+	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel4}, {GPIO::PortD, GPIO::Pin15}),
+	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel1}, {GPIO::PortE, GPIO::Pin9}),
+	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel2}, {GPIO::PortE, GPIO::Pin11}),
+	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel3}, {GPIO::PortA, GPIO::Pin10}),
+	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel4}, {GPIO::PortE, GPIO::Pin14}),
+	initIOTimerChannel(io_timers, {Timer::Timer12, Timer::Channel1}, {GPIO::PortH, GPIO::Pin6}),
+	initIOTimerChannel(io_timers, {Timer::Timer12, Timer::Channel2}, {GPIO::PortH, GPIO::Pin9}),
+};
+
+constexpr io_timers_channel_mapping_t io_timers_channel_mapping =
+	initIOTimerChannelMapping(io_timers, timer_io_channels);
+
+constexpr io_timers_t led_pwm_timers[MAX_LED_TIMERS] = {
+	initIOTimer(Timer::Timer8),
+};
+
+#define CCER_C1_NUM_BITS   4
+#define POLARITY(c)    (GTIM_CCER_CC1P << (((c)-1) * CCER_C1_NUM_BITS))
+#define DRIVE_TYPE(p)  ((p)|GPIO_OPENDRAIN|GPIO_PULLUP)
+
+static inline constexpr timer_io_channels_t initIOTimerChannelLED(const io_timers_t io_timers_conf[MAX_LED_TIMERS],
+		Timer::TimerChannel timer, GPIO::GPIOPin pin, int ui_polarity)
+{
+	timer_io_channels_t ret = initIOTimerChannel(io_timers_conf, timer, pin);
+	ret.gpio_out = DRIVE_TYPE(ret.gpio_out);
+	ret.masks = POLARITY(ui_polarity);
+	return ret;
+}
+
+constexpr timer_io_channels_t led_pwm_channels[MAX_TIMER_LED_CHANNELS] = {
+	initIOTimerChannelLED(led_pwm_timers, {Timer::Timer8, Timer::Channel1}, {GPIO::PortI, GPIO::Pin5}, 1),
+	initIOTimerChannelLED(led_pwm_timers, {Timer::Timer8, Timer::Channel2}, {GPIO::PortI, GPIO::Pin6}, 2),
+	initIOTimerChannelLED(led_pwm_timers, {Timer::Timer8, Timer::Channel3}, {GPIO::PortI, GPIO::Pin7}, 3),
 };

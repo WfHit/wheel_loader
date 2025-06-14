@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2020 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,7 +30,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
-
 if("${PX4_BOARD_LABEL}" STREQUAL  "bootloader")
 	add_library(drivers_board
 		bootloader_main.c
@@ -46,14 +45,12 @@ if("${PX4_BOARD_LABEL}" STREQUAL  "bootloader")
 
 else()
 	add_library(drivers_board
-		board_config.h
-		hw_config.h
+		i2c.cpp
 		init.c
 		led.c
 		spi.cpp
-		i2c.cpp
-		usb.c
 		timer_config.cpp
+		usb.c
 	)
 	add_dependencies(drivers_board arch_board_hw_info)
 

@@ -215,6 +215,7 @@ set(msg_files
 	SensorAirflow.msg
 	SystemPower.msg
 	TakeoffStatus.msg
+	TaskExecutionCommand.msg
 	TaskStackInfo.msg
 	TecsStatus.msg
 	TelemetryStatus.msg
@@ -242,7 +243,10 @@ set(msg_files
 	VehicleTorqueSetpoint.msg
 	VelocityLimits.msg
 	WheelEncoders.msg
+	WheelDriveCommand.msg
 	WheelSpeedsSetpoint.msg
+	WheelStatus.msg
+	SteeringCommand.msg
 	SteeringSetpoint.msg
 	SteeringStatus.msg
 	SlipEstimation.msg
@@ -256,6 +260,7 @@ set(msg_files
 	RoboticServoFeedback.msg
 	RoboticServoCommand.msg
 	Wind.msg
+	WheelLoaderCommand.msg
 	WheelLoaderSetpoint.msg
 	WheelLoaderStatus.msg
 	YawEstimatorStatus.msg

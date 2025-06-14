@@ -34,8 +34,8 @@
 /**
  * @file bootloader_main.c
  *
- * CUAV X7+ WL specific early startup code for bootloader
- */
+ * FMU-specific early startup code for bootloader
+*/
 
 #include "board_config.h"
 #include "bl.h"

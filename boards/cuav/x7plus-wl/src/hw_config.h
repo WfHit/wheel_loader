@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,105 +31,105 @@
  *
  ****************************************************************************/
 
-/**
- * @file hw_config.h
- *
- * CUAV X7+ WL (Wheel Loader) Controller hardware configuration definitions
- */
-
 #pragma once
 
-#include <stdint.h>
-
 /****************************************************************************
- * Included Files
+ * 10-8--2016:
+ *  To simplify the ripple effect on the tools, we will be using
+ *  /dev/serial/by-id/<asterisk>PX4<asterisk> to locate PX4 devices. Therefore
+ *  moving forward all Bootloaders must contain the prefix "PX4 BL "
+ *  in the USBDEVICESTRING
+ *  This Change will be made in an upcoming BL release
  ****************************************************************************/
+/*
+ * Define usage to configure a bootloader
+ *
+ *
+ * Constant                example          Usage
+ * APP_LOAD_ADDRESS     0x08004000            - The address in Linker Script, where the app fw is org-ed
+ * BOOTLOADER_DELAY     5000                  - Ms to wait while under USB pwr or bootloader request
+ * BOARD_FMUV2
+ * INTERFACE_USB        1                     - (Optional) Scan and use the USB interface for bootloading
+ * INTERFACE_USART      1                     - (Optional) Scan and use the Serial interface for bootloading
+ * USBDEVICESTRING      "PX4 BL FMU v2.x"     - USB id string
+ * USBPRODUCTID         0x0011                - PID Should match defconfig
+ * BOOT_DELAY_ADDRESS   0x000001a0            - (Optional) From the linker script from Linker Script to get a custom
+ *                                               delay provided by an APP FW
+ * BOARD_TYPE           9                     - Must match .prototype boad_id
+ * _FLASH_KBYTES        (*(uint16_t *)0x1fff7a22) - Run time flash size detection
+ * BOARD_FLASH_SECTORS  ((_FLASH_KBYTES == 0x400) ? 11 : 23) - Run time determine the physical last sector
+ * BOARD_FLASH_SECTORS   11                   - Hard coded zero based last sector
+ * BOARD_FLASH_SIZE     (_FLASH_KBYTES*1024)-   Total Flash size of device, determined at run time.
+ *                         (1024 * 1024)      - Hard coded Total Flash of device - The bootloader and app reserved will be deducted
+ *                                              programmatically
+ *
+ * BOARD_FIRST_FLASH_SECTOR_TO_ERASE  2        - Optional sectors index in the flash_sectors table  (F4 only), to begin erasing.
+ *                                               This is to allow sectors to be reserved for app fw usage. That will NOT be erased
+ *                                               during a FW upgrade.
+ *                                               The default is 0, and selects the first sector to be erased, as the 0th entry in the
+ *                                               flash_sectors table. Which is the second physical sector of FLASH in the device.
+ *                                               The first physical sector of FLASH is used by the bootloader, and is not defined
+ *                                               in the table.
+ *
+ * APP_RESERVATION_SIZE (BOARD_FIRST_FLASH_SECTOR_TO_ERASE * 16 * 1024) - Number of bytes reserved by the APP FW. This number plus
+ *                                                                        BOOTLOADER_RESERVATION_SIZE  will be deducted from
+ *                                                                        BOARD_FLASH_SIZE to determine the size of the App FW
+ *                                                                        and hence the address space of FLASH to erase and program.
+ * USBMFGSTRING            "PX4 AP"            - Optional USB MFG string (default is '3D Robotics' if not defined.)
+ * SERIAL_BREAK_DETECT_DISABLED                -  Optional prevent break selection on Serial port from entering or staying in BL
+ *
+ * * Other defines are somewhat self explanatory.
+ */
 
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
+/* Boot device selection list*/
+#define USB0_DEV       0x01
+#define SERIAL0_DEV    0x02
+#define SERIAL1_DEV    0x04
 
-/* Hardware revision and version detection */
-#define HW_REV_FMUV5X               0x00
-#define HW_REV_FMUV5X_V1            0x01
+#define APP_LOAD_ADDRESS               0x08020000
+#define BOOTLOADER_DELAY               5000
+#define INTERFACE_USB                  1
+#define INTERFACE_USB_CONFIG           "/dev/ttyACM0"
+#define BOARD_VBUS                     MK_GPIO_INPUT(GPIO_OTGFS_VBUS)
 
-/* Hardware identification */
-#define CUAV_X7PLUS_WL_REV          0x10
-#define CUAV_X7PLUS_WL_VERSION      0x01
+//#define USE_VBUS_PULL_DOWN
+#define INTERFACE_USART                1
+#define INTERFACE_USART_CONFIG         "/dev/ttyS4,57600"
+#define BOOT_DELAY_ADDRESS             0x000001a0
+#define BOARD_TYPE                     1010
+#define _FLASH_KBYTES                  (*(uint32_t *)0x1FF1E880)
+#define BOARD_FLASH_SECTORS            (15)
+#define BOARD_FLASH_SIZE               (_FLASH_KBYTES * 1024)
 
-/* UART Configuration for Wheel Loader */
-#define UART_GPS1_DEV               "/dev/ttyS0"    /* GPS primary */
-#define UART_GPS2_DEV               "/dev/ttyS1"    /* GPS secondary/RTK - NOT USED */
-#define UART_TEL1_DEV               "/dev/ttyS1"    /* Telemetry 1 (MAVLink ground station) */
-#define UART_TEL2_DEV               "/dev/ttyS2"    /* Telemetry 2 / NXT Controller 1 */
-#define UART_TEL4_DEV               "/dev/ttyS3"    /* UART4 / NXT Controller 2 */
-#define UART_NXT1_DEV               "/dev/ttyS2"    /* NXT front controller (via TELEM2) */
-#define UART_NXT2_DEV               "/dev/ttyS3"    /* NXT rear controller (via UART4) */
+#define OSC_FREQ                       16
 
-/* SPI Bus Configuration */
-#define SPI_BUS_SENSORS1            1               /* Primary sensor bus */
-#define SPI_BUS_SENSORS2            2               /* Secondary sensor bus */
+#define BOARD_PIN_LED_ACTIVITY         GPIO_nLED_BLUE // BLUE
+#define BOARD_PIN_LED_BOOTLOADER       GPIO_nLED_GREEN // GREEN
+#define BOARD_LED_ON                   0
+#define BOARD_LED_OFF                  1
 
-/* I2C Bus Configuration */
-#define I2C_BUS_INTERNAL            1               /* Internal peripherals */
-#define I2C_BUS_EXTERNAL            2               /* External expansion */
-#define I2C_BUS_GPS                 3               /* GPS and compass */
+#define SERIAL_BREAK_DETECT_DISABLED   1
 
-/* ADC Configuration */
-#define ADC_BATTERY1_VOLTAGE_CHANNEL    2
-#define ADC_BATTERY1_CURRENT_CHANNEL    3
-#define ADC_BATTERY2_VOLTAGE_CHANNEL    4
-#define ADC_BATTERY2_CURRENT_CHANNEL    5
-#define ADC_5V_RAIL_SENSE              10
-#define ADC_SPARE_1                    11
-#define ADC_SPARE_2                    12
+#if !defined(ARCH_SN_MAX_LENGTH)
+# define ARCH_SN_MAX_LENGTH 12
+#endif
 
-/* PWM Configuration for Wheel Loader */
-#define PWM_OUTPUT_MAIN_CHANNELS        8           /* Main PWM outputs */
-#define PWM_OUTPUT_AUX_CHANNELS         6           /* Auxiliary PWM outputs */
+#if !defined(APP_RESERVATION_SIZE)
+#  define APP_RESERVATION_SIZE 0
+#endif
 
-/* CAN Bus Configuration */
-#define CAN_BUS_1                       0           /* Primary CAN bus */
-#define CAN_BUS_2                       1           /* Secondary CAN bus */
+#if !defined(BOARD_FIRST_FLASH_SECTOR_TO_ERASE)
+#  define BOARD_FIRST_FLASH_SECTOR_TO_ERASE 1
+#endif
 
-/* Safety and Status LEDs */
-#define LED_STATUS_RED                  0           /* System error */
-#define LED_STATUS_GREEN                1           /* System OK */
-#define LED_STATUS_BLUE                 2           /* System armed/disarmed */
+#if !defined(USB_DATA_ALIGN)
+# define USB_DATA_ALIGN
+#endif
 
-/* Wheel Loader Specific Hardware */
-#define WL_MAX_HYDRAULIC_PRESSURE       250         /* Bar */
-#define WL_MAX_ENGINE_RPM               2200        /* RPM */
-#define WL_MAX_TRAVEL_SPEED             20          /* km/h */
-#define WL_MAX_STEERING_ANGLE           40          /* Degrees */
+#ifndef BOOT_DEVICES_SELECTION
+#  define BOOT_DEVICES_SELECTION USB0_DEV|SERIAL0_DEV|SERIAL1_DEV
+#endif
 
-/* Communication Protocol Definitions */
-#define NXT_COMM_BAUD_RATE             921600       /* NXT communication baud rate - High-speed for STM32F765 */
-#define NXT_COMM_TIMEOUT_MS            100          /* Communication timeout */
-#define NXT_HEARTBEAT_INTERVAL_MS      50           /* Heartbeat interval */
-
-/* System Status Monitoring */
-#define SYSTEM_HEALTH_CHECK_INTERVAL_MS 1000        /* Health check interval */
-#define BATTERY_LOW_VOLTAGE_THRESHOLD   22.0        /* 24V system low voltage */
-#define BATTERY_CRITICAL_VOLTAGE        20.0        /* Critical battery voltage */
-
-/* Sensor Configuration */
-#define IMU_SAMPLE_RATE_HZ             1000         /* IMU sampling rate */
-#define GPS_UPDATE_RATE_HZ             10           /* GPS update rate */
-#define BARO_UPDATE_RATE_HZ            50           /* Barometer update rate */
-
-/****************************************************************************
- * Public Types
- ****************************************************************************/
-
-/****************************************************************************
- * Public Data
- ****************************************************************************/
-
-/****************************************************************************
- * Inline Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Public Function Prototypes
- ****************************************************************************/
+#ifndef BOOT_DEVICES_FILTER_ONUSB
+#  define BOOT_DEVICES_FILTER_ONUSB USB0_DEV|SERIAL0_DEV|SERIAL1_DEV
+#endif

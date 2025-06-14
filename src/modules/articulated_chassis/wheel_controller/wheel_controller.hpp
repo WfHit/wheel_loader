@@ -16,7 +16,7 @@
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/traction_control.h>
-#include <uORB/topics/module_status.h>
+#include <uORB/topics/wheel_status.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/actuator_outputs.h>
 
@@ -71,6 +71,7 @@ private:
     void update_controller_status();
     void check_safety_limits();
     void communicate_with_hbridge();
+    void publish_wheel_status();
 
     /**
      * Encoder processing
@@ -98,9 +99,9 @@ private:
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
     // uORB publications
-    uORB::Publication<module_status_s> _module_status_pub{ORB_ID(module_status)};
     uORB::PublicationMulti<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
     uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+    uORB::Publication<wheel_status_s> _wheel_status_pub{ORB_ID(wheel_status)};
 
     // Control system
     PID _speed_pid;
@@ -126,8 +127,8 @@ private:
     uint64_t _last_command_time{0};
     bool _armed{false};
 
-    // Module status for health reporting
-    module_status_s _status{};
+    // Status reporting via wheel_status message
+    wheel_status_s _wheel_status{};
     float _health_score{100.0f}; // Local health score calculation
 
     // Performance monitoring - matching existing structure

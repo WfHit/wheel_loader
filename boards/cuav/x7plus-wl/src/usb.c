@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,70 +34,25 @@
 /**
  * @file usb.c
  *
- * Board-specific USB functions for CUAV X7+ WL (Wheel Loader) Controller
+ * Board-specific USB functions.
  */
 
-#include <px4_platform_common/px4_config.h>
-
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <sched.h>
-#include <errno.h>
-#include <assert.h>
-#include <debug.h>
-
+#include "board_config.h"
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
+#include <stm32_otg.h>
+#include <debug.h>
 
-#include "up_arch.h"
-#include "chip.h"
-#include "stm32_otgfs.h"
-#include "board_config.h"
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Private Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: stm32_usbinitialize
+/************************************************************************************
+ * Name:  stm32_usbsuspend
  *
  * Description:
- *   Called from stm32_usbinitialize very early in initialization to setup
- *   USB-related GPIO pins for the board.
+ *   Board logic must provide the stm32_usbsuspend logic if the USBDEV driver is
+ *   used.  This function is called whenever the USB enters or leaves suspend mode.
+ *   This is an opportunity for the board logic to shutdown clocks, power, etc.
+ *   while the USB is suspended.
  *
- ****************************************************************************/
-
-__EXPORT void stm32_usbinitialize(void)
-{
-	/* The OTG FS has an internal soft pull-up. No GPIO configuration is required */
-
-	/* Configure the OTG FS VBUS sensing GPIO, Power On, and Overcurrent GPIOs */
-
-#ifdef CONFIG_STM32F7_OTGFS
-	stm32_configgpio(GPIO_OTGFS_VBUS);
-#endif
-}
-
-/****************************************************************************
- * Name: stm32_usbsuspend
- *
- * Description:
- *   Board logic must provide the stm32_usbsuspend logic if the USBDEV driver
- *   is used. This function is called whenever the USB enters or leaves
- *   suspend mode. This is an opportunity for the board logic to shutdown
- *   clocks, power, etc. while the USB is suspended.
- *
- ****************************************************************************/
-
+ ************************************************************************************/
 __EXPORT void stm32_usbsuspend(FAR struct usbdev_s *dev, bool resume)
 {
 	uinfo("resume: %d\n", resume);

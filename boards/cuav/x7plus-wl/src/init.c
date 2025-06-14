@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,9 +34,8 @@
 /**
  * @file init.c
  *
- * CUAV X7+ WL (Wheel Loader) Controller Board-specific early startup code.
- * This file implements the board_app_initialize() function that is called
- * early by nsh during startup.
+ * FMU-specific early startup code. This file implements the
+ * board_app_initialize() function that is called early by nsh during startup.
  *
  * Code here is run before the rcS script is invoked; it should start required
  * subsystems and perform board-specific initialisation.
@@ -73,7 +72,6 @@ __END_DECLS
  * Name: board_peripheral_reset
  *
  * Description:
- *   Reset peripheral power rails for wheel loader controller
  *
  ************************************************************************************/
 __EXPORT void board_peripheral_reset(int ms)
@@ -88,7 +86,7 @@ __EXPORT void board_peripheral_reset(int ms)
 
 	/* wait for the peripheral rail to reach GND */
 	usleep(ms * 1000);
-	syslog(LOG_DEBUG, "wheel loader board reset done, %d ms\n", ms);
+	syslog(LOG_DEBUG, "reset done, %d ms\n", ms);
 
 	/* re-enable power */
 
@@ -102,54 +100,42 @@ __EXPORT void board_peripheral_reset(int ms)
  * Name: board_on_reset
  *
  * Description:
- *   Optionally provided function called on entry to board_system_reset
- *   It should perform any house keeping prior to the rest.
+ * Optionally provided function called on entry to board_system_reset
+ * It should perform any house keeping prior to the rest.
  *
- * Input Parameters:
- *   status_register - The value of the reset status register
- *
- * Returned Value:
- *   Status register value is passed through
+ * status - 1 if resetting to boot loader
+ *          0 if just resetting
  *
  ************************************************************************************/
-
-__EXPORT uint32_t board_on_reset(uint32_t status)
+__EXPORT void board_on_reset(int status)
 {
-	/* configure the GPIO pins to outputs and keep them low */
-	const uint32_t gpio[] = {
-		GPIO_GPIO0_OUTPUT,
-		GPIO_GPIO1_OUTPUT,
-		GPIO_GPIO2_OUTPUT,
-		GPIO_GPIO3_OUTPUT,
-		GPIO_GPIO4_OUTPUT,
-		GPIO_GPIO5_OUTPUT,
-	};
+	for (int i = 0; i < DIRECT_PWM_OUTPUT_CHANNELS; ++i) {
+		px4_arch_configgpio(PX4_MAKE_GPIO_INPUT(io_timer_channel_get_as_pwm_input(i)));
+	}
 
-	px4_gpio_init(gpio, arraySize(gpio));
-
-	/* On resets invoked from system (not boot) it is millons of times faster to set
-	 * the GPIO to the inactive state and let the pullup or pulldown pull it to the
-	 * final state. Just change the pins from the active low to inactive high.
+	/*
+	 * On resets invoked from system (not boot) ensure we establish a low
+	 * output state on PWM pins to disarm the ESC and prevent the reset from potentially
+	 * spinning up the motors.
 	 */
-	px4_gpio_init(PX4_GPIO_INIT_LIST);
-
-	return status;
+	if (status >= 0) {
+		up_mdelay(100);
+	}
 }
 
 /************************************************************************************
  * Name: stm32_boardinitialize
  *
  * Description:
- *   All STM32 architectures must provide the following entry point.  This entry
- *   point is called early in the initialization -- after all memory has been
- *   configured and mapped but before any devices have been initialized.
+ *   All STM32 architectures must provide the following entry point.  This entry point
+ *   is called early in the initialization -- after all memory has been configured
+ *   and mapped but before any devices have been initialized.
  *
  ************************************************************************************/
-
 __EXPORT void stm32_boardinitialize(void)
 {
 	/* Reset PWM first thing */
-	board_on_reset(0);
+	board_on_reset(-1);
 
 	/* configure LEDs */
 	board_autoled_initialize();
@@ -158,12 +144,7 @@ __EXPORT void stm32_boardinitialize(void)
 	const uint32_t gpio[] = PX4_GPIO_INIT_LIST;
 	px4_gpio_init(gpio, arraySize(gpio));
 
-	/* configure SPI interfaces */
-	stm32_spiinitialize();
-
-	/* configure USB interfaces */
-	stm32_usbinitialize();
-
+	board_control_spi_sensors_power_configgpio();
 }
 
 /****************************************************************************
@@ -177,81 +158,67 @@ __EXPORT void stm32_boardinitialize(void)
  * Input Parameters:
  *   arg - The boardctl() argument is passed to the board_app_initialize()
  *         implementation without modification.  The argument has no
- *         meaning to NuttX; the meaning of the argument is a contract
- *         between the board-specific initialization logic and the
- *         matching application logic.  The value could be such things as a
- *         mode enumeration value, a set of DIP switch switch settings, a
- *         pointer to configuration data read from a file or serial FLASH,
- *         or whatever you would like to do with it.  Every implementation
- *         should accept zero/NULL as a default configuration.
+ *         meaning to NuttX;
  *
  * Returned Value:
  *   Zero (OK) is returned on success; a negated errno value is returned on
  *   any failure to indicate the nature of the failure.
  *
  ****************************************************************************/
-
 __EXPORT int board_app_initialize(uintptr_t arg)
 {
+	/* Power on Interfaces */
+	VDD_5V_PERIPH_EN(true);
+	VDD_5V_HIPOWER_EN(true);
+	board_control_spi_sensors_power(true, 0xffff);
+	SPEKTRUM_POWER(true);
 
-#if defined(CONFIG_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
-	/* board_configure() */
+	/* Need hrt running before using the ADC */
+	px4_platform_init();
 
-	board_peripheral_reset(10);
+	/* configure SPI interfaces (after we determined the HW version) */
+	stm32_spiinitialize();
 
 	/* configure the DMA allocator */
-
 	if (board_dma_alloc_init() < 0) {
 		syslog(LOG_ERR, "[boot] DMA alloc FAILED\n");
 	}
 
-	/* set up the serial DMA polling */
-	static struct hrt_call serial_dma_call;
-	struct timespec ts;
-
-	/*
-	 * Poll at 1ms intervals for received bytes that have not triggered
-	 * a DMA event.
-	 */
-	ts.tv_sec = 0;
-	ts.tv_nsec = 1000000;
-
-	hrt_call_every(&serial_dma_call,
-		       ts_to_abstime(&ts),
-		       ts_to_abstime(&ts),
-		       (hrt_callout)stm32_serial_dma_poll,
-		       NULL);
-
 	/* initial LED state */
 	drv_led_start();
 	led_off(LED_RED);
-	led_off(LED_GREEN);
+	led_on(LED_GREEN); // Indicate Power.
 	led_off(LED_BLUE);
 
-	int ret = px4_platform_init();
-
-	if (ret < 0) {
-		syslog(LOG_ERR, "[boot] px4_platform_init() failed: %d\n", ret);
+	if (board_hardfault_init(2, true) != 0) {
+		led_on(LED_RED);
 	}
 
 #ifdef CONFIG_MMCSD
-	ret = stm32_sdio_initialize();
+	// Ensure Power is off for > 10 mS
+	usleep(15 * 1000);
+	VDD_3V3_SD_CARD_EN(true);
+	usleep(500 * 1000);
 
-	if (ret != OK) {
-		board_autoled_on(LED_AMBER);
-		syslog(LOG_ERR, "[boot] Failed to initialize MMC/SD: %d\n", ret);
+	/* Mount the SDIO-based MMC/SD block driver */
+	/* First, get an instance of the SDIO interface */
+	struct sdio_dev_s *sdio_dev = sdio_initialize(0); // SDIO_SLOTNO 0 Only one slot
 
-	} else {
-		syslog(LOG_INFO, "[boot] Successfully initialized MMC/SD\n");
+	if (!sdio_dev) {
+		syslog(LOG_ERR, "[boot] Failed to initialize SDIO slot %d\n", 0);
 	}
 
-#endif
+	if (mmcsd_slotinitialize(0, sdio_dev) != OK) {
+		syslog(LOG_ERR, "[boot] Failed to bind SDIO to the MMC/SD driver\n");
+	}
+
+	/* Assume that the SD card is inserted.  What choice do we have? */
+	sdio_mediachange(sdio_dev, true);
+#endif /* CONFIG_MMCSD */
 
 	/* Configure the HW based on the manifest */
 
 	px4_platform_configure();
-
-#endif
 
 	return OK;
 }

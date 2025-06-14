@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,7 +34,7 @@
 /**
  * @file led.c
  *
- * LED backend for CUAV X7+ WL (Wheel Loader) Controller
+ * LED backend.
  */
 
 #include <px4_platform_common/px4_config.h>
@@ -62,50 +62,50 @@ extern void led_off(int led);
 extern void led_toggle(int led);
 __END_DECLS
 
+#  define xlat(p) (p)
+static uint32_t g_ledmap[] = {
+	FMU_LED_AMBER,        // Indexed by LED_SAFETY (defaulted to an output)
+};
+
 __EXPORT void led_init(void)
 {
-	/* Configure LED1 GPIO for output */
-	stm32_configgpio(GPIO_nLED_RED);
-	stm32_configgpio(GPIO_nLED_GREEN);
-	stm32_configgpio(GPIO_nLED_BLUE);
+	/* Configure LED GPIOs for output */
+	for (size_t l = 0; l < (sizeof(g_ledmap) / sizeof(g_ledmap[0])); l++) {
+		if (g_ledmap[l] != 0) {
+			stm32_configgpio(g_ledmap[l]);
+		}
+	}
 }
 
 static void phy_set_led(int led, bool state)
 {
-	/* Pull Down to switch on */
-	bool phy_state = !state;
-
-	switch (led) {
-	case 0:
-		stm32_gpiowrite(GPIO_nLED_RED, phy_state);
-		break;
-
-	case 1:
-		stm32_gpiowrite(GPIO_nLED_GREEN, phy_state);
-		break;
-
-	case 2:
-		stm32_gpiowrite(GPIO_nLED_BLUE, phy_state);
-		break;
+	/* Drive Low to switch on */
+	if (g_ledmap[led] != 0) {
+		stm32_gpiowrite(g_ledmap[led], !state);
 	}
+}
+
+static bool phy_get_led(int led)
+{
+	/* If Low it is on */
+	if (g_ledmap[led] != 0) {
+		return !stm32_gpioread(g_ledmap[led]);
+	}
+
+	return false;
 }
 
 __EXPORT void led_on(int led)
 {
-	phy_set_led(led, true);
+	phy_set_led(xlat(led), true);
 }
 
 __EXPORT void led_off(int led)
 {
-	phy_set_led(led, false);
+	phy_set_led(xlat(led), false);
 }
 
 __EXPORT void led_toggle(int led)
 {
-	static bool led_state[3] = {false, false, false};
-
-	if (led < 3) {
-		led_state[led] = !led_state[led];
-		phy_set_led(led, led_state[led]);
-	}
+	phy_set_led(xlat(led), !phy_get_led(xlat(led)));
 }

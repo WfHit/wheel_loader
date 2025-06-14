@@ -1,11 +1,15 @@
-menuconfig MODULES_WHEEL_LOADER
-	bool "wheel_loader"
+menuconfig MODULES_WHEEL_LOADER_CONTROLLER
+	bool "wheel_loader_controller"
 	default n
 	---help---
-		Enable support for Wheel Loader Controller module.
+		Enable support for wheel loader controller module
 
-		This module provides unified control for wheel loader vehicles,
-		including front and rear wheel control, hydraulic system management,
-		and articulated chassis coordination. It supports manual, semi-automatic,
-		and fully autonomous operation modes.
+if MODULES_WHEEL_LOADER_CONTROLLER
 
+config MODULES_WHEEL_LOADER_CONTROLLER_DEBUG
+	bool "Enable debug output"
+	default n
+	---help---
+		Enable additional debug output for wheel loader controller
+
+endif # MODULES_WHEEL_LOADER_CONTROLLER

@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,155 +31,35 @@
  *
  ****************************************************************************/
 
-/**
- * @file spi.cpp
- *
- * Board-specific SPI functions for CUAV X7+ WL (Wheel Loader) Controller
- */
-
-#include <px4_platform_common/px4_config.h>
-
-#include <stdint.h>
-#include <stdbool.h>
-#include <debug.h>
-#include <unistd.h>
-
+#include <px4_arch/spi_hw_description.h>
+#include <drivers/drv_sensor.h>
 #include <nuttx/spi/spi.h>
-#include <arch/board/board.h>
 
-#include <up_arch.h>
-#include <chip.h>
-#include <stm32_gpio.h>
-#include "board_config.h"
+constexpr px4_spi_bus_t px4_spi_buses[SPI_BUS_MAX_BUS_ITEMS] = {
+	initSPIBus(SPI::Bus::SPI1, {
+		initSPIDevice(DRV_IMU_DEVTYPE_ADIS16470, SPI::CS{GPIO::PortF, GPIO::Pin10}, SPI::DRDY{GPIO::PortE, GPIO::Pin7}),
+		initSPIDevice(DRV_IMU_DEVTYPE_ICM20689, SPI::CS{GPIO::PortG, GPIO::Pin6}, SPI::DRDY{GPIO::PortJ, GPIO::Pin0}),
+	}, {GPIO::PortE, GPIO::Pin3}),
+	initSPIBus(SPI::Bus::SPI2, {
+		initSPIDevice(SPIDEV_FLASH(0), SPI::CS{GPIO::PortF, GPIO::Pin5}),
+		initSPIDevice(DRV_MAG_DEVTYPE_RM3100, SPI::CS{GPIO::PortF, GPIO::Pin2}, SPI::DRDY{GPIO::PortE, GPIO::Pin4}),
+	}),
+	initSPIBus(SPI::Bus::SPI4, {
+		initSPIDevice(DRV_ACC_DEVTYPE_BMI088, SPI::CS{GPIO::PortF, GPIO::Pin3}, SPI::DRDY{GPIO::PortB, GPIO::Pin15}),
+		initSPIDevice(DRV_GYR_DEVTYPE_BMI088, SPI::CS{GPIO::PortF, GPIO::Pin4}, SPI::DRDY{GPIO::PortB, GPIO::Pin14}),
+		initSPIDevice(DRV_IMU_DEVTYPE_ICM42688P, SPI::CS{GPIO::PortA, GPIO::Pin15}, SPI::DRDY{GPIO::PortB, GPIO::Pin15}),
+		initSPIDevice(DRV_BARO_DEVTYPE_MS5611, SPI::CS{GPIO::PortG, GPIO::Pin10}),
+	}),
+	initSPIBusExternal(SPI::Bus::SPI5, {
+		initSPIConfigExternal(SPI::CS{GPIO::PortI, GPIO::Pin4}),
+		initSPIConfigExternal(SPI::CS{GPIO::PortI, GPIO::Pin10}),
+		initSPIConfigExternal(SPI::CS{GPIO::PortI, GPIO::Pin13}),
+	}),
+	initSPIBus(SPI::Bus::SPI6, {
+		initSPIDevice(DRV_IMU_DEVTYPE_ICM20649, SPI::CS{GPIO::PortI, GPIO::Pin12}, SPI::DRDY{GPIO::PortH, GPIO::Pin5}),
+		initSPIDevice(DRV_IMU_DEVTYPE_ICM20689, SPI::CS{GPIO::PortE, GPIO::Pin15}, SPI::DRDY{GPIO::PortH, GPIO::Pin5}),
+		initSPIDevice(DRV_BARO_DEVTYPE_MS5611, SPI::CS{GPIO::PortI, GPIO::Pin8}),
+	}),
+};
 
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: stm32_spiinitialize
- *
- * Description:
- *   Called to configure SPI chip select GPIO pins for the board.
- *
- ****************************************************************************/
-
-__EXPORT void stm32_spiinitialize(void)
-{
-	board_control_spi_sensors_power_configgpio();
-	board_control_spi_sensors_power(true, 0xffff);
-
-#ifdef CONFIG_STM32F7_SPI1
-	stm32_configgpio(GPIO_SPI_CS_GYRO1);
-	stm32_configgpio(GPIO_SPI_CS_GYRO2);
-	stm32_configgpio(GPIO_SPI_CS_ACCEL1);
-	stm32_configgpio(GPIO_SPI_CS_BARO1);
-
-	/* De-activate all peripherals,
-	 * required for some peripheral
-	 * state machines
-	 */
-	stm32_gpiowrite(GPIO_SPI_CS_GYRO1, 1);
-	stm32_gpiowrite(GPIO_SPI_CS_GYRO2, 1);
-	stm32_gpiowrite(GPIO_SPI_CS_ACCEL1, 1);
-	stm32_gpiowrite(GPIO_SPI_CS_BARO1, 1);
-
-	stm32_configgpio(GPIO_GYRO1_DRDY);
-	stm32_configgpio(GPIO_GYRO2_DRDY);
-	stm32_configgpio(GPIO_ACCEL1_DRDY);
-#endif
-
-#ifdef CONFIG_STM32F7_SPI2
-	stm32_configgpio(GPIO_SPI_CS_BARO2);
-
-	/* De-activate all peripherals,
-	 * required for some peripheral
-	 * state machines
-	 */
-	stm32_gpiowrite(GPIO_SPI_CS_BARO2, 1);
-#endif
-}
-
-/****************************************************************************
- * Name: stm32_spi1select and stm32_spi1status
- *
- * Description:
- *   Called by stm32 spi driver on bus 1.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_STM32F7_SPI1
-__EXPORT void stm32_spi1select(FAR struct spi_dev_s *dev, uint32_t devid, bool selected)
-{
-	/* SPI select is active low, so write !selected to select the device */
-
-	switch (devid) {
-	case PX4_SPIDEV_GYRO1:
-		/* Making sure the other peripherals are not selected */
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO2, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_ACCEL1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_BARO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO1, !selected);
-		break;
-
-	case PX4_SPIDEV_GYRO2:
-		/* Making sure the other peripherals are not selected */
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_ACCEL1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_BARO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO2, !selected);
-		break;
-
-	case PX4_SPIDEV_ACCEL1:
-		/* Making sure the other peripherals are not selected */
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO2, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_BARO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_ACCEL1, !selected);
-		break;
-
-	case PX4_SPIDEV_BARO1:
-		/* Making sure the other peripherals are not selected */
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_GYRO2, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_ACCEL1, 1);
-		stm32_gpiowrite(GPIO_SPI_CS_BARO1, !selected);
-		break;
-
-	default:
-		break;
-	}
-}
-
-__EXPORT uint8_t stm32_spi1status(FAR struct spi_dev_s *dev, uint32_t devid)
-{
-	return SPI_STATUS_PRESENT;
-}
-#endif
-
-/****************************************************************************
- * Name: stm32_spi2select and stm32_spi2status
- *
- * Description:
- *   Called by stm32 spi driver on bus 2.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_STM32F7_SPI2
-__EXPORT void stm32_spi2select(FAR struct spi_dev_s *dev, uint32_t devid, bool selected)
-{
-	switch (devid) {
-	case PX4_SPIDEV_BARO2:
-		stm32_gpiowrite(GPIO_SPI_CS_BARO2, !selected);
-		break;
-
-	default:
-		break;
-	}
-}
-
-__EXPORT uint8_t stm32_spi2status(FAR struct spi_dev_s *dev, uint32_t devid)
-{
-	return SPI_STATUS_PRESENT;
-}
-#endif
+static constexpr bool unused = validateSPIConfig(px4_spi_buses);
