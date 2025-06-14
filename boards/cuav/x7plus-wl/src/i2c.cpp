@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (C) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,36 +31,11 @@
  *
  ****************************************************************************/
 
-/**
- * @file i2c.cpp
- *
- * Board-specific I2C functions for CUAV X7+ WL (Wheel Loader) Controller
- */
+#include <px4_arch/i2c_hw_description.h>
 
-#include <px4_platform_common/px4_config.h>
-
-#include <stdint.h>
-#include <stdbool.h>
-#include <debug.h>
-#include <unistd.h>
-
-#include <nuttx/i2c/i2c_master.h>
-#include <arch/board/board.h>
-#include "board_config.h"
-
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: stm32_i2c_initialize
- *
- * Description:
- *   Called to configure I2C
- *
- ****************************************************************************/
-
-__EXPORT void stm32_i2c_initialize(void)
-{
-	/* Nothing to do here for wheel loader controller */
-}
+constexpr px4_i2c_bus_t px4_i2c_buses[I2C_BUS_MAX_BUS_ITEMS] = {
+	initI2CBusExternal(1),
+	initI2CBusExternal(2),
+	initI2CBusInternal(3),
+	initI2CBusExternal(4),
+};

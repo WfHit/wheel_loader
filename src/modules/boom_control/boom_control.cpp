@@ -281,9 +281,9 @@ void BoomControl::process_boom_command()
 		}
 
 		// Process command based on mode
-		switch (cmd.command_mode) {
+		switch (cmd.control_mode) {
 		case 0: // Position control
-			_target_boom_angle = cmd.target_angle;
+			_target_boom_angle = cmd.lift_angle_cmd;
 
 			// Constrain to limits
 			_target_boom_angle = math::constrain(_target_boom_angle,
@@ -291,7 +291,7 @@ void BoomControl::process_boom_command()
 			                                    _param_boom_max_angle.get());
 
 			// Update trajectory parameters
-			_trajectory_generator.setMaxVelocityZ(cmd.max_velocity);
+			_trajectory_generator.setMaxVelocityZ(cmd.max_lift_velocity);
 			_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get());
 			_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get());
 
@@ -302,7 +302,7 @@ void BoomControl::process_boom_command()
 		{
 			// Direct velocity command - integrate to get position
 			float dt = 0.01f; // Assume 100Hz update rate
-			_target_boom_angle += cmd.target_angle * dt; // target_angle used as velocity
+			_target_boom_angle += cmd.lift_velocity_cmd * dt; // lift_velocity_cmd used as velocity
 
 			// Constrain to limits
 			_target_boom_angle = math::constrain(_target_boom_angle,
@@ -318,7 +318,7 @@ void BoomControl::process_boom_command()
 			break;
 
 		default:
-			PX4_WARN("Unknown boom command mode: %d", cmd.command_mode);
+			PX4_WARN("Unknown boom command mode: %d", cmd.control_mode);
 			break;
 		}
 	}

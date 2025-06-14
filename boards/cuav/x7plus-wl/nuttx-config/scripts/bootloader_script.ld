@@ -1,5 +1,5 @@
 /****************************************************************************
- * scripts/bootloader_script.ld
+ * scripts/script.ld
  *
  *   Copyright (C) 2020 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
@@ -61,7 +61,7 @@
  *
  * There's a switch on board, the BOOT0 pin is at ground so by default,
  * the STM32 will boot to address 0x0800:0000 in FLASH unless the switch is
- * depressed, then the boot will be from 0x1FF0:0000
+ * drepresed, then the boot will be from 0x1FF0:0000
  *
  * The STM32H743ZI also has 1024Kb of data SRAM.
  * SRAM is split up into several blocks and into three power domains:
@@ -109,7 +109,7 @@
 
 MEMORY
 {
-	FLASH     (rx) : ORIGIN = 0x08000000, LENGTH = 128K
+	FLASH     (rx) : ORIGIN = 0x08000000, LENGTH = 2048K
 	DTCM1    (rwx) : ORIGIN = 0x20000000, LENGTH =   64K
 	DTCM2    (rwx) : ORIGIN = 0x20010000, LENGTH =   64K
 

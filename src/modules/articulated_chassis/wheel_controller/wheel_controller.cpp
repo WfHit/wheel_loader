@@ -11,10 +11,11 @@ WheelController::WheelController(uint8_t instance, bool is_front) :
     _control_latency_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": latency")),
     _encoder_timeout_perf(perf_alloc(PC_COUNT, MODULE_NAME": enc_timeout"))
 {
-    // Initialize module status (0=front_wheel, 1=rear_wheel based on ModuleStatus.msg)
-    _status.module_id = _is_front_wheel ? 0 : 1;
-    _status.healthy = true;
-    _status.initialized = false;
+    // Initialize wheel status
+    _wheel_status.wheel_id = _instance;
+    _wheel_status.is_front_wheel = _is_front_wheel;
+    _wheel_status.controller_healthy = true;
+    _wheel_status.armed = false;
 }
 
 WheelController::~WheelController()
@@ -38,8 +39,8 @@ bool WheelController::init()
     // Schedule at 100Hz (matching existing rear wheel controller)
     ScheduleOnInterval(CONTROL_INTERVAL_US);
 
-    _status.initialized = true;
-    _status.healthy = true;
+    _wheel_status.controller_healthy = true;
+    _wheel_status.armed = true;
     _performance.last_health_check = hrt_absolute_time();
 
     return true;
@@ -353,60 +354,59 @@ float WheelController::saturate_pwm(float pwm_value)
 
 void WheelController::update_controller_status()
 {
-    // Update module status for health reporting
-    _status.timestamp = hrt_absolute_time();
-    _status.healthy = _controller_healthy && !_emergency_stop;
-    _status.armed = _armed;
-    _status.initialized = true;
+    // Update wheel status for health reporting
+    _wheel_status.timestamp = hrt_absolute_time();
+    _wheel_status.controller_healthy = _controller_healthy && !_emergency_stop;
+    _wheel_status.armed = _armed;
+    _wheel_status.emergency_stop_active = _emergency_stop;
 
     // Calculate health score
     calculate_health_score();
+    _wheel_status.health_score = _health_score;
 
-    // Update status fields
-    _status.cpu_usage_percent = 5.0f; // Placeholder - would come from actual measurement
-    _status.memory_usage_bytes = 1024.0f; // Placeholder
-    _status.temperature_c = 25.0f; // Would come from actual sensor
-    _status.voltage_v = 12.0f; // Would come from actual measurement
-    _status.current_draw_a = _motor_current;
+    // Update speed control status
+    _wheel_status.current_speed_rpm = _current_speed_rpm;
+    _wheel_status.target_speed_rpm = _target_speed_rpm;
+    _wheel_status.speed_error_rpm = _target_speed_rpm - _current_speed_rpm;
+    _wheel_status.pwm_output = _pwm_output;
 
-    // Update counters
-    _status.cycle_count++;
-    _status.last_update_time = hrt_absolute_time();
+    // Update encoder data
+    _wheel_status.encoder_count = _encoder_count;
+    _wheel_status.encoder_delta = _encoder_count - _encoder_count_prev;
+    _wheel_status.encoder_speed_rpm = _current_speed_rpm;
+    _wheel_status.encoder_healthy = (hrt_absolute_time() - _last_encoder_time) < WATCHDOG_TIMEOUT_US;
 
-    // Set performance level based on health
-    if (_health_score > 90.0f) {
-        _status.performance_level = 2; // Optimal
-    } else if (_health_score > 70.0f) {
-        _status.performance_level = 1; // Normal
-    } else {
-        _status.performance_level = 0; // Degraded
-    }
+    // Update traction control status
+    _wheel_status.slip_detected = _slip_detected;
+    _wheel_status.slip_ratio = _slip_ratio;
+    _wheel_status.traction_limit_factor = _traction_limit_factor;
+    _wheel_status.slip_events_count = _performance.slip_events;
 
-    _status.control_quality = 1.0f - (_performance.speed_error_rms / 100.0f);
-    _status.response_time_ms = 10.0f; // 100Hz = 10ms
+    // Update motor status
+    _wheel_status.motor_current_amps = _motor_current;
+    _wheel_status.motor_temperature_c = 25.0f; // Would come from actual sensor
+    _wheel_status.supply_voltage_v = 12.0f; // Would come from actual measurement
+    _wheel_status.current_limit_active = _motor_current > _current_limit.get();
 
-    // Set emergency stop status
-    _status.emergency_stop_active = _emergency_stop;
+    // Update performance metrics
+    _wheel_status.speed_error_rms = _performance.speed_error_rms;
+    _wheel_status.control_effort_avg = _performance.control_effort_avg;
+    _wheel_status.missed_updates_count = _performance.missed_updates;
+    _wheel_status.safety_violations_count = _performance.safety_violations;
+    _wheel_status.max_speed_error_rpm = _performance.max_speed_error;
 
-    // Set failure mode
-    if (_performance.encoder_errors > 0) {
-        _status.failure_mode = 1; // Sensor failure
-    } else if (_motor_current > _current_limit.get()) {
-        _status.failure_mode = 2; // Actuator failure
-    } else if ((hrt_absolute_time() - _last_command_time) > WATCHDOG_TIMEOUT_US) {
-        _status.failure_mode = 3; // Communication failure
-    } else {
-        _status.failure_mode = 0; // No failure
-    }
+    // Update control configuration
+    _wheel_status.control_mode = 0; // Speed control mode
+    _wheel_status.traction_control_enabled = _traction_control_enable.get();
+    _wheel_status.speed_limit_rpm = _max_wheel_speed.get();
+    _wheel_status.last_command_time = _last_command_time;
 
-    // Set diagnostic flags
-    _status.diagnostic_flags = 0;
-    if (_emergency_stop) _status.diagnostic_flags |= (1 << 0);
-    if (_slip_detected) _status.diagnostic_flags |= (1 << 1);
-    if (_performance.encoder_errors > 0) _status.diagnostic_flags |= (1 << 2);
-    if (_motor_current > _current_limit.get()) _status.diagnostic_flags |= (1 << 3);
+    // Additional encoder health check
+    _wheel_status.encoder_healthy = (_performance.encoder_errors == 0) &&
+                                   ((hrt_absolute_time() - _last_encoder_time) < WATCHDOG_TIMEOUT_US);
 
-    _module_status_pub.publish(_status);
+    // Publish wheel status
+    _wheel_status_pub.publish(_wheel_status);
 }
 
 void WheelController::update_performance_metrics()

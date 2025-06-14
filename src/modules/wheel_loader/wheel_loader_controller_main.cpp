@@ -31,29 +31,11 @@
  *
  ****************************************************************************/
 
-/**
- * @file wheel_loader_main.cpp
- * Unified wheel loader controller main entry point.
- *
- * @author PX4 Development Team
- */
-
 #include "wheel_loader_controller.hpp"
 
-extern "C" __EXPORT int wheel_loader_main(int argc, char *argv[]);
+extern "C" __EXPORT int wheel_loader_controller_main(int argc, char *argv[]);
 
-/**
- * @brief Main entry point for the wheel loader controller module
- *
- * Usage examples:
- * $ wheel_loader start
- * $ wheel_loader stop
- * $ wheel_loader status
- * $ wheel_loader arm
- * $ wheel_loader disarm
- */
-
-int wheel_loader_main(int argc, char *argv[])
+int wheel_loader_controller_main(int argc, char *argv[])
 {
-    return WheelLoaderController::main(argc, argv);
+	return WheelLoaderController::main(argc, argv);
 }

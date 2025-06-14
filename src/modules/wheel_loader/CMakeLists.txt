@@ -30,14 +30,16 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+
 px4_add_module(
-	MODULE modules__wheel_loader
-	MAIN wheel_loader
-	EXTERNAL
+	MODULE modules__wheel_loader_controller
+	MAIN wheel_loader_controller
+	STACK_MAIN 2048
 	SRCS
 		wheel_loader_controller.cpp
-		wheel_loader_main.cpp
+		wheel_loader_controller_main.cpp
+		# DO NOT include wheel_loader_controller_params.c here
 	DEPENDS
-		PID
 		mathlib
+		perf
 	)
