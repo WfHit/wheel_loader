@@ -3,6 +3,7 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <drivers/drv_hrt.h>
 
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionCallback.hpp>
@@ -58,6 +59,7 @@ private:
 
 	// Node information
 	uint8_t _sequence_number{0};
+	uint16_t _tx_sequence{0};
 
 	// Subscriptions for outgoing topics
 	uORB::Subscription _wheel_loader_command_sub{ORB_ID(wheel_loader_command)};
@@ -67,7 +69,8 @@ private:
 	uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
 	uORB::Subscription _wheel_speeds_setpoint_sub{ORB_ID(wheel_speeds_setpoint)};
 	uORB::Subscription _steering_command_sub{ORB_ID(steering_command)};
-	uORB::Subscription _actuator_outputs_sub{ORB_ID(actuator_outputs)};
+	uORB::Subscription _actuator_outputs_front_sub{ORB_ID(actuator_outputs), 0};
+	uORB::Subscription _actuator_outputs_rear_sub{ORB_ID(actuator_outputs), 1};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
 	// Publications for incoming topics
@@ -79,12 +82,23 @@ private:
 	uORB::Publication<wheel_encoders_s> _wheel_encoders_pub{ORB_ID(wheel_encoders)};
 	uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};
 
-	// Statistics
+	// Statistics and heartbeat tracking
+	struct {
+		uint32_t tx_messages{0};
+		uint32_t tx_bytes{0};
+		uint32_t tx_errors{0};
+		uint32_t rx_messages{0};
+		uint32_t rx_bytes{0};
+		uint32_t rx_errors{0};
+	} _stats;
+	
 	uint32_t _tx_count{0};
 	uint32_t _rx_count{0};
 	uint32_t _tx_errors{0};
 	uint32_t _rx_errors{0};
 	hrt_abstime _last_heartbeat{0};
+	hrt_abstime _last_front_heartbeat{0};
+	hrt_abstime _last_rear_heartbeat{0};
 
 	/**
 	 * Initialize UART connection
