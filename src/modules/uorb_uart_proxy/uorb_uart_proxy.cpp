@@ -146,7 +146,19 @@ void UorbUartProxy::processIncomingMessages()
 
 		// Process based on message type
 		switch (static_cast<UartMessageId>(frame.header.msg_id)) {
-		case UartMessageId::WHEEL_LOADER_SETPOINT: {
+		case UartMessageId::WHEEL_LOADER_COMMAND: {
+			if (frame.header.length == sizeof(wheel_loader_command_s)) {
+				wheel_loader_command_s command;
+				memcpy(&command, frame.payload, sizeof(command));
+				_wheel_loader_command_pub.publish(command);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid wheel loader command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::WHEEL_LOADER_SETPOINT: {  // DEPRECATED - backward compatibility
 			if (frame.header.length == sizeof(wheel_loader_setpoint_s)) {
 				wheel_loader_setpoint_s setpoint;
 				memcpy(&setpoint, frame.payload, sizeof(setpoint));
@@ -154,6 +166,66 @@ void UorbUartProxy::processIncomingMessages()
 			} else {
 				_stats.rx_errors++;
 				PX4_WARN("Invalid wheel loader setpoint length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::BOOM_COMMAND: {
+			if (frame.header.length == sizeof(boom_command_s)) {
+				boom_command_s command;
+				memcpy(&command, frame.payload, sizeof(command));
+				_boom_command_pub.publish(command);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid boom command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::BUCKET_COMMAND: {
+			if (frame.header.length == sizeof(bucket_command_s)) {
+				bucket_command_s command;
+				memcpy(&command, frame.payload, sizeof(command));
+				_bucket_command_pub.publish(command);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid bucket command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::TRACTION_CONTROL: {
+			if (frame.header.length == sizeof(traction_control_s)) {
+				traction_control_s command;
+				memcpy(&command, frame.payload, sizeof(command));
+				_traction_control_pub.publish(command);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid traction control length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::WHEEL_SPEEDS_SETPOINT: {
+			if (frame.header.length == sizeof(wheel_speeds_setpoint_s)) {
+				wheel_speeds_setpoint_s setpoint;
+				memcpy(&setpoint, frame.payload, sizeof(setpoint));
+				_wheel_speeds_setpoint_pub.publish(setpoint);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid wheel speeds setpoint length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case UartMessageId::STEERING_COMMAND: {
+			if (frame.header.length == sizeof(steering_command_s)) {
+				steering_command_s command;
+				memcpy(&command, frame.payload, sizeof(command));
+				_steering_command_pub.publish(command);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid steering command length: %d", frame.header.length);
 			}
 			break;
 		}
@@ -241,6 +313,116 @@ void UorbUartProxy::processOutgoingMessages()
 		} else {
 			_stats.tx_errors++;
 			PX4_WARN("Failed to send wheel loader status");
+		}
+	}
+
+	// Send boom status
+	boom_status_s boom_status;
+	if (_boom_status_sub.update(&boom_status)) {
+		UartFrame frame;
+		frame.header.sync = UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::BOOM_STATUS);
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(boom_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &boom_status, sizeof(boom_status));
+
+		if (_uart_transport->sendFrame(frame)) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send boom status");
+		}
+	}
+
+	// Send bucket status
+	bucket_status_s bucket_status;
+	if (_bucket_status_sub.update(&bucket_status)) {
+		UartFrame frame;
+		frame.header.sync = UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::BUCKET_STATUS);
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(bucket_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &bucket_status, sizeof(bucket_status));
+
+		if (_uart_transport->sendFrame(frame)) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send bucket status");
+		}
+	}
+
+	// Send traction control status
+	traction_control_status_s traction_status;
+	if (_traction_control_status_sub.update(&traction_status)) {
+		UartFrame frame;
+		frame.header.sync = UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::TRACTION_CONTROL_STATUS);
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(traction_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &traction_status, sizeof(traction_status));
+
+		if (_uart_transport->sendFrame(frame)) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send traction control status");
+		}
+	}
+
+	// Send wheel encoders
+	wheel_encoders_s encoders;
+	if (_wheel_encoders_sub.update(&encoders)) {
+		UartFrame frame;
+		frame.header.sync = UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::WHEEL_ENCODERS);
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(encoders);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &encoders, sizeof(encoders));
+
+		if (_uart_transport->sendFrame(frame)) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send wheel encoders");
+		}
+	}
+
+	// Send steering status
+	steering_status_s steering_status;
+	if (_steering_status_sub.update(&steering_status)) {
+		UartFrame frame;
+		frame.header.sync = UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::STEERING_STATUS);
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(steering_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &steering_status, sizeof(steering_status));
+
+		if (_uart_transport->sendFrame(frame)) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send steering status");
 		}
 	}
 }

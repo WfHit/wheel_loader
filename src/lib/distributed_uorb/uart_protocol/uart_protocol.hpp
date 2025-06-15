@@ -21,31 +21,55 @@ static constexpr uint8_t BOARD_ID_NXT_REAR = 0x02;
 // Message IDs for wheel loader system
 enum class UartMessageId : uint8_t {
 	HEARTBEAT = 0x01,
-	WHEEL_LOADER_SETPOINT = 0x10,
+	// Replace deprecated WHEEL_LOADER_SETPOINT with WHEEL_LOADER_COMMAND
+	WHEEL_LOADER_COMMAND = 0x13,
 	WHEEL_LOADER_STATUS_FRONT = 0x11,
 	WHEEL_LOADER_STATUS_REAR = 0x12,
+	
+	// Hydraulic Control Messages (High Priority)
+	BOOM_COMMAND = 0x14,
+	BOOM_STATUS = 0x15,
+	BUCKET_COMMAND = 0x16,
+	BUCKET_STATUS = 0x17,
+	
+	// Drivetrain and Mobility (High Priority)
 	ACTUATOR_OUTPUTS_FRONT = 0x20,
 	ACTUATOR_OUTPUTS_REAR = 0x21,
-	VEHICLE_STATUS = 0x30
+	WHEEL_SPEEDS_SETPOINT = 0x22,
+	WHEEL_ENCODERS = 0x23,
+	STEERING_COMMAND = 0x24,
+	STEERING_STATUS = 0x25,
+	
+	// Traction and Stability Control (High Priority)
+	TRACTION_CONTROL = 0x26,
+	TRACTION_CONTROL_STATUS = 0x27,
+	PREDICTIVE_TRACTION = 0x28,
+	
+	// Load Management (High Priority)
+	LOAD_SENSING = 0x29,
+	LOAD_AWARE_TORQUE = 0x2A,
+	
+	// System Status (Existing)
+	VEHICLE_STATUS = 0x30,
+	
+	// System Monitoring (Medium Priority)
+	MODULE_STATUS = 0x42,
+	SYSTEM_SAFETY = 0x43,
+	LIMIT_SENSOR = 0x44,
+	
+	// Advanced Control (Medium Priority)
+	WHEEL_DRIVE_COMMAND = 0x45,
+	SLIP_ESTIMATION = 0x46,
+	
+	// Task Execution and Autonomy (Medium Priority)
+	TASK_EXECUTION_COMMAND = 0x40,
+	TERRAIN_ADAPTATION = 0x41,
+	
+	// Deprecated - kept for backward compatibility during transition
+	WHEEL_LOADER_SETPOINT = 0x10  // DEPRECATED - use WHEEL_LOADER_COMMAND instead
 };
 
-// Message types (legacy - kept for compatibility)
-enum class MessageType : uint8_t {
-	DATA = 0x01,
-	SUBSCRIBE = 0x02,
-	ADVERTISE = 0x03,
-	HEARTBEAT = 0x04,
-	TIME_SYNC = 0x05,
-	ACK = 0x06,
-	NACK = 0x07
-};
 
-// Node identifiers (legacy - kept for compatibility)
-enum class NodeId : uint8_t {
-	X7_MAIN = 0x00,
-	NXT_FRONT = 0x01,
-	NXT_REAR = 0x02
-};
 
 // UART frame header structure
 struct UartFrameHeader {
@@ -87,56 +111,9 @@ struct UartFrame {
 	}
 } __attribute__((packed));
 
-// Legacy UART frame structure (kept for compatibility)
-struct UARTFrame {
-	uint8_t sync[2];
-	uint8_t version;
-	uint8_t msg_type;
-	uint16_t topic_id;
-	uint16_t payload_len;
-	uint32_t timestamp;
-	uint8_t sequence;
-	uint8_t source_node;
-	uint8_t payload[MAX_PAYLOAD_SIZE];
-	uint16_t crc16;
 
-	UARTFrame()
-	{
-		sync[0] = SYNC_BYTE_1;
-		sync[1] = SYNC_BYTE_2;
-		version = PROTOCOL_VERSION;
-		msg_type = 0;
-		topic_id = 0;
-		payload_len = 0;
-		timestamp = 0;
-		sequence = 0;
-		source_node = 0;
-		crc16 = 0;
-		memset(payload, 0, MAX_PAYLOAD_SIZE);
-	}
 
-	bool isValid() const
-	{
-		return sync[0] == SYNC_BYTE_1 &&
-		       sync[1] == SYNC_BYTE_2 &&
-		       version == PROTOCOL_VERSION &&
-		       payload_len <= MAX_PAYLOAD_SIZE;
-	}
 
-	size_t totalSize() const
-	{
-		return sizeof(UARTFrame) - MAX_PAYLOAD_SIZE + payload_len;
-	}
-};
-
-// Topic registry entry
-struct TopicInfo {
-	uint16_t id;
-	const char *name;
-	size_t size;
-	NodeId publisher;
-	NodeId subscribers[3];
-};
 
 // CRC16 calculation
 uint16_t calculateCRC16(const uint8_t *data, size_t len);
