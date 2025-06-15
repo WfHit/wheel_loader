@@ -61,6 +61,7 @@
 #include <lib/distributed_uorb/topic_registry/topic_registry.hpp>
 
 using namespace time_literals;
+using namespace distributed_uorb;
 
 /**
  * uORB UART Proxy module for NXT boards
