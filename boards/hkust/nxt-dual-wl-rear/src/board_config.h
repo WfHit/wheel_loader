@@ -117,10 +117,12 @@
  * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
  * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
  */
-#define DIRECT_PWM_OUTPUT_CHANNELS   4
+#define DIRECT_PWM_OUTPUT_CHANNELS   2
 
 #define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel4}, {GPIO::PortE, GPIO::Pin14}),  // PWM4 - DRV8701 DIR2 (GPIO)
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel1}, {GPIO::PortE, GPIO::Pin9}),   // PWM1 - DRV8701 DIR1 (GPIO)
 
 /* Spare GPIO */
 #define GPIO_PA4                       	/* PA4 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTA|GPIO_PIN4)
@@ -160,20 +162,20 @@
 
 /* AS5600 I2C Configuration */
 /* I2C4 Interface for AS5600 Magnetic Rotary Encoder */
-#define AS5600_I2C_BUS                     4           /* I2C4 bus */
-#define AS5600_I2C_SCL_GPIO                /* PD12 */ (GPIO_I2C4_SCL)
-#define AS5600_I2C_SDA_GPIO                /* PD13 */ (GPIO_I2C4_SDA)
-#define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
+// #define AS5600_I2C_BUS                     4           /* I2C4 bus */
+// #define AS5600_I2C_SCL_GPIO                /* PD12 */ (GPIO_I2C4_SCL)
+// #define AS5600_I2C_SDA_GPIO                /* PD13 */ (GPIO_I2C4_SDA)
+// #define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
 
 /* UART1 Interface for Proxy Client */
-#define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
-#define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
-#define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
+// #define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
+// #define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
+// #define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
 
 /* Interface Support */
-#define BOARD_HAS_AS5600_I2C               1
-#define BOARD_AS5600_I2C_ENABLED           1
-#define BOARD_PROXY_CLIENT_UART_ENABLED    1
+// #define BOARD_HAS_AS5600_I2C               1
+// #define BOARD_AS5600_I2C_ENABLED           1
+// #define BOARD_PROXY_CLIENT_UART_ENABLED    1
 
 /* Quadrature Encoder GPIO Pins for Motor Encoder */
 #define QENCODER_A_GPIO                    /* PC6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN6)
@@ -184,7 +186,7 @@
 #define QENCODER_B_GPIO_RAW                (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
 
 /* ST3125 Servo Serial Port */
-#define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
+// #define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
 
 // #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
 // #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
@@ -249,10 +251,6 @@
 		GPIO_PC1, \
 		QENCODER_A_GPIO, \
 		QENCODER_B_GPIO, \
-		AS5600_I2C_SCL_GPIO, \
-		AS5600_I2C_SDA_GPIO, \
-		PROXY_CLIENT_UART_TX_GPIO, \
-		PROXY_CLIENT_UART_RX_GPIO, \
 		DRV8701_DIR1_GPIO, \
 		DRV8701_DIR2_GPIO, \
 		DRV8701_ENABLE_GPIO, \

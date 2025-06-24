@@ -33,190 +33,84 @@
 
 /**
  * @file AS5600.cpp
- *
- * Driver for the AS5600 magnetic rotary position sensor over I2C.
- *
  * @author PX4 Development Team
+ *
+ * Driver for the AS5600 magnetic rotary position sensor connected via I2C.
  */
 
-#include "AS5600.hpp"
-
-#include <px4_platform_common/getopt.h>
+#include "AS5600.h"
 #include <px4_platform_common/module.h>
+#include <drivers/drv_sensor.h>
+#include <cstring>
 
 AS5600::AS5600(const I2CSPIDriverConfig &config) :
 	I2C(config),
-	ModuleParams(nullptr),
-	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	_sample_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": read")),
-	_comms_errors(perf_alloc(PC_COUNT, MODULE_NAME": comm_err"))
+	I2CSPIDriver(config),
+	_cycle_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": single-sample")),
+	_comms_errors(perf_alloc(PC_COUNT, MODULE_NAME": comms errors"))
 {
+	_sensor_mag_encoder.device_id = this->get_device_id();
 }
 
 AS5600::~AS5600()
 {
-	stop();
-
-	perf_free(_sample_perf);
+	ScheduleClear();
+	perf_free(_cycle_perf);
 	perf_free(_comms_errors);
 }
 
-int AS5600::init()
+void AS5600::exit_and_cleanup()
 {
-	int ret = I2C::init();
-
-	if (ret != PX4_OK) {
-		DEVICE_DEBUG("I2C::init failed (%i)", ret);
-		return ret;
-	}
-
-	if (ret == PX4_OK) {
-		_device_id = get_device_id();
-		start();
-	}
-
-	return ret;
-}
-
-int AS5600::probe()
-{
-	uint8_t status = 0;
-
-	// Try to read the status register to verify device presence
-	int ret = read_registers(AS5600_STATUS_REG, &status, 1);
-
-	if (ret != PX4_OK) {
-		DEVICE_DEBUG("probe failed");
-		return ret;
-	}
-
-	return PX4_OK;
-}
-
-void AS5600::start()
-{
-	// Schedule the work item to run at 50Hz
-	ScheduleOnInterval(20_ms);
-}
-
-void AS5600::stop()
-{
-	ScheduleClear();
+	I2CSPIDriverBase::exit_and_cleanup();
 }
 
 void AS5600::RunImpl()
 {
-	perf_begin(_sample_perf);
-
-	// Read sensor data
-	bool success = read_angle_data() && read_status_data() && read_magnitude_data();
-
-	if (!success) {
-		perf_count(_comms_errors);
-		_error_count++;
-		perf_end(_sample_perf);
+	if (should_exit()) {
+		PX4_INFO("stopping");
 		return;
 	}
 
-	// Publish sensor data
-	sensor_mag_encoder_s report{};
+	perf_begin(_cycle_perf);
 
-	const hrt_abstime timestamp_sample = hrt_absolute_time();
-	report.timestamp_sample = timestamp_sample;
-	report.device_id = _device_id;
+	const bool angle_ready = readAngle();
+	const bool status_ready = readStatus();
+	const bool magnitude_ready = readMagnitude();
 
-	// Convert raw angle to radians
-	report.raw_angle = static_cast<float>(_raw_angle);
-	report.angle = static_cast<float>(_raw_angle) * AS5600_ANGLE_TO_RAD;
+	if (angle_ready && status_ready && magnitude_ready) {
+		// All sensor data successfully read
+		if (_ready_counter == 0) { PX4_INFO("AS5600: reported ready"); }
 
-	// Apply offset parameter if configured
-	if (_param_as5600_offset.get() != 0.0f) {
-		report.angle += _param_as5600_offset.get();
+		if (_ready_counter < MAX_READY_COUNTER) { _ready_counter++; }		// Prepare sensor report
+		const hrt_abstime timestamp_sample = hrt_absolute_time();
+		_sensor_mag_encoder.timestamp_sample = timestamp_sample;
+		_sensor_mag_encoder.raw_angle = _raw_angle;
+		_sensor_mag_encoder.angle = _raw_angle * AS5600_ANGLE_TO_RAD;
 
-		// Normalize to [0, 2*PI)
-		while (report.angle < 0.0f) {
-			report.angle += 2.0f * M_PI_F;
-		}
-		while (report.angle >= 2.0f * M_PI_F) {
-			report.angle -= 2.0f * M_PI_F;
-		}
+		// Status information
+		_sensor_mag_encoder.magnet_detected = (_status & AS5600_STATUS_MAGNET_DETECTED) ? 1 : 0;
+		_sensor_mag_encoder.magnet_too_strong = (_status & AS5600_STATUS_MAGNET_HIGH) ? 1 : 0;
+		_sensor_mag_encoder.magnet_too_weak = (_status & AS5600_STATUS_MAGNET_LOW) ? 1 : 0;
+
+		// Additional sensor data
+		_sensor_mag_encoder.magnitude = _magnitude;
+		_sensor_mag_encoder.automatic_gain_control = _agc;
+		_sensor_mag_encoder.error_count = perf_event_count(_comms_errors);
+
+		_sensor_mag_encoder.timestamp = hrt_absolute_time();
+
+		_sensor_mag_encoder_pub.publish(_sensor_mag_encoder);
+
+	} else {
+		// Communication error
+		if (_ready_counter == 1) { PX4_ERR("AS5600: device lost"); }
+
+		if (_ready_counter > 0) { _ready_counter--; }
+
+		perf_count(_comms_errors);
 	}
 
-	// Status information
-	report.magnet_detected = (_status & AS5600_STATUS_MAGNET_DETECTED) ? 1 : 0;
-	report.magnet_too_strong = (_status & AS5600_STATUS_MAGNET_HIGH) ? 1 : 0;
-	report.magnet_too_weak = (_status & AS5600_STATUS_MAGNET_LOW) ? 1 : 0;
-
-	// Magnitude and AGC
-	report.magnitude = static_cast<float>(_magnitude);
-	report.automatic_gain_control = static_cast<float>(_agc);
-
-	report.error_count = _error_count;
-	report.timestamp = hrt_absolute_time();
-
-	_sensor_mag_encoder_pub.publish(report);
-
-	perf_end(_sample_perf);
-}
-
-bool AS5600::read_angle_data()
-{
-	uint8_t data[2];
-
-	if (read_registers(AS5600_RAW_ANGLE_H_REG, data, 2) != PX4_OK) {
-		return false;
-	}
-
-	_raw_angle = (static_cast<uint16_t>(data[0]) << 8) | data[1];
-	return true;
-}
-
-bool AS5600::read_status_data()
-{
-	return read_registers(AS5600_STATUS_REG, &_status, 1) == PX4_OK;
-}
-
-bool AS5600::read_magnitude_data()
-{
-	uint8_t data[3];
-
-	// Read AGC and Magnitude registers
-	if (read_registers(AS5600_AGC_REG, data, 3) != PX4_OK) {
-		return false;
-	}
-
-	_agc = data[0];
-	_magnitude = (static_cast<uint16_t>(data[1]) << 8) | data[2];
-	return true;
-}
-
-int AS5600::read_registers(uint8_t reg, uint8_t *data, uint8_t len)
-{
-	return transfer(&reg, 1, data, len);
-}
-
-int AS5600::write_register(uint8_t reg, uint8_t value)
-{
-	uint8_t cmd[2] = {reg, value};
-	return transfer(cmd, sizeof(cmd), nullptr, 0);
-}
-
-void AS5600::print_status()
-{
-	I2CSPIDriverBase::print_status();
-
-	perf_print_counter(_sample_perf);
-	perf_print_counter(_comms_errors);
-
-	printf("device_id: 0x%08X\n", _device_id);
-	printf("error_count: %u\n", _error_count);
-	printf("raw_angle: %u\n", _raw_angle);
-	printf("magnitude: %u\n", _magnitude);
-	printf("agc: %u\n", _agc);
-	printf("status: 0x%02X\n", _status);
-	printf("magnet_detected: %s\n", (_status & AS5600_STATUS_MAGNET_DETECTED) ? "yes" : "no");
-	printf("magnet_too_strong: %s\n", (_status & AS5600_STATUS_MAGNET_HIGH) ? "yes" : "no");
-	printf("magnet_too_weak: %s\n", (_status & AS5600_STATUS_MAGNET_LOW) ? "yes" : "no");
+	perf_end(_cycle_perf);
 }
 
 void AS5600::print_usage()
@@ -227,36 +121,116 @@ void AS5600::print_usage()
 
 Driver for the AS5600 magnetic rotary position sensor connected via I2C.
 
-The sensor provides 12-bit angular position measurements and is commonly used for
-measuring boom angles, gimbal positions, or other rotary applications.
+The AS5600 is a 12-bit contactless magnetic rotary position sensor with analog and PWM outputs.
+This driver provides angle measurements in radians and status information about magnet detection.
 
-### Examples
-
-Attempt to start driver on any bus (start on bus where first sensor found).
-$ as5600 start
-
-Start driver on specified bus
-$ as5600 start -X
-
-Stop driver
-$ as5600 stop
-
-Test driver (start if not running)
-$ as5600 test
-
-Reset driver
-$ as5600 reset
-
-Print driver information
-$ as5600 info
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("as5600", "driver");
-	PRINT_MODULE_USAGE_SUBCATEGORY("mag_encoder");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAMS_I2C_SPI_DRIVER(true, false);
-	PRINT_MODULE_USAGE_COMMAND("stop");
-	PRINT_MODULE_USAGE_COMMAND("test");
-	PRINT_MODULE_USAGE_COMMAND("reset");
-	PRINT_MODULE_USAGE_COMMAND("info");
+	PRINT_MODULE_USAGE_PARAMS_I2C_ADDRESS(0x36);
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+}
+
+void AS5600::print_status()
+{
+	I2CSPIDriverBase::print_status();
+	perf_print_counter(_cycle_perf);
+	perf_print_counter(_comms_errors);
+
+	double angle_deg = (_raw_angle * 360.0) / 4095.0;
+	PX4_INFO("Angle: %.2f deg (raw: %u)", angle_deg, _raw_angle);
+	PX4_INFO("Magnitude: %u", _magnitude);
+	PX4_INFO("AGC: %u", _agc);
+	PX4_INFO("Status: 0x%02x", _status);
+
+	if (_status & AS5600_STATUS_MAGNET_DETECTED) {
+		PX4_INFO("Magnet: DETECTED");
+
+		if (_status & AS5600_STATUS_MAGNET_HIGH) {
+			PX4_WARN("Magnet: TOO STRONG");
+		} else if (_status & AS5600_STATUS_MAGNET_LOW) {
+			PX4_WARN("Magnet: TOO WEAK");
+		} else {
+			PX4_INFO("Magnet: OK");
+		}
+	} else {
+		PX4_WARN("Magnet: NOT DETECTED");
+	}
+}
+
+int AS5600::init()
+{
+	int ret = I2C::init();
+
+	if (ret != PX4_OK) {
+		return ret;
+	}
+
+	ScheduleOnInterval(SAMPLE_INTERVAL, SAMPLE_INTERVAL);
+
+	return PX4_OK;
+}
+
+int AS5600::probe()
+{
+	// Try to read the status register to verify the device is present
+	uint8_t status;
+	int ret = readReg(AS5600_STATUS_REG, &status, 1);
+
+	if (ret != PX4_OK) {
+		DEVICE_DEBUG("AS5600 not found");
+		return ret;
+	}
+
+	return PX4_OK;
+}
+
+bool AS5600::readAngle()
+{
+	uint8_t data[2];
+	int ret = readReg(AS5600_RAW_ANGLE_H_REG, data, 2);
+
+	if (ret == PX4_OK) {
+		_raw_angle = (data[0] << 8) | data[1];
+		return true;
+	}
+
+	return false;
+}
+
+bool AS5600::readStatus()
+{
+	int ret = readReg(AS5600_STATUS_REG, &_status, 1);
+	return (ret == PX4_OK);
+}
+
+bool AS5600::readMagnitude()
+{
+	uint8_t data[2];
+	int ret = readReg(AS5600_MAGNITUDE_H_REG, data, 2);
+
+	if (ret == PX4_OK) {
+		_magnitude = (data[0] << 8) | data[1];
+
+		// Also read AGC value
+		ret = readReg(AS5600_AGC_REG, &_agc, 1);
+		return (ret == PX4_OK);
+	}
+
+	return false;
+}
+
+int AS5600::readReg(uint8_t addr, uint8_t *buf, size_t len)
+{
+	return transfer(&addr, 1, buf, len);
+}
+
+int AS5600::writeReg(uint8_t addr, uint8_t *buf, size_t len)
+{
+	uint8_t cmd[len + 1];
+	cmd[0] = addr;
+	memcpy(&cmd[1], buf, len);
+	return transfer(cmd, len + 1, nullptr, 0);
 }

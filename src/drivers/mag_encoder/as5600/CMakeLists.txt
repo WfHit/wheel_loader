@@ -36,8 +36,7 @@ px4_add_module(
 	MAIN as5600
 	COMPILE_FLAGS
 	SRCS
-		AS5600.cpp
 		as5600_main.cpp
+		AS5600.cpp
 	DEPENDS
-		drivers_i2c
 )
