@@ -32,160 +32,83 @@
  ****************************************************************************/
 
 /**
- * H-Bridge PWM minimum duty cycle
- *
- * The minimum duty cycle for H-Bridge PWM output.
- * This is used to set the lower bound for motor control.
- *
- * @unit percent
- * @min 0.0
- * @max 50.0
- * @decimal 1
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_PWM_MIN, 5.0f);
-
-/**
- * H-Bridge PWM maximum duty cycle
- *
- * The maximum duty cycle for H-Bridge PWM output.
- * This is used to set the upper bound for motor control.
- *
- * @unit percent
- * @min 50.0
- * @max 100.0
- * @decimal 1
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_PWM_MAX, 95.0f);
-
-/**
- * H-Bridge PWM frequency
- *
- * The PWM frequency for H-Bridge output channels.
- * Higher frequencies can reduce motor noise but may increase switching losses.
- *
- * @unit Hz
- * @min 50
- * @max 50000
- * @decimal 0
- * @group HBridge
- */
-PARAM_DEFINE_INT32(HBRIDGE_PWM_FREQ, 1000);
-
-/**
  * H-Bridge PWM channel 0
  *
  * PWM channel number for H-Bridge channel 0.
- * Set to 0 to disable.
  *
  * @min 0
  * @max 16
- * @decimal 0
  * @group HBridge
  */
-PARAM_DEFINE_INT32(HBRIDGE_CH0_PWM, 1);
+PARAM_DEFINE_INT32(HBRIDGE_CH0_PWM, 0);
 
 /**
  * H-Bridge PWM channel 1
  *
  * PWM channel number for H-Bridge channel 1.
- * Set to 0 to disable.
  *
  * @min 0
  * @max 16
- * @decimal 0
  * @group HBridge
  */
-PARAM_DEFINE_INT32(HBRIDGE_CH1_PWM, 2);
+PARAM_DEFINE_INT32(HBRIDGE_CH1_PWM, 1);
 
 /**
- * H-Bridge channel 0 minimum duty cycle
+ * H-Bridge channel 0 min PWM
  *
- * The minimum duty cycle for H-Bridge channel 0 PWM output.
+ * Minimum PWM pulse width for channel 0.
  *
- * @unit percent
- * @min 0.0
- * @max 50.0
- * @decimal 1
+ * @unit us
+ * @min 800
+ * @max 1500
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MIN, 5.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MIN, 1000.0f);
 
 /**
- * H-Bridge channel 0 maximum duty cycle
+ * H-Bridge channel 0 max PWM
  *
- * The maximum duty cycle for H-Bridge channel 0 PWM output.
+ * Maximum PWM pulse width for channel 0.
  *
- * @unit percent
- * @min 50.0
- * @max 100.0
- * @decimal 1
+ * @unit us
+ * @min 1500
+ * @max 2200
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MAX, 95.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MAX, 2000.0f);
 
 /**
- * H-Bridge channel 1 minimum duty cycle
+ * H-Bridge channel 1 min PWM
  *
- * The minimum duty cycle for H-Bridge channel 1 PWM output.
+ * Minimum PWM pulse width for channel 1.
  *
- * @unit percent
- * @min 0.0
- * @max 50.0
- * @decimal 1
+ * @unit us
+ * @min 800
+ * @max 1500
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MIN, 5.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MIN, 1000.0f);
 
 /**
- * H-Bridge channel 1 maximum duty cycle
+ * H-Bridge channel 1 max PWM
  *
- * The maximum duty cycle for H-Bridge channel 1 PWM output.
+ * Maximum PWM pulse width for channel 1.
  *
- * @unit percent
- * @min 50.0
- * @max 100.0
- * @decimal 1
+ * @unit us
+ * @min 1500
+ * @max 2200
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MAX, 95.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MAX, 2000.0f);
 
 /**
- * H-Bridge deadtime
+ * H-Bridge PWM frequency
  *
- * Deadtime between switching the H-Bridge direction to prevent shoot-through.
- * This time is enforced when changing direction to ensure one set of MOSFETs
- * is fully off before the other set turns on.
- *
- * @unit ms
- * @min 0
- * @max 100
- * @decimal 1
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_DEADTIME, 5.0f);
-
-/**
- * H-Bridge enable auto-publish
- *
- * Enable automatic publishing of H-Bridge status messages.
- * When enabled, the driver will periodically publish status information.
- *
- * @boolean
- * @group HBridge
- */
-PARAM_DEFINE_INT32(HBRIDGE_AUTO_PUB, 1);
-
-/**
- * H-Bridge status publish rate
- *
- * Rate at which H-Bridge status messages are published when auto-publish is enabled.
+ * PWM frequency for all H-Bridge channels.
  *
  * @unit Hz
- * @min 1
- * @max 100
- * @decimal 0
+ * @min 50
+ * @max 10000
  * @group HBridge
  */
-PARAM_DEFINE_INT32(HBRIDGE_PUB_RATE, 10);
+PARAM_DEFINE_FLOAT(HBRIDGE_PWM_FREQ, 1000.0f);

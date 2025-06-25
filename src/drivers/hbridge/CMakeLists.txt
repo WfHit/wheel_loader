@@ -37,8 +37,7 @@ px4_add_module(
 	COMPILE_FLAGS
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
-		HBridge.cpp
+		hbridge.cpp
 	DEPENDS
-		drivers_pwm_out
-		px4_platform
+		arch_io_pins
 	)
