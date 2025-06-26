@@ -121,9 +121,6 @@
 
 #define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 
-// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel4}, {GPIO::PortE, GPIO::Pin14}),  // PWM4 - DRV8701 DIR2 (GPIO)
-// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel1}, {GPIO::PortE, GPIO::Pin9}),   // PWM1 - DRV8701 DIR1 (GPIO)
-
 /* Spare GPIO */
 #define GPIO_PA4                       	/* PA4 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTA|GPIO_PIN4)
 #define GPIO_PC0                       	/* PC0 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN0)
@@ -215,24 +212,20 @@
 #define BOARD_HAS_QENCODER 1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
-/* PWM1 (PE9) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
-#define DRV8701_DIR1_GPIO                  /* PE9  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN9)
-#define DRV8701_DIR2_GPIO                  /* PE14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN14)
+/* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel3}, {GPIO::PortE, GPIO::Pin13}),
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel4}, {GPIO::PortE, GPIO::Pin14}),
+#define DRV8701_RIGHT_DIR_GPIO             /* PE13 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN13) // Right wheel direction
+#define DRV8701_LEFT_DIR_GPIO              /* PE14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN14) // Left wheel direction
 
-/* PWM2 (PE11) and PWM3 (PE13) - PWM signals for DRV8701 H-bridge (via timer channels) */
-#define DRV8701_PWM1_TIMER                 Timer::Timer1
-#define DRV8701_PWM1_CHANNEL               Timer::Channel2   /* PE11 */
-#define DRV8701_PWM2_TIMER                 Timer::Timer1
-#define DRV8701_PWM2_CHANNEL               Timer::Channel3   /* PE13 */
+/* UART7 RX - Enable signal for DRV8701 H-bridge */
+#define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
 /* PWM5-8 - Limit switch inputs for boom and steering operations */
 #define BOOM_UP_LIMIT_SW_GPIO              /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
 #define BOOM_DOWN_LIMIT_SW_GPIO            /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
 #define STEERING_LEFT_LIMIT_SW_GPIO        /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
 #define STEERING_RIGHT_LIMIT_SW_GPIO       /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
-
-/* UART7 RX - Enable signal for DRV8701 H-bridge */
-#define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
 /* DRV8701 H-bridge support */
 #define BOARD_HAS_DRV8701_HBRIDGE          1
@@ -251,8 +244,8 @@
 		GPIO_PC1, \
 		QENCODER_A_GPIO, \
 		QENCODER_B_GPIO, \
-		DRV8701_DIR1_GPIO, \
-		DRV8701_DIR2_GPIO, \
+		DRV8701_RIGHT_DIR_GPIO, \
+		DRV8701_LEFT_DIR_GPIO, \
 		DRV8701_ENABLE_GPIO, \
 		BOOM_UP_LIMIT_SW_GPIO, \
 		BOOM_DOWN_LIMIT_SW_GPIO, \

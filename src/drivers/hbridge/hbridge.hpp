@@ -50,10 +50,14 @@
 using namespace time_literals;
 
 /**
- * @brief H-Bridge motor driver with dual channels
+ * @brief H-Bridge motor driver with dual channels (left and right)
  *
  * Controls 2 H-bridge channels with PWM speed control and GPIO direction control.
  * Designed for DRV8701 H-bridge controllers.
+ *
+ * Channel mapping:
+ * - Channel 0 = Left channel
+ * - Channel 1 = Right channel
  */
 class HBridge : public ModuleBase<HBridge>, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -84,6 +88,12 @@ public:
 	static int test(int argc, char *argv[]);
 
 private:
+	// Channel definitions
+	enum ChannelId : int {
+		LEFT_CHANNEL = 0,
+		RIGHT_CHANNEL = 1
+	};
+
 	// Maximum number of channels per H-bridge
 	static constexpr int MAX_CHANNELS = 2;
 
@@ -112,6 +122,12 @@ private:
 	float get_pwm_min(int ch) const;
 	float get_pwm_max(int ch) const;
 
+	// Convenience methods for left/right channel access
+	void set_left_channel_speed(float duty_cycle) { set_channel_speed(LEFT_CHANNEL, duty_cycle); }
+	void set_right_channel_speed(float duty_cycle) { set_channel_speed(RIGHT_CHANNEL, duty_cycle); }
+	int get_left_pwm_channel() const { return get_pwm_channel(LEFT_CHANNEL); }
+	int get_right_pwm_channel() const { return get_pwm_channel(RIGHT_CHANNEL); }
+
 	// Channel data
 	channel_data_s _channels[MAX_CHANNELS];
 
@@ -135,12 +151,12 @@ private:
 
 	// Parameters
 	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::HBRIDGE_CH0_PWM>) _param_ch0_pwm,
-		(ParamInt<px4::params::HBRIDGE_CH1_PWM>) _param_ch1_pwm,
-		(ParamFloat<px4::params::HBRIDGE_CH0_MIN>) _param_ch0_min,
-		(ParamFloat<px4::params::HBRIDGE_CH0_MAX>) _param_ch0_max,
-		(ParamFloat<px4::params::HBRIDGE_CH1_MIN>) _param_ch1_min,
-		(ParamFloat<px4::params::HBRIDGE_CH1_MAX>) _param_ch1_max,
+		(ParamInt<px4::params::HBRIDGE_L_PWM>) _param_left_pwm,
+		(ParamInt<px4::params::HBRIDGE_R_PWM>) _param_right_pwm,
+		(ParamFloat<px4::params::HBRIDGE_L_MIN>) _param_left_min,
+		(ParamFloat<px4::params::HBRIDGE_L_MAX>) _param_left_max,
+		(ParamFloat<px4::params::HBRIDGE_R_MIN>) _param_right_min,
+		(ParamFloat<px4::params::HBRIDGE_R_MAX>) _param_right_max,
 		(ParamFloat<px4::params::HBRIDGE_PWM_FREQ>) _param_pwm_freq
 	)
 };

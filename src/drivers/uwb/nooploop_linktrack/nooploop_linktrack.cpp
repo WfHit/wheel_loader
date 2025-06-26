@@ -54,7 +54,8 @@ NoopLoopLinkTrack::NoopLoopLinkTrack(const char *port) :
     strncpy(_port, port, sizeof(_port) - 1);
     _port[sizeof(_port) - 1] = '\0';
 
-    _perf = perf_alloc(PC_ELAPSED, MODULE_NAME);
+    _sample_perf = perf_alloc(PC_ELAPSED, MODULE_NAME);
+    _comms_errors = perf_alloc(PC_COUNT, MODULE_NAME": comm_err");
     memset(_anchors, 0, sizeof(_anchors));
 }
 
@@ -62,13 +63,14 @@ NoopLoopLinkTrack::~NoopLoopLinkTrack()
 {
     ScheduleClear();
     if (_fd >= 0) close(_fd);
-    perf_free(_perf);
+    perf_free(_sample_perf);
+    perf_free(_comms_errors);
 }
 
 int NoopLoopLinkTrack::init()
 {
     // Load anchors
-    load_anchors();
+    load_anchors("/fs/microsd/uwb_anchors.conf");
 
     // Open serial port
     _fd = open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -87,7 +89,7 @@ int NoopLoopLinkTrack::init()
     tcsetattr(_fd, TCSANOW, &config);
 
     // Setup device
-    setup_device();
+    configure_device();
 
     // Schedule at 100Hz
     ScheduleOnInterval(10_ms);
@@ -96,10 +98,10 @@ int NoopLoopLinkTrack::init()
     return PX4_OK;
 }
 
-bool NoopLoopLinkTrack::setup_device()
+bool NoopLoopLinkTrack::configure_device()
 {
     // Configure LP_MODE2
-    uint8_t cmd[] = {HEADER, 0x08, 0x00, 0x10, 0x02, _param_tag_id.get(), 0x01, 0x00, 0x00, FRAME_END};
+    uint8_t cmd[] = {NLINK_HEADER, 0x08, 0x00, 0x10, 0x02, (uint8_t)_param_tag_id.get(), 0x01, 0x00, 0x00, NLINK_FRAME_END};
     uint8_t sum = 0;
     for (int i = 1; i < 8; i++) sum += cmd[i];
     cmd[8] = sum;
@@ -107,7 +109,7 @@ bool NoopLoopLinkTrack::setup_device()
     usleep(100000);
 
     // Enable Node_Frame3
-    uint8_t out[] = {HEADER, 0x06, 0x00, 0x13, NODE_FRAME3, 0x01, 0x00, FRAME_END};
+    uint8_t out[] = {NLINK_HEADER, 0x06, 0x00, 0x13, NLINK_NODE_FRAME3, 0x01, 0x00, NLINK_FRAME_END};
     sum = 0;
     for (int i = 1; i < 6; i++) sum += out[i];
     out[6] = sum;
@@ -117,33 +119,6 @@ bool NoopLoopLinkTrack::setup_device()
     return true;
 }
 
-void NoopLoopLinkTrack::load_anchors()
-{
-    FILE *file = fopen("/fs/microsd/uwb_anchors.conf", "r");
-    if (!file) return;
-
-    _num_anchors = 0;
-    char line[128];
-
-    while (fgets(line, sizeof(line), file) && _num_anchors < MAX_ANCHORS) {
-        if (line[0] == '#') continue;
-
-        int id, active;
-        float x, y, z;
-        char name[32];
-
-        if (sscanf(line, "%d,%31[^,],%f,%f,%f,%d", &id, name, &x, &y, &z, &active) >= 5) {
-            if (id < MAX_ANCHORS) {
-                _anchors[id] = {(uint8_t)id, x, y, z, active != 0};
-                _num_anchors++;
-            }
-        }
-    }
-
-    fclose(file);
-    PX4_INFO("Loaded %d anchors", _num_anchors);
-}
-
 void NoopLoopLinkTrack::Run()
 {
     if (!_param_enable.get()) {
@@ -151,71 +126,65 @@ void NoopLoopLinkTrack::Run()
         return;
     }
 
-    perf_begin(_perf);
+    perf_begin(_sample_perf);
 
     uint8_t data[128];
     ssize_t bytes = read(_fd, data, sizeof(data));
 
     if (bytes > 0) {
         for (ssize_t i = 0; i < bytes; i++) {
-            _buffer[_pos++] = data[i];
+            _rx_buffer[_rx_buffer_pos++] = data[i];
 
-            if (_pos >= sizeof(_buffer)) _pos = 0;
+            if (_rx_buffer_pos >= sizeof(_rx_buffer)) _rx_buffer_pos = 0;
 
             // Look for complete frame
-            if (_pos >= 25 && _buffer[_pos-1] == FRAME_END) {
-                for (size_t j = 0; j < _pos - 4; j++) {
-                    if (_buffer[j] == HEADER && _buffer[j+3] == NODE_FRAME3) {
-                        parse_data(_buffer + j, _pos - j);
+            if (_rx_buffer_pos >= 25 && _rx_buffer[_rx_buffer_pos-1] == NLINK_FRAME_END) {
+                for (size_t j = 0; j < _rx_buffer_pos - 4; j++) {
+                    if (_rx_buffer[j] == NLINK_HEADER && _rx_buffer[j+3] == NLINK_NODE_FRAME3) {
+                        parse_frame(_rx_buffer + j, _rx_buffer_pos - j);
                         break;
                     }
                 }
-                _pos = 0;
+                _rx_buffer_pos = 0;
             }
         }
     }
 
-    perf_end(_perf);
+    perf_end(_sample_perf);
 }
 
-bool NoopLoopLinkTrack::parse_data(const uint8_t *data, size_t len)
-{
-    if (len < 25) return false;
 
-    uint8_t tag_id = data[4];
-    if (tag_id != _param_tag_id.get()) return false;
-
-    uint8_t num_ranges = data[23];
-    if (num_ranges > 10) return false;
-
-    const Range *ranges = (const Range *)(data + 24);
-
-    for (int i = 0; i < num_ranges; i++) {
-        const Range &r = ranges[i];
-
-        if (r.distance_mm > 0 && r.distance_mm < 100000 && r.rssi > -100) {
-            float distance = r.distance_mm / 1000.0f;
-            publish_uwb(r.anchor_id, distance);
-        }
-    }
-
-    return true;
-}
-
-void NoopLoopLinkTrack::publish_uwb(uint8_t anchor_id, float distance)
+void NoopLoopLinkTrack::publish_range(uint8_t anchor_id, float distance, float rssi)
 {
     if (anchor_id >= MAX_ANCHORS || !_anchors[anchor_id].active) return;
 
     sensor_uwb_s msg = {};
     msg.timestamp = hrt_absolute_time();
-    msg.distance = distance;
-    msg.accuracy = 0.1f;
+    msg.sessionid = 0;
+    msg.time_offset = 0;
     msg.anchor_id = anchor_id;
+    msg.tag_id = (uint8_t)_param_tag_id.get();
+    msg.range = distance;
+    msg.rssi = (int8_t)rssi;
+    msg.los_confidence = 50; // Default value
+    msg.first_path_power = 0;
+    msg.total_path_power = 0;
     msg.anchor_x = _anchors[anchor_id].x;
     msg.anchor_y = _anchors[anchor_id].y;
     msg.anchor_z = _anchors[anchor_id].z;
+    msg.anchor_pos_valid = _anchors[anchor_id].active;
+    msg.multipath_count = 0;
+    msg.range_bias = 0.0f;
+    msg.aoa_azimuth_fom = 0;
+    msg.aoa_elevation_fom = 0;
+    msg.aoa_dest_azimuth_fom = 0;
+    msg.aoa_dest_elevation_fom = 0;
+    msg.orientation = 0;
+    msg.offset_x = 0.0f;
+    msg.offset_y = 0.0f;
+    msg.offset_z = 0.0f;
 
-    _uwb_pub.publish(msg);
+    _sensor_uwb_pub.publish(msg);
 }
 
 int NoopLoopLinkTrack::task_spawn(int argc, char *argv[])
@@ -261,6 +230,77 @@ int NoopLoopLinkTrack::print_usage(const char *reason)
     if (reason) PX4_WARN("%s", reason);
     PX4_INFO("Usage: nooploop_linktrack {start|status|stop} [-d device]");
     return PX4_OK;
+}
+
+bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
+{
+    if (length < 25) return false;
+
+    uint8_t tag_id = data[4];
+    if (tag_id != (uint8_t)_param_tag_id.get()) return false;
+
+    uint8_t num_ranges = data[23];
+    if (num_ranges > MAX_RANGES_PER_FRAME) return false;
+
+    const RangeData *ranges = (const RangeData *)(data + 24);
+
+    for (int i = 0; i < num_ranges; i++) {
+        const RangeData &r = ranges[i];
+
+        if (r.distance_mm > 0 && r.distance_mm < 100000 && r.rssi > -100) {
+            float distance = r.distance_mm / 1000.0f;
+            publish_range(r.anchor_id, distance, r.rssi);
+        }
+    }
+
+    return true;
+}
+
+void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const RangeData *ranges)
+{
+    for (int i = 0; i < num_ranges; i++) {
+        const RangeData &r = ranges[i];
+        if (r.distance_mm > 0 && r.distance_mm < 100000 && r.rssi > -100) {
+            float distance = r.distance_mm / 1000.0f;
+            publish_range(r.anchor_id, distance, r.rssi);
+        }
+    }
+}
+
+bool NoopLoopLinkTrack::load_anchors(const char *filename)
+{
+    FILE *file = fopen(filename, "r");
+    if (!file) return false;
+
+    _num_anchors = 0;
+    char line[128];
+
+    while (fgets(line, sizeof(line), file) && _num_anchors < MAX_ANCHORS) {
+        if (line[0] == '#') continue;
+
+        int id, active;
+        float x, y, z;
+        char name[32];
+
+        if (sscanf(line, "%d,%31[^,],%f,%f,%f,%d", &id, name, &x, &y, &z, &active) >= 5) {
+            if (id < MAX_ANCHORS) {
+                _anchors[id] = {(uint8_t)id, x, y, z, active != 0};
+                _num_anchors++;
+            }
+        }
+    }
+
+    fclose(file);
+    return true;
+}
+
+uint8_t NoopLoopLinkTrack::calculate_checksum(const uint8_t *data, size_t length)
+{
+    uint8_t sum = 0;
+    for (size_t i = 0; i < length; i++) {
+        sum += data[i];
+    }
+    return sum;
 }
 
 

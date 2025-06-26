@@ -32,74 +32,76 @@
  ****************************************************************************/
 
 /**
- * H-Bridge PWM channel 0
+ * Left wheel PWM channel
  *
- * PWM channel number for H-Bridge channel 0.
- *
- * @min 0
- * @max 16
- * @group HBridge
- */
-PARAM_DEFINE_INT32(HBRIDGE_CH0_PWM, 0);
-
-/**
- * H-Bridge PWM channel 1
- *
- * PWM channel number for H-Bridge channel 1.
+ * PWM channel for left wheel motor control.
+ * PWM0 is typically used for left wheel on this board.
  *
  * @min 0
- * @max 16
+ * @max 15
  * @group HBridge
  */
-PARAM_DEFINE_INT32(HBRIDGE_CH1_PWM, 1);
+PARAM_DEFINE_INT32(HBRIDGE_L_PWM, 0);
 
 /**
- * H-Bridge channel 0 min PWM
+ * Right wheel PWM channel
  *
- * Minimum PWM pulse width for channel 0.
+ * PWM channel for right wheel motor control.
+ * PWM1 is typically used for right wheel on this board.
+ *
+ * @min 0
+ * @max 15
+ * @group HBridge
+ */
+PARAM_DEFINE_INT32(HBRIDGE_R_PWM, 1);
+
+/**
+ * Left wheel min PWM
+ *
+ * Minimum PWM pulse width for left wheel motor.
  *
  * @unit us
  * @min 800
  * @max 1500
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MIN, 1000.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_L_MIN, 1000.0f);
 
 /**
- * H-Bridge channel 0 max PWM
+ * Left wheel max PWM
  *
- * Maximum PWM pulse width for channel 0.
+ * Maximum PWM pulse width for left wheel motor.
  *
  * @unit us
  * @min 1500
  * @max 2200
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH0_MAX, 2000.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_L_MAX, 2000.0f);
 
 /**
- * H-Bridge channel 1 min PWM
+ * Right wheel min PWM
  *
- * Minimum PWM pulse width for channel 1.
+ * Minimum PWM pulse width for right wheel motor.
  *
  * @unit us
  * @min 800
  * @max 1500
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MIN, 1000.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_R_MIN, 1000.0f);
 
 /**
- * H-Bridge channel 1 max PWM
+ * Right wheel max PWM
  *
- * Maximum PWM pulse width for channel 1.
+ * Maximum PWM pulse width for right wheel motor.
  *
  * @unit us
  * @min 1500
  * @max 2200
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_CH1_MAX, 2000.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_R_MAX, 2000.0f);
 
 /**
  * H-Bridge PWM frequency

@@ -91,9 +91,9 @@ bool HBridge::init()
 	parameters_update();
 
 	// Configure GPIOs based on board configuration
-#if defined(DRV8701_DIR1_GPIO) && defined(DRV8701_DIR2_GPIO)
-	_channels[0].dir_gpio = DRV8701_DIR1_GPIO;
-	_channels[1].dir_gpio = DRV8701_DIR2_GPIO;
+#if defined(DRV8701_RIGHT_DIR_GPIO) && defined(DRV8701_LEFT_DIR_GPIO)
+	_channels[LEFT_CHANNEL].dir_gpio = DRV8701_LEFT_DIR_GPIO;   // PE14 for left wheel
+	_channels[RIGHT_CHANNEL].dir_gpio = DRV8701_RIGHT_DIR_GPIO; // PE13 for right wheel
 #else
 	PX4_ERR("DRV8701 direction GPIOs not defined in board config");
 	return false;
@@ -111,7 +111,8 @@ bool HBridge::init()
 		if (_channels[i].dir_gpio != 0) {
 			px4_arch_configgpio(_channels[i].dir_gpio);
 			px4_arch_gpiowrite(_channels[i].dir_gpio, 0); // Default forward
-			PX4_INFO("Channel %d direction GPIO configured", i);
+			const char* channel_name = (i == LEFT_CHANNEL) ? "left" : "right";
+			PX4_INFO("%s channel direction GPIO configured", channel_name);
 		}
 	}
 
@@ -203,13 +204,14 @@ bool HBridge::configure_channel(int channel)
 	up_pwm_servo_arm(true, _channels[channel].pwm_mask);
 
 	// Set to neutral position
-	uint16_t neutral = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
-	up_pwm_servo_set(_channels[channel].pwm_channel, neutral);
+	// uint16_t neutral = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
+	up_pwm_servo_set(_channels[channel].pwm_channel, 0);
 
 	_channels[channel].initialized = true;
 
-	PX4_INFO("Channel %d: PWM ch=%d, mask=0x%04lx, range=%.0f-%.0f us",
-		 channel, _channels[channel].pwm_channel, (unsigned long)_channels[channel].pwm_mask,
+	const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
+	PX4_INFO("%s channel: PWM ch=%d, mask=0x%04lx, range=%.0f-%.0f us",
+		 channel_name, _channels[channel].pwm_channel, (unsigned long)_channels[channel].pwm_mask,
 		 (double)get_pwm_min(channel), (double)get_pwm_max(channel));
 
 	return true;
@@ -290,7 +292,8 @@ void HBridge::set_channel_speed(int channel, float duty_cycle)
 
 	if (abs_duty < 0.001f) {
 		// Dead zone - output neutral PWM
-		pwm_value = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
+		//pwm_value = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
+		pwm_value = 0.0;
 	} else {
 		// Map duty cycle to PWM range
 		float pwm_range = get_pwm_max(channel) - get_pwm_min(channel);
@@ -302,8 +305,9 @@ void HBridge::set_channel_speed(int channel, float duty_cycle)
 
 	_channels[channel].current_duty_cycle = duty_cycle;
 
-	PX4_DEBUG("Channel %d: duty=%.2f, pwm=%u, dir=%s",
-		  channel, (double)duty_cycle, pwm_value, forward ? "FWD" : "REV");
+	const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
+	PX4_DEBUG("%s channel: duty=%.2f, pwm=%u, dir=%s",
+		  channel_name, (double)duty_cycle, pwm_value, forward ? "FWD" : "REV");
 }
 
 void HBridge::update_channel_direction(int channel, bool forward)
@@ -365,17 +369,20 @@ void HBridge::parameters_update()
 // Parameter getters
 int HBridge::get_pwm_channel(int ch) const
 {
-	return (ch == 0) ? _param_ch0_pwm.get() : _param_ch1_pwm.get();
+	// ch 0 = left channel, ch 1 = right channel
+	return (ch == LEFT_CHANNEL) ? _param_left_pwm.get() : _param_right_pwm.get();
 }
 
 float HBridge::get_pwm_min(int ch) const
 {
-	return (ch == 0) ? _param_ch0_min.get() : _param_ch1_min.get();
+	// ch 0 = left channel, ch 1 = right channel
+	return (ch == LEFT_CHANNEL) ? _param_left_min.get() : _param_right_min.get();
 }
 
 float HBridge::get_pwm_max(int ch) const
 {
-	return (ch == 0) ? _param_ch0_max.get() : _param_ch1_max.get();
+	// ch 0 = left channel, ch 1 = right channel
+	return (ch == LEFT_CHANNEL) ? _param_left_max.get() : _param_right_max.get();
 }
 
 int HBridge::task_spawn(int argc, char *argv[])
@@ -428,7 +435,8 @@ int HBridge::print_status()
 	}
 
 	for (int i = 0; i < MAX_CHANNELS; i++) {
-		PX4_INFO("Channel %d:", i);
+		const char* channel_name = (i == LEFT_CHANNEL) ? "Left" : "Right";
+		PX4_INFO("%s Channel:", channel_name);
 		PX4_INFO("  PWM Channel: %d", _channels[i].pwm_channel);
 		PX4_INFO("  PWM Range: %.0f - %.0f us",
 			(double)get_pwm_min(i), (double)get_pwm_max(i));
@@ -453,7 +461,7 @@ int HBridge::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-H-Bridge motor driver with dual channels.
+H-Bridge motor driver with dual channels (left and right).
 
 Controls 2 H-bridge channels with PWM speed control and GPIO direction control.
 The PWM channels are configured via parameters.
@@ -464,19 +472,19 @@ Status information is published to hbridge_status topic.
 
 ### Configuration
 Configure each channel using the following parameters:
-- HBRIDGE_CH0_PWM: PWM channel for channel 0 (default: 2)
-- HBRIDGE_CH1_PWM: PWM channel for channel 1 (default: 3)
+- HBRIDGE_CH0_PWM: PWM channel for left channel (default: 2)
+- HBRIDGE_CH1_PWM: PWM channel for right channel (default: 3)
 - HBRIDGE_PWM_FREQ: PWM frequency in Hz
-- HBRIDGE_CH0_MIN/MAX: PWM range for channel 0
-- HBRIDGE_CH1_MIN/MAX: PWM range for channel 1
+- HBRIDGE_CH0_MIN/MAX: PWM range for left channel
+- HBRIDGE_CH1_MIN/MAX: PWM range for right channel
 
 ### Examples
 Start the driver:
 $ hbridge start
 
 Test channel control:
-$ hbridge test -c 0 -d 0.5   # Channel 0 forward at 50%
-$ hbridge test -c 1 -d -0.3  # Channel 1 reverse at 30%
+$ hbridge test -c 0 -d 0.5   # Left channel forward at 50%
+$ hbridge test -c 1 -d -0.3  # Right channel reverse at 30%
 
 Check status:
 $ hbridge status
@@ -488,7 +496,7 @@ $ hbridge stop
 	PRINT_MODULE_USAGE_NAME("hbridge", "driver");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the driver");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Test channel control");
-	PRINT_MODULE_USAGE_PARAM_INT('c', 0, 0, MAX_CHANNELS-1, "Channel", true);
+	PRINT_MODULE_USAGE_PARAM_INT('c', 0, 0, MAX_CHANNELS-1, "Channel (0=left, 1=right)", true);
 	PRINT_MODULE_USAGE_PARAM_FLOAT('d', 0.0, -1.0, 1.0, "Duty cycle", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
@@ -523,15 +531,16 @@ int HBridge::test(int argc, char *argv[])
 	}
 
 	if (channel < 0 || channel >= MAX_CHANNELS) {
-		PX4_ERR("Invalid channel %d (valid: 0-%d)", channel, MAX_CHANNELS-1);
+		PX4_ERR("Invalid channel %d (valid: 0=left, 1=right)", channel);
 		return 1;
 	}
 
 	// Get the running instance
 	HBridge *inst = _object.load();
 	if (inst != nullptr) {
+		const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
 		inst->set_channel_speed(channel, duty_cycle);
-		PX4_INFO("Set channel %d to %.2f duty cycle", channel, (double)duty_cycle);
+		PX4_INFO("Set %s channel to %.2f duty cycle", channel_name, (double)duty_cycle);
 		return 0;
 	}
 
