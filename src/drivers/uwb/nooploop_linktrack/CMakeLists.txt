@@ -35,7 +35,6 @@ px4_add_module(
 	MODULE drivers__uwb__nooploop_linktrack
 	MAIN nooploop_linktrack
 	COMPILE_FLAGS
-		-Wno-cast-align # TODO: fix and enable
 	SRCS
 		nooploop_linktrack.cpp
 		nooploop_linktrack_main.cpp

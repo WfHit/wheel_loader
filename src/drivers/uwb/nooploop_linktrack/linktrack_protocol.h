@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2021-2022 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,50 +35,21 @@
 
 #include <stdint.h>
 
-/* LinkTrack Protocol Constants */
-#define LINKTRACK_START_CHAR_UWB	0x55
-#define LINKTRACK_HEADER_SIZE		6
-#define LINKTRACK_MIN_MSG_SIZE		7  // Header + 1 byte checksum
+// NoopLoop LinkTrack Protocol Constants
+#define LINKTRACK_HEADER         0x55
+#define LINKTRACK_FRAME_END      0x77
+#define LINKTRACK_NODE_FRAME3    0x06
 
-/* Message IDs */
-#define LINKTRACK_MSG_BATCH		0x30
-#define LINKTRACK_MSG_SINGLE		0x31
+// LP_MODE2 Constants
+#define LINKTRACK_LP_MODE2       0x02
+#define LINKTRACK_MATH_MODE0     0x00
 
-/* Maximum number of anchors in a batch message */
-#define LINKTRACK_MAX_ANCHORS		8
+// Command IDs
+#define LINKTRACK_CMD_CONFIG     0x10
+#define LINKTRACK_CMD_OUTPUT     0x13
 
-#pragma pack(push, 1)
+// Maximum values
+#define LINKTRACK_MAX_ANCHORS    20
+#define LINKTRACK_MAX_RANGES     10
 
-/* Anchor data in batch message */
-typedef struct {
-	uint8_t id;
-	int32_t x;		// mm
-	int32_t y;		// mm
-	int32_t z;		// mm
-	uint32_t range;		// mm
-	uint8_t rssi;		// Signal strength
-} linktrack_anchor_t;
 
-/* Batch measurement message */
-typedef struct {
-	uint32_t seq_num;
-	uint8_t tag_id;
-	uint8_t num_anchors;
-	linktrack_anchor_t anchors[LINKTRACK_MAX_ANCHORS];
-} linktrack_batch_t;
-
-/* Single measurement message */
-typedef struct {
-	uint8_t tag_id;
-	uint8_t anchor_id;
-	uint32_t range;		// mm
-	int32_t x;		// mm
-	int32_t y;		// mm
-	int32_t z;		// mm
-	int16_t vx;		// mm/s
-	int16_t vy;		// mm/s
-	int16_t vz;		// mm/s
-	uint8_t rssi;		// Signal strength
-} linktrack_single_t;
-
-#pragma pack(pop)
