@@ -54,6 +54,7 @@
 
 #include <arch/board/board.h>
 #include <drivers/drv_pwm_output.h>
+#include <drivers/drv_motor_pwm.h>
 
 #include <px4_arch/io_timer.h>
 #include <px4_arch/dshot.h>
@@ -155,12 +156,12 @@ static int io_timer_handler7(int irq, void *context, void *arg);
 /* The transfer is done to 4 registers starting from TIMx_CR1 + TIMx_DCR.DBA  */
 #define TIM_DMABURSTLENGTH_4TRANSFERS   0x00000300U
 
-//                                                                NotUsed   PWMOut  PWMIn Capture OneShot Trigger Dshot LED PPS Other
-io_timer_channel_allocation_t channel_allocations[IOTimerChanModeSize] = { UINT16_MAX,   0,  0,  0, 0, 0, 0, 0, 0, 0 };
-
 typedef uint8_t io_timer_allocation_t; /* big enough to hold MAX_IO_TIMERS */
 
-io_timer_channel_allocation_t timer_allocations[MAX_IO_TIMERS] = { };
+//                                                                NotUsed   PWMOut  PWMIn Capture OneShot Trigger Dshot LED PPS RPM Other DshotInv CaptureDMA MotorPWM
+io_timer_channel_allocation_t channel_allocations_mask[IOTimerChanModeSize] = { UINT16_MAX,   0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+io_timer_channel_allocation_t timer_allocations_mask[MAX_IO_TIMERS] = { };
 
 #if !defined(BOARD_HAS_NO_CAPTURE)
 
@@ -292,8 +293,8 @@ int io_timer_allocate_timer(unsigned timer, io_timer_channel_mode_t mode)
 
 	if (validate_timer_index(timer) == 0) {
 		// check if timer is unused or already set to the mode we want
-		if (timer_allocations[timer] == IOTimerChanMode_NotUsed || timer_allocations[timer] == mode) {
-			timer_allocations[timer] = mode;
+		if (timer_allocations_mask[timer] == IOTimerChanMode_NotUsed || timer_allocations_mask[timer] == mode) {
+			timer_allocations_mask[timer] = mode;
 			ret = 0;
 
 		} else {
@@ -309,7 +310,7 @@ int io_timer_unallocate_timer(unsigned timer)
 	int ret = -EINVAL;
 
 	if (validate_timer_index(timer) == 0) {
-		timer_allocations[timer] = IOTimerChanMode_NotUsed;
+		timer_allocations_mask[timer] = IOTimerChanMode_NotUsed;
 		ret = 0;
 	}
 
@@ -396,7 +397,7 @@ uint32_t io_timer_channel_get_as_pwm_input(unsigned channel)
 int io_timer_get_mode_channels(io_timer_channel_mode_t mode)
 {
 	if (mode < IOTimerChanModeSize) {
-		return channel_allocations[mode];
+		return channel_allocations_mask[mode];
 	}
 
 	return 0;
@@ -407,7 +408,7 @@ int io_timer_get_channel_mode(unsigned channel)
 	io_timer_channel_allocation_t bit = 1 << channel;
 
 	for (int mode = IOTimerChanMode_NotUsed; mode < IOTimerChanModeSize; mode++) {
-		if (bit & channel_allocations[mode]) {
+		if (bit & channel_allocations_mask[mode]) {
 			return mode;
 		}
 	}
@@ -420,21 +421,21 @@ static int reallocate_channel_resources(uint32_t channels, io_timer_channel_mode
 {
 	/* If caller mode is not based on current setting adjust it */
 
-	if ((channels & channel_allocations[IOTimerChanMode_NotUsed]) == channels) {
+	if ((channels & channel_allocations_mask[IOTimerChanMode_NotUsed]) == channels) {
 		mode = IOTimerChanMode_NotUsed;
 	}
 
 	/* Remove old set of channels from original */
 
-	channel_allocations[mode] &= ~channels;
+	channel_allocations_mask[mode] &= ~channels;
 
 	/* Will this change ?*/
 
-	uint32_t before = channel_allocations[new_mode] & channels;
+	uint32_t before = channel_allocations_mask[new_mode] & channels;
 
 	/* add in the new set */
 
-	channel_allocations[new_mode] |= channels;
+	channel_allocations_mask[new_mode] |= channels;
 
 	/* Indicate a mode change */
 
@@ -449,8 +450,8 @@ __EXPORT int io_timer_allocate_channel(unsigned channel, io_timer_channel_mode_t
 
 	if (existing_mode <= IOTimerChanMode_NotUsed || existing_mode == mode) {
 		io_timer_channel_allocation_t bit = 1 << channel;
-		channel_allocations[IOTimerChanMode_NotUsed] &= ~bit;
-		channel_allocations[mode] |= bit;
+		channel_allocations_mask[IOTimerChanMode_NotUsed] &= ~bit;
+		channel_allocations_mask[mode] |= bit;
 		ret = 0;
 	}
 
@@ -466,8 +467,8 @@ int io_timer_unallocate_channel(unsigned channel)
 
 	if (mode > IOTimerChanMode_NotUsed) {
 		io_timer_channel_allocation_t bit = 1 << channel;
-		channel_allocations[mode] &= ~bit;
-		channel_allocations[IOTimerChanMode_NotUsed] |= bit;
+		channel_allocations_mask[mode] &= ~bit;
+		channel_allocations_mask[IOTimerChanMode_NotUsed] |= bit;
 	}
 
 	return mode;
@@ -496,8 +497,6 @@ static int timer_set_rate(unsigned timer, unsigned rate)
 
 	return 0;
 }
-
-
 
 static inline void io_timer_set_oneshot_mode(unsigned timer)
 {
@@ -714,7 +713,7 @@ int io_timer_init_timer(unsigned timer, io_timer_channel_mode_t mode)
 		return -EINVAL;
 	}
 
-	io_timer_channel_mode_t previous_mode = timer_allocations[timer];
+	io_timer_channel_mode_t previous_mode = timer_allocations_mask[timer];
 	int rv = io_timer_allocate_timer(timer, mode);
 
 	/* Do this only once per timer */
@@ -802,18 +801,21 @@ int io_timer_init_timer(unsigned timer, io_timer_channel_mode_t mode)
 	return rv;
 }
 
-
 int io_timer_set_pwm_rate(unsigned timer, unsigned rate)
 {
-	/* Change only a timer that is owned by pwm or one shot */
-	if (timer_allocations[timer] != IOTimerChanMode_PWMOut && timer_allocations[timer] != IOTimerChanMode_OneShot) {
+	/* Change only a timer that is owned by pwm, one shot, or motor pwm */
+	if (timer_allocations_mask[timer] != IOTimerChanMode_PWMOut &&
+	    timer_allocations_mask[timer] != IOTimerChanMode_OneShot &&
+	    timer_allocations_mask[timer] != IOTimerChanMode_MotorPWM) {
 		return -EINVAL;
 	}
 
-	/* Get the channel bits that belong to the timer and are in PWM or OneShot mode */
+	/* Get the channel bits that belong to the timer and are in PWM, OneShot, or MotorPWM mode */
 
-	uint32_t channels = get_timer_channels(timer) & (io_timer_get_mode_channels(IOTimerChanMode_OneShot) |
-			    io_timer_get_mode_channels(IOTimerChanMode_PWMOut));
+	uint32_t channels = get_timer_channels(timer) & (
+				io_timer_get_mode_channels(IOTimerChanMode_OneShot) |
+			    io_timer_get_mode_channels(IOTimerChanMode_PWMOut) |
+			    io_timer_get_mode_channels(IOTimerChanMode_MotorPWM));
 
 	/* Request to use OneShot ?*/
 
@@ -822,6 +824,7 @@ int io_timer_set_pwm_rate(unsigned timer, unsigned rate)
 		/* Request to use OneShot
 		 */
 		int changed_channels = reallocate_channel_resources(channels, IOTimerChanMode_PWMOut, IOTimerChanMode_OneShot);
+		changed_channels |= reallocate_channel_resources(channels, IOTimerChanMode_MotorPWM, IOTimerChanMode_OneShot);
 
 		/* Did the allocation change */
 		if (changed_channels) {
@@ -830,9 +833,11 @@ int io_timer_set_pwm_rate(unsigned timer, unsigned rate)
 
 	} else {
 
-		/* Request to use PWM
-		 */
-		int changed_channels = reallocate_channel_resources(channels, IOTimerChanMode_OneShot, IOTimerChanMode_PWMOut);
+		/* Request to use PWM or MotorPWM - determine based on rate */
+		io_timer_channel_mode_t target_mode = (rate >= MOTOR_PWM_RATE_LOWER_LIMIT) ?
+						      IOTimerChanMode_MotorPWM : IOTimerChanMode_PWMOut;
+
+		int changed_channels = reallocate_channel_resources(channels, IOTimerChanMode_OneShot, target_mode);
 
 		if (changed_channels) {
 			io_timer_set_PWM_mode(timer);
@@ -1023,7 +1028,7 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 
 		/* Yes - we provide them */
 
-		masks = channel_allocations[mode];
+		masks = channel_allocations_mask[mode];
 
 	} else {
 
@@ -1031,7 +1036,7 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 
 		/* Only allow the channels in that mode to be affected */
 
-		masks &= channel_allocations[mode];
+		masks &= channel_allocations_mask[mode];
 
 	}
 
@@ -1149,5 +1154,14 @@ uint16_t io_channel_get_ccr(unsigned channel)
 uint32_t io_timer_get_group(unsigned timer)
 {
 	return get_timer_channels(timer);
+}
 
+uint32_t io_channel_get_timer_period(unsigned channel)
+{
+	if (io_timer_validate_channel_index(channel) != 0) {
+		return 0;
+	}
+
+	unsigned timer = channels_timer(channel);
+	return rARR(timer);
 }

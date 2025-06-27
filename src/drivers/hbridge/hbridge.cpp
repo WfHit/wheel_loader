@@ -42,7 +42,7 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_arch/io_timer.h>
-#include <drivers/drv_pwm_output.h>
+#include <drivers/drv_motor_pwm.h>
 #include <board_config.h>
 
 bool HBridge::_pwm_initialized = false;
@@ -62,11 +62,16 @@ HBridge::HBridge() :
 
 HBridge::~HBridge()
 {
+#if defined(DRV8701_ENABLE_GPIO)
+	// Disable H-bridge first for safety
+	px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 0);
+	PX4_INFO("H-Bridge disabled during shutdown");
+#endif
+
 	// Disable all channels
 	for (int i = 0; i < MAX_CHANNELS; i++) {
 		if (_channels[i].initialized && _channels[i].pwm_mask != 0) {
-			up_pwm_servo_set(_channels[i].pwm_channel, 0);
-			up_pwm_servo_arm(false, _channels[i].pwm_mask);
+			up_motor_pwm_set_duty_cycle(_channels[i].pwm_channel, 0.0f);
 		}
 	}
 
@@ -77,7 +82,7 @@ HBridge::~HBridge()
 
 	// Deinitialize PWM
 	if (_pwm_initialized) {
-		up_pwm_servo_deinit(0);
+		up_motor_pwm_deinit(0);
 		_pwm_initialized = false;
 	}
 
@@ -100,10 +105,10 @@ bool HBridge::init()
 #endif
 
 #if defined(DRV8701_ENABLE_GPIO)
-	// Configure enable GPIO
+	// Configure enable GPIO but keep it disabled during init
 	px4_arch_configgpio(DRV8701_ENABLE_GPIO);
-	px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 1); // Enable the H-bridge
-	PX4_INFO("H-Bridge enabled via GPIO");
+	px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 0); // Keep disabled during init
+	PX4_INFO("H-Bridge enable GPIO configured (disabled during init)");
 #endif
 
 	// Configure direction GPIOs
@@ -122,7 +127,7 @@ bool HBridge::init()
 		uint32_t required_channels = 0;
 		for (int i = 0; i < MAX_CHANNELS; i++) {
 			int pwm_ch = get_pwm_channel(i);
-			if (pwm_ch >= 0 && pwm_ch < 16) {
+			if (pwm_ch >= 0 && pwm_ch < MOTOR_PWM_MAX_CHANNELS) {
 				required_channels |= (1 << pwm_ch);
 			}
 		}
@@ -132,30 +137,22 @@ bool HBridge::init()
 			return false;
 		}
 
-		PX4_INFO("Initializing PWM channels: 0x%04lx", (unsigned long)required_channels);
+		PX4_INFO("Initializing motor PWM channels: 0x%04lx at 25 kHz", (unsigned long)required_channels);
 
-		int ret = up_pwm_servo_init(required_channels);
+		int ret = up_motor_pwm_init(required_channels);
 		if (ret < 0) {
-			PX4_ERR("PWM init failed: %d (channels: 0x%04lx)", ret, (unsigned long)required_channels);
+			PX4_ERR("Motor PWM init failed: %d (channels: 0x%04lx)", ret, (unsigned long)required_channels);
 			return false;
 		}
 
-		// Set PWM frequency per timer group
-		for (int timer = 0; timer < MAX_IO_TIMERS; ++timer) {
-			uint32_t channels = required_channels & up_pwm_servo_get_rate_group(timer);
-			if (channels != 0) {
-				ret = up_pwm_servo_set_rate_group_update(timer, (unsigned)_param_pwm_freq.get());
-				if (ret != 0) {
-					PX4_WARN("Failed to set PWM rate for timer %d to %.0f Hz", timer, (double)_param_pwm_freq.get());
-				} else {
-					PX4_INFO("Set PWM rate for timer %d (channels 0x%04lx) to %.0f Hz",
-						timer, (unsigned long)channels, (double)_param_pwm_freq.get());
-				}
-			}
-		}
+		// Set PWM frequency to 25 kHz
+		up_motor_pwm_set_rate(MOTOR_PWM_FREQ_25KHZ);
+
+		// Enable PWM outputs
+		up_motor_pwm_arm(true, required_channels);
 
 		_pwm_initialized = true;
-		PX4_INFO("PWM initialized at %.0f Hz", (double)_param_pwm_freq.get());
+		PX4_INFO("Motor PWM initialized at 25 kHz");
 	}
 
 	// Configure each channel
@@ -181,6 +178,12 @@ bool HBridge::init()
 
 	_is_running = true;
 
+#if defined(DRV8701_ENABLE_GPIO)
+	// Now that everything is initialized, enable the H-bridge
+	px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 1);
+	PX4_INFO("H-Bridge enabled after successful initialization");
+#endif
+
 	PX4_INFO("HBridge initialized with %d channels", MAX_CHANNELS);
 	return true;
 }
@@ -200,19 +203,14 @@ bool HBridge::configure_channel(int channel)
 	_channels[channel].pwm_channel = pwm_ch;
 	_channels[channel].pwm_mask = 1 << _channels[channel].pwm_channel;
 
-	// Arm the channel
-	up_pwm_servo_arm(true, _channels[channel].pwm_mask);
-
-	// Set to neutral position
-	// uint16_t neutral = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
-	up_pwm_servo_set(_channels[channel].pwm_channel, 0);
+	// Set to neutral position (0% duty cycle)
+	up_motor_pwm_set_duty_cycle(_channels[channel].pwm_channel, 0.0f);
 
 	_channels[channel].initialized = true;
 
 	const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
-	PX4_INFO("%s channel: PWM ch=%d, mask=0x%04lx, range=%.0f-%.0f us",
-		 channel_name, _channels[channel].pwm_channel, (unsigned long)_channels[channel].pwm_mask,
-		 (double)get_pwm_min(channel), (double)get_pwm_max(channel));
+	PX4_INFO("%s channel: PWM ch=%d, mask=0x%04lx",
+		 channel_name, _channels[channel].pwm_channel, (unsigned long)_channels[channel].pwm_mask);
 
 	return true;
 }
@@ -220,6 +218,11 @@ bool HBridge::configure_channel(int channel)
 void HBridge::Run()
 {
 	if (should_exit()) {
+#if defined(DRV8701_ENABLE_GPIO)
+		// Disable H-bridge when exiting
+		px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 0);
+		PX4_INFO("H-Bridge disabled on exit");
+#endif
 		ScheduleClear();
 		_is_running = false;
 		return;
@@ -282,32 +285,29 @@ void HBridge::set_channel_speed(int channel, float duty_cycle)
 	// Clamp duty cycle
 	duty_cycle = math::constrain(duty_cycle, -1.0f, 1.0f);
 
-	// Update direction
+	// Update direction based on sign
 	bool forward = duty_cycle >= 0.0f;
 	update_channel_direction(channel, forward);
 
-	// Convert to PWM value
+	// Set PWM duty cycle (absolute value)
 	float abs_duty = fabsf(duty_cycle);
-	uint16_t pwm_value;
 
+	// Apply dead zone
 	if (abs_duty < 0.001f) {
-		// Dead zone - output neutral PWM
-		//pwm_value = (uint16_t)((get_pwm_min(channel) + get_pwm_max(channel)) / 2);
-		pwm_value = 0.0;
-	} else {
-		// Map duty cycle to PWM range
-		float pwm_range = get_pwm_max(channel) - get_pwm_min(channel);
-		pwm_value = (uint16_t)(get_pwm_min(channel) + (abs_duty * pwm_range));
+		abs_duty = 0.0f;
 	}
 
-	// Set PWM value
-	up_pwm_servo_set(_channels[channel].pwm_channel, pwm_value);
+	// Set motor PWM duty cycle directly
+	int ret = up_motor_pwm_set_duty_cycle(_channels[channel].pwm_channel, abs_duty);
+	if (ret != 0) {
+		PX4_WARN("Failed to set PWM duty cycle for channel %d: %d", channel, ret);
+	}
 
 	_channels[channel].current_duty_cycle = duty_cycle;
 
 	const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
-	PX4_DEBUG("%s channel: duty=%.2f, pwm=%u, dir=%s",
-		  channel_name, (double)duty_cycle, pwm_value, forward ? "FWD" : "REV");
+	PX4_DEBUG("%s channel: duty=%.2f%%, dir=%s",
+		  channel_name, (double)(abs_duty * 100.0f), forward ? "FWD" : "REV");
 }
 
 void HBridge::update_channel_direction(int channel, bool forward)
@@ -344,12 +344,7 @@ void HBridge::parameters_update()
 
 	// Update PWM frequency if changed
 	if (_pwm_initialized) {
-		for (int timer = 0; timer < MAX_IO_TIMERS; ++timer) {
-			uint32_t channels = 0xFFFF & up_pwm_servo_get_rate_group(timer);
-			if (channels != 0) {
-				up_pwm_servo_set_rate_group_update(timer, (unsigned)_param_pwm_freq.get());
-			}
-		}
+		up_motor_pwm_set_rate((unsigned)_param_pwm_freq.get());
 	}
 
 	// Reconfigure channels if PWM assignments changed
@@ -357,8 +352,7 @@ void HBridge::parameters_update()
 		int new_pwm = get_pwm_channel(i);
 		if (new_pwm != (int)_channels[i].pwm_channel && _channels[i].initialized) {
 			// Disable old channel
-			up_pwm_servo_set(_channels[i].pwm_channel, 0);
-			up_pwm_servo_arm(false, _channels[i].pwm_mask);
+			up_motor_pwm_set_duty_cycle(_channels[i].pwm_channel, 0.0f);
 
 			// Configure new channel
 			configure_channel(i);
@@ -371,18 +365,6 @@ int HBridge::get_pwm_channel(int ch) const
 {
 	// ch 0 = left channel, ch 1 = right channel
 	return (ch == LEFT_CHANNEL) ? _param_left_pwm.get() : _param_right_pwm.get();
-}
-
-float HBridge::get_pwm_min(int ch) const
-{
-	// ch 0 = left channel, ch 1 = right channel
-	return (ch == LEFT_CHANNEL) ? _param_left_min.get() : _param_right_min.get();
-}
-
-float HBridge::get_pwm_max(int ch) const
-{
-	// ch 0 = left channel, ch 1 = right channel
-	return (ch == LEFT_CHANNEL) ? _param_left_max.get() : _param_right_max.get();
 }
 
 int HBridge::task_spawn(int argc, char *argv[])
@@ -438,8 +420,6 @@ int HBridge::print_status()
 		const char* channel_name = (i == LEFT_CHANNEL) ? "Left" : "Right";
 		PX4_INFO("%s Channel:", channel_name);
 		PX4_INFO("  PWM Channel: %d", _channels[i].pwm_channel);
-		PX4_INFO("  PWM Range: %.0f - %.0f us",
-			(double)get_pwm_min(i), (double)get_pwm_max(i));
 		PX4_INFO("  Duty Cycle: %.2f", (double)_channels[i].current_duty_cycle);
 		PX4_INFO("  Enabled: %s", _channels[i].enabled ? "Yes" : "No");
 		PX4_INFO("  Direction GPIO: 0x%08lx", (unsigned long)_channels[i].dir_gpio);
@@ -472,11 +452,12 @@ Status information is published to hbridge_status topic.
 
 ### Configuration
 Configure each channel using the following parameters:
-- HBRIDGE_CH0_PWM: PWM channel for left channel (default: 2)
-- HBRIDGE_CH1_PWM: PWM channel for right channel (default: 3)
-- HBRIDGE_PWM_FREQ: PWM frequency in Hz
-- HBRIDGE_CH0_MIN/MAX: PWM range for left channel
-- HBRIDGE_CH1_MIN/MAX: PWM range for right channel
+- HBRIDGE_L_PWM: PWM channel for left channel (default: 0)
+- HBRIDGE_R_PWM: PWM channel for right channel (default: 1)
+- HBRIDGE_PWM_FREQ: PWM frequency in Hz (default: 25000 Hz)
+
+Motor control uses duty cycle (0.0 to 1.0) for speed control.
+Direction is controlled via separate GPIO pins.
 
 ### Examples
 Start the driver:

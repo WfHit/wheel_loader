@@ -44,9 +44,9 @@
  * @param io_timers_conf configured timers
  * @param timer_io_channels_conf configured channels
  */
-static inline constexpr io_timers_channel_mapping_t initIOTimerChannelMapping(const io_timers_t
-		io_timers_conf[MAX_IO_TIMERS],
-		const timer_io_channels_t timer_io_channels_conf[MAX_TIMER_IO_CHANNELS])
+static inline constexpr io_timers_channel_mapping_t initIOTimerChannelMapping(
+	const io_timers_t io_timers_conf[MAX_IO_TIMERS],
+	const timer_io_channels_t timer_io_channels_conf[MAX_TIMER_IO_CHANNELS])
 {
 	io_timers_channel_mapping_t ret{};
 

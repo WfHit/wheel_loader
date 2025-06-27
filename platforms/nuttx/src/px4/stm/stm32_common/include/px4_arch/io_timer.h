@@ -83,6 +83,7 @@ typedef enum io_timer_channel_mode_t {
 	IOTimerChanMode_Other   = 10,
 	IOTimerChanMode_DshotInverted = 11,
 	IOTimerChanMode_CaptureDMA = 12,
+	IOTimerChanMode_MotorPWM = 13,  /* High-frequency motor PWM */
 	IOTimerChanModeSize
 } io_timer_channel_mode_t;
 
@@ -144,6 +145,10 @@ __EXPORT extern const io_timers_t spix_sync_timers[MAX_SPIX_SYNC_TIMERS];
 __EXPORT extern const io_timers_channel_mapping_t spix_sync_channel_mapping;
 __EXPORT extern const timer_io_channels_t spix_sync_channels[MAX_TIMER_SPIX_SYNC_CHANNELS];
 
+
+
+
+//
 __EXPORT int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 				   channel_handler_t channel_handler, void *context);
 
@@ -187,5 +192,11 @@ __EXPORT uint32_t io_timer_channel_get_gpio_output(unsigned channel);
  * 0 is returned if the channel is not valid.
  */
 __EXPORT uint32_t io_timer_channel_get_as_pwm_input(unsigned channel);
+
+/**
+ * Returns the timer period (ARR register value) for a specific channel.
+ * 0 is returned if the channel is not valid or timer not configured.
+ */
+__EXPORT uint32_t io_channel_get_timer_period(unsigned channel);
 
 __END_DECLS

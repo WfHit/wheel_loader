@@ -56,61 +56,14 @@ PARAM_DEFINE_INT32(HBRIDGE_L_PWM, 0);
 PARAM_DEFINE_INT32(HBRIDGE_R_PWM, 1);
 
 /**
- * Left wheel min PWM
- *
- * Minimum PWM pulse width for left wheel motor.
- *
- * @unit us
- * @min 800
- * @max 1500
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_L_MIN, 1000.0f);
-
-/**
- * Left wheel max PWM
- *
- * Maximum PWM pulse width for left wheel motor.
- *
- * @unit us
- * @min 1500
- * @max 2200
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_L_MAX, 2000.0f);
-
-/**
- * Right wheel min PWM
- *
- * Minimum PWM pulse width for right wheel motor.
- *
- * @unit us
- * @min 800
- * @max 1500
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_R_MIN, 1000.0f);
-
-/**
- * Right wheel max PWM
- *
- * Maximum PWM pulse width for right wheel motor.
- *
- * @unit us
- * @min 1500
- * @max 2200
- * @group HBridge
- */
-PARAM_DEFINE_FLOAT(HBRIDGE_R_MAX, 2000.0f);
-
-/**
  * H-Bridge PWM frequency
  *
  * PWM frequency for all H-Bridge channels.
+ * Motor control uses high frequencies (10-100 kHz) for smooth operation.
  *
  * @unit Hz
- * @min 50
- * @max 10000
+ * @min 10000
+ * @max 100000
  * @group HBridge
  */
-PARAM_DEFINE_FLOAT(HBRIDGE_PWM_FREQ, 1000.0f);
+PARAM_DEFINE_FLOAT(HBRIDGE_PWM_FREQ, 25000.0f);

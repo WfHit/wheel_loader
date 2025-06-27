@@ -38,6 +38,7 @@
 #include <px4_platform_common/posix.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
+#include <drivers/drv_motor_pwm.h>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
 #include <uORB/Publication.hpp>
@@ -119,8 +120,6 @@ private:
 
 	// Parameter getters
 	int get_pwm_channel(int ch) const;
-	float get_pwm_min(int ch) const;
-	float get_pwm_max(int ch) const;
 
 	// Convenience methods for left/right channel access
 	void set_left_channel_speed(float duty_cycle) { set_channel_speed(LEFT_CHANNEL, duty_cycle); }
@@ -153,10 +152,6 @@ private:
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::HBRIDGE_L_PWM>) _param_left_pwm,
 		(ParamInt<px4::params::HBRIDGE_R_PWM>) _param_right_pwm,
-		(ParamFloat<px4::params::HBRIDGE_L_MIN>) _param_left_min,
-		(ParamFloat<px4::params::HBRIDGE_L_MAX>) _param_left_max,
-		(ParamFloat<px4::params::HBRIDGE_R_MIN>) _param_right_min,
-		(ParamFloat<px4::params::HBRIDGE_R_MAX>) _param_right_max,
 		(ParamFloat<px4::params::HBRIDGE_PWM_FREQ>) _param_pwm_freq
 	)
 };
