@@ -32,11 +32,13 @@
 ############################################################################
 
 px4_add_module(
-	MODULE drivers__st3125_servo
-	MAIN st3125_servo
+	MODULE drivers__st3215_servo
+	MAIN st3215_servo
 	STACK_MAIN 2048
 	SRCS
-		ST3125Servo.cpp
+		st3215_servo.cpp
+		st3215_servo_main.cpp
+		# NOTE: st3215_servo_params.c is NOT included here per coding style
 	DEPENDS
 		px4_work_queue
 	)
