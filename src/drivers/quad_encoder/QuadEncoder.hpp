@@ -167,9 +167,9 @@ private:
 	bool _is_running{false};
 
 	// Device file descriptors
-	int _fd_encoders[MAX_ENCODERS]{-1, -1, -1, -1}; // Up to 4 encoders
 	static constexpr int MAX_ENCODERS = 4;
 	static constexpr int MAX_INSTANCES = 4; // Support up to 4 module instances
+	int _fd_encoders[MAX_ENCODERS]{-1, -1, -1, -1}; // Up to 4 encoders
 	int _num_active_encoders{4}; // Default to 4 for compatibility
 
 	// Encoder data

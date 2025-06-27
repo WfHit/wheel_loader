@@ -1,0 +1,17 @@
+menuconfig DRIVERS_QUAD_ENCODER
+	bool "Quadrature Encoder Driver"
+	default n
+	---help---
+		Enable support for GPIO-based quadrature encoders.
+		This driver interfaces with the NuttX GPIO quadrature encoder
+		framework to provide encoder data for rotary applications including
+		wheels, motors, and position sensors.
+
+		Features:
+		- Supports up to 4 encoders per instance
+		- Multi-instance support (up to 4 instances)
+		- Independent parameter configuration per encoder
+		- Configurable pulses per revolution and direction inversion
+		- Auto-detection of available encoders
+
+

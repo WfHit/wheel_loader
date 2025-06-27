@@ -41,7 +41,7 @@
  * @min 10
  * @max 1000
  */
-PARAM_DEFINE_INT32(QE_UPDATE_RATE, 100);
+PARAM_DEFINE_INT32(QE_UPDATE_RATE, 50);
 
 /**
  * Number of active encoders
