@@ -117,6 +117,95 @@ private:
 	bool read_servo_status();
 
 	/**
+	 * Ping servo to check connectivity
+	 * @param servo_id Servo ID to ping
+	 * @return true if servo responds
+	 */
+	bool ping_servo(uint8_t servo_id);
+
+	/**
+	 * Read single byte from servo register
+	 * @param servo_id Servo ID
+	 * @param reg_addr Register address
+	 * @param value Pointer to store read value
+	 * @return true if read successful
+	 */
+	bool read_byte(uint8_t servo_id, uint8_t reg_addr, uint8_t *value);
+
+	/**
+	 * Read word (2 bytes) from servo register
+	 * @param servo_id Servo ID
+	 * @param reg_addr Register address
+	 * @param value Pointer to store read value
+	 * @return true if read successful
+	 */
+	bool read_word(uint8_t servo_id, uint8_t reg_addr, uint16_t *value);
+
+	/**
+	 * Write single byte to servo register
+	 * @param servo_id Servo ID
+	 * @param reg_addr Register address
+	 * @param value Value to write
+	 * @return true if write successful
+	 */
+	bool write_byte(uint8_t servo_id, uint8_t reg_addr, uint8_t value);
+
+	/**
+	 * Write word (2 bytes) to servo register
+	 * @param servo_id Servo ID
+	 * @param reg_addr Register address
+	 * @param value Value to write
+	 * @return true if write successful
+	 */
+	bool write_word(uint8_t servo_id, uint8_t reg_addr, uint16_t value);
+
+	/**
+	 * Enable/disable servo torque
+	 * @param servo_id Servo ID
+	 * @param enable True to enable, false to disable
+	 * @return true if successful
+	 */
+	bool set_torque_enable(uint8_t servo_id, bool enable);
+
+	/**
+	 * Set servo LED state
+	 * @param servo_id Servo ID
+	 * @param state LED state (0=off, 1=on, 2=blink)
+	 * @return true if successful
+	 */
+	bool set_led(uint8_t servo_id, uint8_t state);
+
+	/**
+	 * Read all servo status (position, speed, load, temperature, voltage)
+	 * @param servo_id Servo ID
+	 * @return true if successful
+	 */
+	bool read_full_status(uint8_t servo_id);
+
+	/**
+	 * Set servo ID
+	 * @param current_id Current servo ID
+	 * @param new_id New servo ID
+	 * @return true if successful
+	 */
+	bool set_servo_id(uint8_t current_id, uint8_t new_id);
+
+	/**
+	 * Set servo baud rate
+	 * @param servo_id Servo ID
+	 * @param baud_rate Baud rate (0-7, see manual)
+	 * @return true if successful
+	 */
+	bool set_baud_rate(uint8_t servo_id, uint8_t baud_rate);
+
+	/**
+	 * Reset servo to factory settings
+	 * @param servo_id Servo ID
+	 * @return true if successful
+	 */
+	bool factory_reset(uint8_t servo_id);
+
+	/**
 	 * Calculate checksum for ST3215 protocol
 	 * @param data Packet data
 	 * @param length Data length
@@ -167,13 +256,18 @@ private:
 	perf_counter_t _comms_error_perf;
 
 	// Servo state
-	float _current_position{0.0f};		// Current position in degrees
-	float _target_position{0.0f};		// Target position in degrees
-	float _current_speed{0.0f};		// Current speed in degrees/second
+	float _current_position{0.0f};		// Current position in radians
+	float _target_position{0.0f};		// Target position in radians
+	float _current_speed{0.0f};		// Current speed in rad/s
 	float _current_load{0.0f};		// Current load percentage
 	uint8_t _current_temperature{0};	// Current temperature in Celsius
+	uint8_t _current_voltage{0};		// Current voltage in 0.1V units
+	uint8_t _error_status{0};		// Error status byte
 	bool _servo_enabled{false};		// Servo enabled state
+	bool _is_moving{false};			// Servo is moving
 	hrt_abstime _last_command_time{0};	// Last command timestamp
+	hrt_abstime _last_ping_time{0};		// Last successful ping time
+	bool _connection_ok{false};		// Connection status
 
 	// Communication buffers
 	static constexpr size_t BUFFER_SIZE = 32;
@@ -184,15 +278,79 @@ private:
 	static constexpr uint8_t ST3215_HEADER = 0xFF;
 	static constexpr uint8_t ST3215_HEADER2 = 0xFF;
 	static constexpr uint8_t ST3215_ID_DEFAULT = 1;
-	static constexpr uint8_t ST3215_CMD_WRITE = 0x03;
+	static constexpr uint8_t ST3215_ID_BROADCAST = 0xFE;
+
+	// Command instructions
+	static constexpr uint8_t ST3215_CMD_PING = 0x01;
 	static constexpr uint8_t ST3215_CMD_READ = 0x02;
-	static constexpr uint8_t ST3215_REG_GOAL_POSITION = 0x2A;
-	static constexpr uint8_t ST3215_REG_GOAL_SPEED = 0x2E;
-	static constexpr uint8_t ST3215_REG_PRESENT_POSITION = 0x38;
-	static constexpr uint8_t ST3215_REG_PRESENT_SPEED = 0x3A;
-	static constexpr uint8_t ST3215_REG_PRESENT_LOAD = 0x3C;
-	static constexpr uint8_t ST3215_REG_PRESENT_TEMP = 0x3F;
-	static constexpr uint8_t ST3215_REG_TORQUE_ENABLE = 0x28;
+	static constexpr uint8_t ST3215_CMD_WRITE = 0x03;
+	static constexpr uint8_t ST3215_CMD_REG_WRITE = 0x04;
+	static constexpr uint8_t ST3215_CMD_ACTION = 0x05;
+	static constexpr uint8_t ST3215_CMD_RESET = 0x06;
+	static constexpr uint8_t ST3215_CMD_SYNC_WRITE = 0x83;
+
+	// EEPROM registers (non-volatile)
+	static constexpr uint8_t ST3215_REG_MODEL_NUMBER_L = 0x00;
+	static constexpr uint8_t ST3215_REG_MODEL_NUMBER_H = 0x01;
+	static constexpr uint8_t ST3215_REG_VERSION = 0x02;
+	static constexpr uint8_t ST3215_REG_ID = 0x03;
+	static constexpr uint8_t ST3215_REG_BAUD_RATE = 0x04;
+	static constexpr uint8_t ST3215_REG_RETURN_DELAY = 0x05;
+	static constexpr uint8_t ST3215_REG_CW_ANGLE_LIMIT_L = 0x06;
+	static constexpr uint8_t ST3215_REG_CW_ANGLE_LIMIT_H = 0x07;
+	static constexpr uint8_t ST3215_REG_CCW_ANGLE_LIMIT_L = 0x08;
+	static constexpr uint8_t ST3215_REG_CCW_ANGLE_LIMIT_H = 0x09;
+	static constexpr uint8_t ST3215_REG_TEMP_LIMIT = 0x0B;
+	static constexpr uint8_t ST3215_REG_MIN_VOLTAGE = 0x0C;
+	static constexpr uint8_t ST3215_REG_MAX_VOLTAGE = 0x0D;
+	static constexpr uint8_t ST3215_REG_MAX_TORQUE_L = 0x0E;
+	static constexpr uint8_t ST3215_REG_MAX_TORQUE_H = 0x0F;
+	static constexpr uint8_t ST3215_REG_STATUS_RETURN_LEVEL = 0x10;
+	static constexpr uint8_t ST3215_REG_ALARM_LED = 0x11;
+	static constexpr uint8_t ST3215_REG_ALARM_SHUTDOWN = 0x12;
+
+	// RAM registers (volatile)
+	static constexpr uint8_t ST3215_REG_TORQUE_ENABLE = 0x18;
+	static constexpr uint8_t ST3215_REG_LED = 0x19;
+	static constexpr uint8_t ST3215_REG_D_GAIN = 0x1A;
+	static constexpr uint8_t ST3215_REG_I_GAIN = 0x1B;
+	static constexpr uint8_t ST3215_REG_P_GAIN = 0x1C;
+	static constexpr uint8_t ST3215_REG_GOAL_POSITION_L = 0x1E;
+	static constexpr uint8_t ST3215_REG_GOAL_POSITION_H = 0x1F;
+	static constexpr uint8_t ST3215_REG_MOVING_SPEED_L = 0x20;
+	static constexpr uint8_t ST3215_REG_MOVING_SPEED_H = 0x21;
+	static constexpr uint8_t ST3215_REG_TORQUE_LIMIT_L = 0x22;
+	static constexpr uint8_t ST3215_REG_TORQUE_LIMIT_H = 0x23;
+	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_L = 0x24;
+	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_H = 0x25;
+	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_L = 0x26;
+	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_H = 0x27;
+	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_L = 0x28;
+	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_H = 0x29;
+	static constexpr uint8_t ST3215_REG_PRESENT_VOLTAGE = 0x2A;
+	static constexpr uint8_t ST3215_REG_PRESENT_TEMP = 0x2B;
+	static constexpr uint8_t ST3215_REG_REGISTERED = 0x2C;
+	static constexpr uint8_t ST3215_REG_MOVING = 0x2E;
+	static constexpr uint8_t ST3215_REG_LOCK = 0x2F;
+	static constexpr uint8_t ST3215_REG_PUNCH_L = 0x30;
+	static constexpr uint8_t ST3215_REG_PUNCH_H = 0x31;
+
+	// Legacy register names for compatibility
+	static constexpr uint8_t ST3215_REG_GOAL_POSITION = ST3215_REG_GOAL_POSITION_L;
+	static constexpr uint8_t ST3215_REG_GOAL_SPEED = ST3215_REG_MOVING_SPEED_L;
+	static constexpr uint8_t ST3215_REG_PRESENT_POSITION = ST3215_REG_PRESENT_POSITION_L;
+	static constexpr uint8_t ST3215_REG_PRESENT_SPEED = ST3215_REG_PRESENT_SPEED_L;
+	static constexpr uint8_t ST3215_REG_PRESENT_LOAD = ST3215_REG_PRESENT_LOAD_L;
+
+	// Error codes
+	static constexpr uint8_t ST3215_ERROR_NONE = 0x00;
+	static constexpr uint8_t ST3215_ERROR_INPUT_VOLTAGE = 0x01;
+	static constexpr uint8_t ST3215_ERROR_ANGLE_LIMIT = 0x02;
+	static constexpr uint8_t ST3215_ERROR_OVERHEATING = 0x04;
+	static constexpr uint8_t ST3215_ERROR_RANGE = 0x08;
+	static constexpr uint8_t ST3215_ERROR_CHECKSUM = 0x10;
+	static constexpr uint8_t ST3215_ERROR_OVERLOAD = 0x20;
+	static constexpr uint8_t ST3215_ERROR_INSTRUCTION = 0x40;
 
 	// Timing constants
 	static constexpr unsigned SCHEDULE_INTERVAL = 20_ms;	// 50 Hz update rate

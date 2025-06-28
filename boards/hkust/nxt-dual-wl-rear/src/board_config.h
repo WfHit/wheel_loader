@@ -174,14 +174,6 @@
 // #define BOARD_AS5600_I2C_ENABLED           1
 // #define BOARD_PROXY_CLIENT_UART_ENABLED    1
 
-/* Quadrature Encoder GPIO Pins for Motor Encoder */
-#define QENCODER_A_GPIO                    /* PC6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN6)
-#define QENCODER_B_GPIO                    /* PC7 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN7)
-
-/* Raw GPIO definitions for QEncoder driver (without flags) */
-#define QENCODER_A_GPIO_RAW                (GPIO_PORTC | GPIO_PIN6)  /* PC6 */
-#define QENCODER_B_GPIO_RAW                (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
-
 /* ST3125 Servo Serial Port */
 // #define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
 
@@ -210,6 +202,10 @@
 /* Quadrature Encoder Support */
 #define CONFIG_BOARD_NXT_QENCODER 1
 #define BOARD_HAS_QENCODER 1
+
+/* Raw GPIO definitions for QEncoder driver (without flags) */
+#define QENCODER_A_GPIO_RAW                (GPIO_PORTD | GPIO_PIN5)  /* PC6 */
+#define QENCODER_B_GPIO_RAW                (GPIO_PORTD | GPIO_PIN6)  /* PC7 */
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -242,8 +238,6 @@
 		GPIO_SPL_ADDR_SET, \
 		GPIO_PC0, \
 		GPIO_PC1, \
-		QENCODER_A_GPIO, \
-		QENCODER_B_GPIO, \
 		DRV8701_RIGHT_DIR_GPIO, \
 		DRV8701_LEFT_DIR_GPIO, \
 		DRV8701_ENABLE_GPIO, \
