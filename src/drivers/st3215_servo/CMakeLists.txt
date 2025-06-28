@@ -36,8 +36,12 @@ px4_add_module(
 	MAIN st3215_servo
 	STACK_MAIN 2048
 	SRCS
-		st3215_servo.cpp
 		st3215_servo_main.cpp
+		st3215_servo_core.cpp
+		st3215_servo_protocol.cpp
+		st3215_servo_enhanced.cpp
+		st3215_servo_commands.cpp
+		st3215_servo_test.cpp
 		# NOTE: st3215_servo_params.c is NOT included here per coding style
 	DEPENDS
 		px4_work_queue

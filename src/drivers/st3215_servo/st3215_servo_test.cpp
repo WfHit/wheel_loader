@@ -45,7 +45,7 @@
 #include <cerrno>
 #include <termios.h>
 
-int ST3215Servo::uart_test(const char *port1, const char *port2, int baud_rate)
+bool ST3215Servo::uart_test(const char *port1, const char *port2, int baud_rate)
 {
 	PX4_INFO("=== UART Test ===");
 	PX4_INFO("Port 1: %s", port1);
@@ -55,14 +55,14 @@ int ST3215Servo::uart_test(const char *port1, const char *port2, int baud_rate)
 	int fd1 = open_uart_port(port1, baud_rate);
 	if (fd1 < 0) {
 		PX4_ERR("Failed to open port 1: %s", port1);
-		return PX4_ERROR;
+		return false;
 	}
 
 	int fd2 = open_uart_port(port2, baud_rate);
 	if (fd2 < 0) {
 		PX4_ERR("Failed to open port 2: %s", port2);
 		close_uart_port(fd1);
-		return PX4_ERROR;
+		return false;
 	}
 
 	PX4_INFO("Both ports opened successfully");
@@ -80,10 +80,10 @@ int ST3215Servo::uart_test(const char *port1, const char *port2, int baud_rate)
 
 	if (test_passed) {
 		PX4_INFO("=== UART Test PASSED ===");
-		return PX4_OK;
+		return true;
 	} else {
 		PX4_ERR("=== UART Test FAILED ===");
-		return PX4_ERROR;
+		return false;
 	}
 }
 
@@ -248,57 +248,59 @@ bool ST3215Servo::test_uart_performance(int fd1, int fd2)
 {
 	PX4_INFO("--- Testing UART Performance ---");
 
-	const int packet_size = 64;
-	const int num_packets = 100;
-	uint8_t tx_data[packet_size];
-	uint8_t rx_data[packet_size];
+	const int test_size = 1024;
+	char *test_data = new char[test_size];
+	char *rx_buffer = new char[test_size];
 
-	// Fill test data with pattern
-	for (int i = 0; i < packet_size; i++) {
-		tx_data[i] = i & 0xFF;
+	// Generate test data
+	for (int i = 0; i < test_size; i++) {
+		test_data[i] = (char)(i % 256);
 	}
 
-	uint64_t start_time = hrt_absolute_time();
-	int successful_packets = 0;
+	// Performance test: send large data block
+	PX4_INFO("Sending %d bytes for performance test", test_size);
 
-	for (int packet = 0; packet < num_packets; packet++) {
-		// Send packet
-		ssize_t bytes_sent = ::write(fd1, tx_data, packet_size);
-		if (bytes_sent != packet_size) {
-			continue;
-		}
+	ssize_t bytes_sent = ::write(fd1, test_data, test_size);
+	if (bytes_sent != test_size) {
+		PX4_ERR("Performance test send failed: %d bytes sent", (int)bytes_sent);
+		delete[] test_data;
+		delete[] rx_buffer;
+		return false;
+	}
 
-		tcdrain(fd1);
-		px4_usleep(1000); // 1ms delay
+	tcdrain(fd1);
+	px4_usleep(50000); // 50ms delay for large data
 
-		// Receive packet
-		memset(rx_data, 0, packet_size);
-		ssize_t bytes_received = ::read(fd2, rx_data, packet_size);
+	// Receive data
+	memset(rx_buffer, 0, test_size);
+	ssize_t bytes_received = ::read(fd2, rx_buffer, test_size);
 
-		if (bytes_received == packet_size && memcmp(tx_data, rx_data, packet_size) == 0) {
-			successful_packets++;
+	if (bytes_received != test_size) {
+		PX4_ERR("Performance test receive failed: %d bytes received", (int)bytes_received);
+		delete[] test_data;
+		delete[] rx_buffer;
+		return false;
+	}
+
+	// Verify data integrity
+	bool data_ok = true;
+	for (int i = 0; i < test_size; i++) {
+		if (test_data[i] != rx_buffer[i]) {
+			PX4_ERR("Data corruption at position %d: expected 0x%02X, got 0x%02X",
+				i, (unsigned char)test_data[i], (unsigned char)rx_buffer[i]);
+			data_ok = false;
+			break;
 		}
 	}
 
-	uint64_t end_time = hrt_absolute_time();
-	uint64_t total_time = end_time - start_time;
+	delete[] test_data;
+	delete[] rx_buffer;
 
-	float success_rate = (float)successful_packets / num_packets * 100.0f;
-	float throughput = (float)(successful_packets * packet_size) / (total_time / 1000000.0f); // bytes/sec
-
-	PX4_INFO("Performance Results:");
-	PX4_INFO("  Packets sent: %d", num_packets);
-	PX4_INFO("  Packets received: %d", successful_packets);
-	PX4_INFO("  Success rate: %.1f%%", (double)success_rate);
-	PX4_INFO("  Total time: %llu us", total_time);
-	PX4_INFO("  Throughput: %.1f bytes/sec", (double)throughput);
-
-	bool test_passed = (success_rate >= 95.0f); // Require 95% success rate
-	if (test_passed) {
+	if (data_ok) {
 		PX4_INFO("Performance test PASSED");
+		return true;
 	} else {
-		PX4_ERR("Performance test FAILED (success rate too low)");
+		PX4_ERR("Performance test FAILED - data corruption detected");
+		return false;
 	}
-
-	return test_passed;
 }

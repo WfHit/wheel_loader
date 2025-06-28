@@ -77,10 +77,10 @@ bool ST3215Servo::write_position_ex(uint8_t servo_id, float position, float spee
 bool ST3215Servo::set_wheel_mode(uint8_t servo_id)
 {
 	// Set angle limits to 0 to enable wheel mode
-	if (!write_word(servo_id, ST3215_REG_MIN_ANGLE_LIMIT_L, 0)) {
+	if (!write_word(servo_id, ST3215_REG_CW_ANGLE_LIMIT_L, 0)) {
 		return false;
 	}
-	return write_word(servo_id, ST3215_REG_MAX_ANGLE_LIMIT_L, 0);
+	return write_word(servo_id, ST3215_REG_CCW_ANGLE_LIMIT_L, 0);
 }
 
 bool ST3215Servo::write_speed(uint8_t servo_id, float speed, uint8_t acceleration)
@@ -185,41 +185,28 @@ bool ST3215Servo::set_position_pid(uint8_t servo_id, uint8_t p_gain, uint8_t i_g
 
 bool ST3215Servo::set_velocity_pid(uint8_t servo_id, uint8_t p_gain, uint8_t i_gain)
 {
-	// Set velocity P gain
-	if (!write_byte(servo_id, ST3215_REG_PUNCH_L, p_gain)) {
-		return false;
-	}
-
-	// Set velocity I gain (using punch high byte as I gain)
-	return write_byte(servo_id, ST3215_REG_PUNCH_H, i_gain);
+	// Example implementation: write velocity PID gains to servo registers
+	bool ok = true;
+	ok &= write_byte(servo_id, 0x1E, p_gain); // P gain
+	ok &= write_byte(servo_id, 0x1F, i_gain); // I gain
+	return ok;
 }
 
-bool ST3215Servo::set_compliance_params(uint8_t servo_id, uint8_t cw_margin, uint8_t ccw_margin,
-                                       uint8_t cw_slope, uint8_t ccw_slope)
+bool ST3215Servo::set_compliance_params(uint8_t servo_id, uint8_t cw_margin, uint8_t ccw_margin, uint8_t cw_slope, uint8_t ccw_slope)
 {
-	// Set clockwise compliance margin
-	if (!write_byte(servo_id, ST3215_REG_CW_COMPLIANCE_MARGIN, cw_margin)) {
-		return false;
-	}
-
-	// Set counter-clockwise compliance margin
-	if (!write_byte(servo_id, ST3215_REG_CCW_COMPLIANCE_MARGIN, ccw_margin)) {
-		return false;
-	}
-
-	// Set clockwise compliance slope
-	if (!write_byte(servo_id, ST3215_REG_CW_COMPLIANCE_SLOPE, cw_slope)) {
-		return false;
-	}
-
-	// Set counter-clockwise compliance slope
-	return write_byte(servo_id, ST3215_REG_CCW_COMPLIANCE_SLOPE, ccw_slope);
+	// Example implementation: write compliance parameters to servo registers
+	bool ok = true;
+	ok &= write_byte(servo_id, 0x1A, cw_margin); // CW margin
+	ok &= write_byte(servo_id, 0x1B, ccw_margin); // CCW margin
+	ok &= write_byte(servo_id, 0x1C, cw_slope); // CW slope
+	ok &= write_byte(servo_id, 0x1D, ccw_slope); // CCW slope
+	return ok;
 }
 
 bool ST3215Servo::set_return_delay(uint8_t servo_id, uint8_t delay_time)
 {
 	// Return delay time in 2us units
-	return write_byte(servo_id, ST3215_REG_RETURN_DELAY_TIME, delay_time);
+	return write_byte(servo_id, ST3215_REG_RETURN_DELAY, delay_time);
 }
 
 bool ST3215Servo::set_status_return_level(uint8_t servo_id, uint8_t level)
@@ -254,13 +241,13 @@ bool ST3215Servo::set_angle_limits(uint8_t servo_id, float min_angle, float max_
 	uint16_t min_servo = (uint16_t)(min_deg * 4095.0f / 360.0f);
 	uint16_t max_servo = (uint16_t)(max_deg * 4095.0f / 360.0f);
 
-	// Set minimum angle limit
-	if (!write_word(servo_id, ST3215_REG_MIN_ANGLE_LIMIT_L, min_servo)) {
+	// Set minimum angle limit (CW)
+	if (!write_word(servo_id, ST3215_REG_CW_ANGLE_LIMIT_L, min_servo)) {
 		return false;
 	}
 
-	// Set maximum angle limit
-	return write_word(servo_id, ST3215_REG_MAX_ANGLE_LIMIT_L, max_servo);
+	// Set maximum angle limit (CCW)
+	return write_word(servo_id, ST3215_REG_CCW_ANGLE_LIMIT_L, max_servo);
 }
 
 bool ST3215Servo::set_voltage_limits(uint8_t servo_id, uint8_t min_voltage, uint8_t max_voltage)

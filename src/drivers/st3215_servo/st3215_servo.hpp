@@ -43,6 +43,7 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <px4_platform_common/getopt.h>
 
 #include <lib/perf/perf_counter.h>
 #include <lib/parameters/param.h>
@@ -88,6 +89,82 @@ public:
 	int print_status() override;
 
 	bool init();
+
+	/**
+	 * Set compliance parameters
+	 * @param servo_id Servo ID
+	 * @param cw_margin CW margin
+	 * @param ccw_margin CCW margin
+	 * @param cw_slope CW slope
+	 * @param ccw_slope CCW slope
+	 * @return true if successful
+	 */
+	bool set_compliance_params(uint8_t servo_id, uint8_t cw_margin, uint8_t ccw_margin, uint8_t cw_slope, uint8_t ccw_slope);
+
+	/**
+	 * Set return delay time
+	 * @param servo_id Servo ID
+	 * @param delay_time Delay time in microseconds
+	 * @return true if successful
+	 */
+	bool set_return_delay(uint8_t servo_id, uint8_t delay_time);
+
+	/**
+	 * Set status return level
+	 * @param servo_id Servo ID
+	 * @param level Status return level (0=none, 1=read only, 2=all)
+	 * @return true if successful
+	 */
+	bool set_status_return_level(uint8_t servo_id, uint8_t level);
+
+	/**
+	 * Set alarm LED
+	 * @param servo_id Servo ID
+	 * @param alarm_led Alarm LED configuration
+	 * @return true if successful
+	 */
+	bool set_alarm_led(uint8_t servo_id, uint8_t alarm_led);
+
+	/**
+	 * Set alarm shutdown
+	 * @param servo_id Servo ID
+	 * @param alarm_shutdown Alarm shutdown configuration
+	 * @return true if successful
+	 */
+	bool set_alarm_shutdown(uint8_t servo_id, uint8_t alarm_shutdown);
+
+	/**
+	 * Set angle limits
+	 * @param servo_id Servo ID
+	 * @param min_angle Minimum angle in radians
+	 * @param max_angle Maximum angle in radians
+	 * @return true if successful
+	 */
+	bool set_angle_limits(uint8_t servo_id, float min_angle, float max_angle);
+
+	/**
+	 * Set voltage limits
+	 * @param servo_id Servo ID
+	 * @param min_voltage Minimum voltage in 0.1V units
+	 * @param max_voltage Maximum voltage in 0.1V units
+	 * @return true if successful
+	 */
+	bool set_voltage_limits(uint8_t servo_id, uint8_t min_voltage, uint8_t max_voltage);
+
+	/**
+	 * Set temperature limit
+	 * @param servo_id Servo ID
+	 * @param max_temperature Maximum temperature in Celsius
+	 * @return true if successful
+	 */
+	bool set_temperature_limit(uint8_t servo_id, uint8_t max_temperature);
+
+	// UART test helpers
+	static int open_uart_port(const char *port, int baud_rate);
+	static void close_uart_port(int fd);
+	static bool test_uart_loopback(int fd1, int fd2);
+	static bool test_uart_bidirectional(int fd1, int fd2);
+	static bool test_uart_performance(int fd1, int fd2);
 
 private:
 	void Run() override;
@@ -281,7 +358,26 @@ private:
 	 * @param baud_rate Baud rate for communication (default: 115200)
 	 * @return true if communication test successful
 	 */
-	bool uart_test(const char *port1, const char *port2, uint32_t baud_rate = 115200);
+	static bool uart_test(const char *port1, const char *port2, int baud_rate = 115200);
+
+	/**
+	 * Set position PID gains
+	 * @param servo_id Servo ID
+	 * @param p_gain Proportional gain
+	 * @param i_gain Integral gain
+	 * @param d_gain Derivative gain
+	 * @return true if successful
+	 */
+	bool set_position_pid(uint8_t servo_id, uint8_t p_gain, uint8_t i_gain, uint8_t d_gain);
+
+	/**
+	 * Set velocity PID gains
+	 * @param servo_id Servo ID
+	 * @param p_gain Proportional gain
+	 * @param i_gain Integral gain
+	 * @return true if successful
+	 */
+	bool set_velocity_pid(uint8_t servo_id, uint8_t p_gain, uint8_t i_gain);
 
 	/**
 	 * Open and configure UART test ports
@@ -437,6 +533,9 @@ private:
 	static constexpr uint8_t ST3215_REG_STATUS_RETURN_LEVEL = 0x10;
 	static constexpr uint8_t ST3215_REG_ALARM_LED = 0x11;
 	static constexpr uint8_t ST3215_REG_ALARM_SHUTDOWN = 0x12;
+	static constexpr uint8_t ST3215_REG_MAX_TEMP_LIMIT = 0x0B;
+	static constexpr uint8_t ST3215_REG_MIN_VOLTAGE_LIMIT = 0x0C;
+	static constexpr uint8_t ST3215_REG_MAX_VOLTAGE_LIMIT = 0x0D;
 
 	// RAM registers (volatile)
 	static constexpr uint8_t ST3215_REG_TORQUE_ENABLE = 0x18;
