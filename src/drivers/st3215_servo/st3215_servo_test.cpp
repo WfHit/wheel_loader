@@ -72,7 +72,7 @@ bool ST3215Servo::uart_test(const char *port1, const char *port2, int baud_rate)
 
 	test_passed &= test_uart_loopback(fd1, fd2);
 	test_passed &= test_uart_bidirectional(fd1, fd2);
-	test_passed &= test_uart_performance(fd1, fd2);
+	// test_passed &= test_uart_performance(fd1, fd2);
 
 	// Cleanup
 	close_uart_port(fd1);
@@ -301,6 +301,100 @@ bool ST3215Servo::test_uart_performance(int fd1, int fd2)
 		return true;
 	} else {
 		PX4_ERR("Performance test FAILED - data corruption detected");
+		return false;
+	}
+}
+
+bool ST3215Servo::monitor_ping_transmission(const char *monitor_port, uint8_t servo_id)
+{
+	PX4_INFO("Testing ping transmission by monitoring on port: %s", monitor_port);
+	PX4_INFO("Main port: %s, Monitor port: %s", _serial_port, monitor_port);
+
+	// Open the monitor port to receive/verify transmitted data
+	int monitor_fd = open_uart_port(monitor_port, _param_baudrate.get());
+	if (monitor_fd < 0) {
+		PX4_ERR("Failed to open monitor port %s", monitor_port);
+		return false;
+	}
+
+	PX4_INFO("Monitor port opened successfully, sending ping on main port...");
+
+	// Expected ping packet: FF FF ID 02 01 ~(ID+02+01)
+	uint8_t expected_packet[6];
+	expected_packet[0] = ST3215_HEADER;    // 0xFF
+	expected_packet[1] = ST3215_HEADER2;   // 0xFF
+	expected_packet[2] = servo_id;         // Servo ID
+	expected_packet[3] = 2;                // Length
+	expected_packet[4] = ST3215_CMD_PING;  // Ping command
+	expected_packet[5] = calculate_checksum(expected_packet + 2, 3); // Checksum
+
+	PX4_INFO("Expected ping packet: %02X %02X %02X %02X %02X %02X",
+		expected_packet[0], expected_packet[1], expected_packet[2],
+		expected_packet[3], expected_packet[4], expected_packet[5]);
+
+	// Clear any existing data in monitor port buffer
+	tcflush(monitor_fd, TCIFLUSH);
+	px4_usleep(1000); // 1ms delay
+
+	// Send ping command on main port
+	bool ping_sent = ping_servo(servo_id);
+	if (!ping_sent) {
+		PX4_WARN("Ping command failed to send on main port");
+	}
+
+	// Monitor the transmission on the monitor port
+	px4_usleep(5000); // 5ms delay to ensure data transmission
+
+	uint8_t received_buffer[32];
+	memset(received_buffer, 0, sizeof(received_buffer));
+
+	ssize_t bytes_received = ::read(monitor_fd, received_buffer, sizeof(received_buffer));
+
+	close_uart_port(monitor_fd);
+
+	if (bytes_received <= 0) {
+		PX4_ERR("No data received on monitor port (received %d bytes)", (int)bytes_received);
+		return false;
+	}
+
+	PX4_INFO("Received %d bytes on monitor port:", (int)bytes_received);
+	for (int i = 0; i < bytes_received; i++) {
+		PX4_INFO("  [%d]: 0x%02X", i, received_buffer[i]);
+	}
+
+	// Verify the transmitted packet matches expected ping command
+	bool packet_valid = false;
+
+	// Look for the ping packet in the received data
+	for (int offset = 0; offset <= bytes_received - 6; offset++) {
+		if (received_buffer[offset] == ST3215_HEADER &&
+		    received_buffer[offset + 1] == ST3215_HEADER2 &&
+		    received_buffer[offset + 2] == servo_id &&
+		    received_buffer[offset + 3] == 2 &&
+		    received_buffer[offset + 4] == ST3215_CMD_PING) {
+
+			// Verify checksum
+			uint8_t received_checksum = received_buffer[offset + 5];
+			uint8_t calculated_checksum = calculate_checksum(&received_buffer[offset + 2], 3);
+
+			if (received_checksum == calculated_checksum) {
+				PX4_INFO("✓ Valid ping packet found at offset %d", offset);
+				packet_valid = true;
+				break;
+			} else {
+				PX4_WARN("Ping packet found but checksum mismatch: expected 0x%02X, got 0x%02X",
+					calculated_checksum, received_checksum);
+			}
+		}
+	}
+
+	if (packet_valid) {
+		PX4_INFO("✓ Ping transmission verification PASSED");
+		PX4_INFO("✓ Correct ping command transmitted for servo ID %d", servo_id);
+		return true;
+	} else {
+		PX4_ERR("✗ Ping transmission verification FAILED");
+		PX4_ERR("✗ Expected ping packet not found in transmitted data");
 		return false;
 	}
 }

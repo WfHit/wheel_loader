@@ -152,21 +152,36 @@ void ST3215Servo::close_serial_port()
 bool ST3215Servo::send_packet(const uint8_t *data, uint8_t length)
 {
 	if (_serial_fd < 0) {
-		PX4_WARN("Serial port not open");
+		PX4_ERR("Serial port not open, fd = %d", _serial_fd);
 		return false;
 	}
 
 	ssize_t bytes_written = ::write(_serial_fd, data, length);
 
-	if (bytes_written != length) {
-		PX4_WARN("Write failed: expected %d bytes, wrote %d bytes (%s)",
+	if (bytes_written < 0) {
+		PX4_ERR("Write failed: expected %d bytes, wrote %d bytes (%s)",
 			length, (int)bytes_written, strerror(errno));
+		perf_count(_comms_error_perf);
+
+		// If we get EBADF (Bad file descriptor), the connection is lost
+		if (errno == EBADF || errno == ENOTCONN) {
+			PX4_ERR("Serial connection lost, closing port");
+			close_serial_port();
+		}
+		return false;
+	}
+
+	if (bytes_written != length) {
+		PX4_WARN("Partial write: expected %d bytes, wrote %d bytes",
+			length, (int)bytes_written);
 		perf_count(_comms_error_perf);
 		return false;
 	}
 
 	// Force transmission
-	tcdrain(_serial_fd);
+	if (tcdrain(_serial_fd) != 0) {
+		PX4_WARN("Failed to drain serial port: %s", strerror(errno));
+	}
 
 	PX4_DEBUG("Sent %d bytes successfully", length);
 	return true;
@@ -175,7 +190,7 @@ bool ST3215Servo::send_packet(const uint8_t *data, uint8_t length)
 int ST3215Servo::receive_packet(uint8_t *buffer, uint8_t max_length)
 {
 	if (_serial_fd < 0) {
-		PX4_WARN("Serial port not open");
+		PX4_ERR("Serial port not open, fd = %d", _serial_fd);
 		return -1;
 	}
 
@@ -188,6 +203,12 @@ int ST3215Servo::receive_packet(uint8_t *buffer, uint8_t max_length)
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			PX4_WARN("Read failed: %s", strerror(errno));
 			perf_count(_comms_error_perf);
+
+			// If we get EBADF (Bad file descriptor), the connection is lost
+			if (errno == EBADF || errno == ENOTCONN) {
+				PX4_ERR("Serial connection lost during read, closing port");
+				close_serial_port();
+			}
 		}
 		return -1;
 	}
@@ -217,8 +238,8 @@ bool ST3215Servo::ping_servo(uint8_t servo_id)
 	packet[4] = ST3215_CMD_PING;
 	packet[5] = calculate_checksum(packet + 2, 3);
 
-	PX4_DEBUG("Sending ping to servo ID %d", servo_id);
-	PX4_DEBUG("Ping packet: %02X %02X %02X %02X %02X %02X",
+	PX4_INFO("Sending ping to servo ID %d", servo_id);
+	PX4_INFO("Ping packet: %02X %02X %02X %02X %02X %02X",
 		packet[0], packet[1], packet[2], packet[3], packet[4], packet[5]);
 
 	if (!send_packet(packet, sizeof(packet))) {

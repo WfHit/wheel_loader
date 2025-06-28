@@ -55,6 +55,8 @@ ST3215Servo::ST3215Servo(const char *serial_port) :
 	// Set the serial port
 	strncpy(_serial_port, serial_port, SERIAL_PORT_MAX_LEN - 1);
 	_serial_port[SERIAL_PORT_MAX_LEN - 1] = '\0';
+	PX4_INFO("Serial port: %s", _serial_port);
+
 }
 
 ST3215Servo::~ST3215Servo()
@@ -88,6 +90,17 @@ void ST3215Servo::Run()
 
 	perf_begin(_loop_perf);
 
+	// Check serial port connection
+	if (_serial_fd < 0) {
+		PX4_WARN("Serial port disconnected, attempting to reconnect");
+		if (!open_serial_port()) {
+			PX4_ERR("Failed to reconnect to serial port");
+			perf_count(_comms_error_perf);
+			perf_end(_loop_perf);
+			return;
+		}
+	}
+
 	// Update parameters
 	updateParams();
 
@@ -97,6 +110,8 @@ void ST3215Servo::Run()
 	// Read servo status
 	if (read_servo_status()) {
 		publish_feedback();
+	} else {
+		perf_count(_comms_error_perf);
 	}
 
 	perf_end(_loop_perf);
@@ -141,6 +156,12 @@ void ST3215Servo::publish_feedback()
 
 bool ST3215Servo::send_position_command(float position, float speed)
 {
+	// Check if serial port is open before attempting to send commands
+	if (_serial_fd < 0) {
+		PX4_ERR("Serial port not open, cannot send position command");
+		return false;
+	}
+
 	uint8_t servo_id = _param_servo_id.get();
 
 	// Convert position from radians to servo units (0-4095)
@@ -154,11 +175,17 @@ bool ST3215Servo::send_position_command(float position, float speed)
 
 	// Send position command
 	if (!write_word(servo_id, ST3215_REG_GOAL_POSITION_L, servo_position)) {
+		PX4_ERR("Failed to send position command");
 		return false;
 	}
 
 	// Send speed command
-	return write_word(servo_id, ST3215_REG_MOVING_SPEED_L, servo_speed);
+	if (!write_word(servo_id, ST3215_REG_MOVING_SPEED_L, servo_speed)) {
+		PX4_ERR("Failed to send speed command");
+		return false;
+	}
+
+	return true;
 }
 
 bool ST3215Servo::read_servo_status()

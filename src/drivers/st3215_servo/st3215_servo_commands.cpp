@@ -401,6 +401,29 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 		return PX4_OK;
 	}
 
+	if (!strcmp(command, "monitor_ping")) {
+		if (argc < 2) {
+			return print_usage("monitor_ping command requires monitor port path");
+		}
+
+		const char *monitor_port = argv[1];
+		uint8_t servo_id = 1; // Default servo ID
+
+		if (argc >= 3) {
+			servo_id = atoi(argv[2]);
+		}
+
+		PX4_INFO("Monitoring ping transmission on port %s for servo ID %d", monitor_port, servo_id);
+
+		if (instance->monitor_ping_transmission(monitor_port, servo_id)) {
+			PX4_INFO("Ping transmission monitoring: SUCCESS");
+			return PX4_OK;
+		} else {
+			PX4_ERR("Ping transmission monitoring: FAILED");
+			return PX4_ERROR;
+		}
+	}
+
 	if (!strcmp(command, "stop")) {
 		PX4_INFO("Stopping ST3215 servo driver...");
 		if (instance) {
@@ -470,6 +493,10 @@ $ st3215_servo write 0x18 1 [servo_id] [word]
 Test UART communication:
 $ st3215_servo uart_test /dev/ttyS1 /dev/ttyS2 [baud_rate]
 
+Monitor ping transmission:
+$ st3215_servo monitor_ping /dev/ttyS2 [servo_id]
+(Monitors what is transmitted from main port by receiving on monitor port)
+
 Run diagnostics:
 $ st3215_servo diagnose [servo_id]
 
@@ -492,6 +519,7 @@ $ st3215_servo stop
 	PRINT_MODULE_USAGE_COMMAND_DESCR("write", "Write servo register (add 'word' for 16-bit write)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Factory reset servo");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("uart_test", "Test UART communication between two ports");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("monitor_ping", "Monitor ping transmission on different serial port");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("diagnose", "Run comprehensive connection diagnostic");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 

@@ -465,6 +465,14 @@ private:
 	 */
 	int receive_packet(uint8_t *buffer, uint8_t max_length);
 
+	/**
+	 * Monitor ping transmission by receiving on a different serial port
+	 * @param monitor_port Path to monitor serial port (e.g., "/dev/ttyS2")
+	 * @param servo_id Servo ID to ping on main port
+	 * @return true if correct ping packet is detected on monitor port
+	 */
+	bool monitor_ping_transmission(const char *monitor_port, uint8_t servo_id);
+
 	// Serial communication
 	int _serial_fd{-1};
 	static constexpr size_t SERIAL_PORT_MAX_LEN = 32;
