@@ -35,16 +35,19 @@
  * @file st3215_servo.cpp
  * @author PX4 Development Team
  *
- * Driver for ST3215 smart servo
+ * Main entry point for ST3215 smart servo driver
+ *
+ * This file contains only the module entry point.
+ * The actual implementation is split across multiple files:
+ * - st3215_servo_core.cpp: Core driver functionality
+ * - st3215_servo_protocol.cpp: Communication protocol
+ * - st3215_servo_enhanced.cpp: Enhanced SCServo functions
+ * - st3215_servo_commands.cpp: Command line interface
+ * - st3215_servo_test.cpp: Test utilities
  */
 
 #include "st3215_servo.hpp"
-
-#include <px4_platform_common/getopt.h>
-#include <px4_platform_common/log.h>
-#include <lib/mathlib/mathlib.h>
-#include <cstring>
-#include <cerrno>
+#include <cmath>
 
 ST3215Servo::ST3215Servo(const char *serial_port) :
 	ModuleBase<ST3215Servo>(),
@@ -625,6 +628,445 @@ bool ST3215Servo::factory_reset(uint8_t servo_id)
 	return false;
 }
 
+// Enhanced SCServo protocol functions
+
+bool ST3215Servo::write_position_ex(uint8_t servo_id, float position, float speed, uint8_t acceleration)
+{
+	// Convert position from radians to servo units (0-4095)
+	float position_deg = position * 180.0f / M_PI_F; // Convert to degrees
+	if (position_deg < 0) position_deg += 360.0f; // Ensure positive
+	uint16_t servo_position = (uint16_t)(position_deg * 4095.0f / 360.0f);
+
+	// Convert speed from rad/s to servo units
+	float speed_deg_s = fabsf(speed) * 180.0f / M_PI_F; // Convert to deg/s
+	uint16_t servo_speed = (uint16_t)(speed_deg_s / 0.114f); // 0.114 deg/s per unit
+
+	// Support negative speeds (SCServo protocol uses bit 15 for direction)
+	if (speed < 0) {
+		servo_speed |= (1 << 15); // Set direction bit
+	}
+
+	// Write acceleration first
+	if (!write_byte(servo_id, ST3215_REG_ACC, acceleration)) {
+		return false;
+	}
+
+	// Write position
+	if (!write_word(servo_id, ST3215_REG_GOAL_POSITION_L, servo_position)) {
+		return false;
+	}
+
+	// Write speed
+	return write_word(servo_id, ST3215_REG_MOVING_SPEED_L, servo_speed);
+}
+
+bool ST3215Servo::set_wheel_mode(uint8_t servo_id)
+{
+	// Set wheel mode by setting CW and CCW angle limits to 0
+	// This puts the servo in continuous rotation mode
+	if (!write_word(servo_id, ST3215_REG_CW_ANGLE_LIMIT_L, 0)) {
+		return false;
+	}
+
+	return write_word(servo_id, ST3215_REG_CCW_ANGLE_LIMIT_L, 0);
+}
+
+bool ST3215Servo::write_speed(uint8_t servo_id, float speed, uint8_t acceleration)
+{
+	// First set acceleration (if register exists)
+	if (!write_byte(servo_id, ST3215_REG_ACC, acceleration)) {
+		// If acceleration register doesn't exist, continue anyway
+		PX4_DEBUG("Could not set acceleration, continuing...");
+	}
+
+	// Convert speed from rad/s to servo units
+	float speed_deg_s = fabsf(speed) * 180.0f / M_PI_F; // Convert to deg/s
+	uint16_t servo_speed = (uint16_t)(speed_deg_s / 0.114f); // 0.114 deg/s per unit
+
+	// Support negative speeds (SCServo protocol uses bit 15 for direction)
+	if (speed < 0) {
+		servo_speed |= (1 << 15); // Set direction bit for CCW
+	}
+
+	// Send speed command to goal speed register
+	return write_word(servo_id, ST3215_REG_MOVING_SPEED_L, servo_speed);
+}
+
+bool ST3215Servo::set_torque_limit(uint8_t servo_id, uint16_t torque_limit)
+{
+	// Torque limit: 0-1000 where 1000 = 100%
+	if (torque_limit > 1000) {
+		torque_limit = 1000;
+	}
+
+	return write_word(servo_id, ST3215_REG_TORQUE_LIMIT_L, torque_limit);
+}
+
+bool ST3215Servo::feedback(uint8_t servo_id)
+{
+	// Read all feedback data at once (like SCServo FeedBack function)
+	// Read from present position to present current (15 bytes total)
+	uint8_t packet[8];
+	packet[0] = ST3215_HEADER;
+	packet[1] = ST3215_HEADER2;
+	packet[2] = servo_id;
+	packet[3] = 4; // Length
+	packet[4] = ST3215_CMD_READ;
+	packet[5] = ST3215_REG_PRESENT_POSITION_L; // Start address
+	packet[6] = 15; // Read 15 bytes (position, speed, load, voltage, temp, moving, etc.)
+	packet[7] = calculate_checksum(packet + 2, 5);
+
+	if (!send_packet(packet, sizeof(packet))) {
+		return false;
+	}
+
+	px4_usleep(2000); // 2ms delay
+
+	int bytes_received = receive_packet(_rx_buffer, BUFFER_SIZE);
+
+	if (bytes_received >= 21 && // Header(2) + ID(1) + Length(1) + Error(1) + Data(15) + Checksum(1)
+	    _rx_buffer[0] == ST3215_HEADER &&
+	    _rx_buffer[1] == ST3215_HEADER2 &&
+	    _rx_buffer[2] == servo_id) {
+		_error_status = _rx_buffer[4];
+		if (_error_status == ST3215_ERROR_NONE) {
+			// Parse feedback data
+			uint16_t position = (_rx_buffer[6] << 8) | _rx_buffer[5];
+			uint16_t speed = (_rx_buffer[8] << 8) | _rx_buffer[7];
+			uint16_t load = (_rx_buffer[10] << 8) | _rx_buffer[9];
+
+			// Convert position (handle negative positions using bit 15)
+			if (position & (1 << 15)) {
+				position = -(position & ~(1 << 15));
+			}
+			float position_deg = (float)position * 360.0f / 4095.0f;
+			if (position_deg > 180.0f) position_deg -= 360.0f;
+			_current_position = position_deg * M_PI_F / 180.0f;
+
+			// Convert speed (handle direction using bit 15)
+			if (speed & (1 << 15)) {
+				speed = -(speed & ~(1 << 15));
+			}
+			float speed_deg_s = (float)speed * 0.114f; // 0.114 deg/s per unit
+			_current_speed = speed_deg_s * M_PI_F / 180.0f;
+
+			// Convert load (handle direction using bit 10)
+			if (load & (1 << 10)) {
+				load = -(load & ~(1 << 10));
+			}
+			_current_load = (float)load / 10.24f; // Convert to percentage
+
+			// Extract other data
+			_current_voltage = _rx_buffer[11]; // Voltage in 0.1V units
+			_current_temperature = _rx_buffer[12]; // Temperature in Celsius
+			_is_moving = (_rx_buffer[15] != 0); // Moving status
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int ST3215Servo::read_current(uint8_t servo_id)
+{
+	// ST3215 doesn't have dedicated current registers like newer servos
+	// This function would need hardware that supports current measurement
+	// For now, return -1 to indicate not supported
+	PX4_WARN("Current reading not supported on ST3215");
+	return -1;
+}
+
+bool ST3215Servo::unlock_eprom(uint8_t servo_id)
+{
+	// Unlock EPROM by writing 0 to lock register
+	return write_byte(servo_id, ST3215_REG_LOCK, 0);
+}
+
+bool ST3215Servo::lock_eprom(uint8_t servo_id)
+{
+	// Lock EPROM by writing 1 to lock register
+	return write_byte(servo_id, ST3215_REG_LOCK, 1);
+}
+
+bool ST3215Servo::calibrate_center(uint8_t servo_id)
+{
+	// Calibrate center position by writing special value to torque enable register
+	// This follows the SCServo CalibrationOfs function
+	return write_byte(servo_id, ST3215_REG_TORQUE_ENABLE, 128);
+}
+
+bool ST3215Servo::uart_test(const char *port1, const char *port2, uint32_t baud_rate)
+{
+	PX4_INFO("=== UART Test Mode ===");
+	PX4_INFO("Testing communication between %s and %s at %u baud", port1, port2, baud_rate);
+
+	// Open and configure both ports
+	int fd1, fd2;
+	if (!uart_test_open_ports(port1, port2, baud_rate, &fd1, &fd2)) {
+		return false;
+	}
+
+	// Test communication forward and reverse
+	int success_count = uart_test_communication(fd1, fd2);
+
+	// Close ports
+	uart_test_close_ports(fd1, fd2);
+
+	// Summary
+	uart_test_print_results(success_count);
+
+	return (success_count >= 4); // At least 4 out of 5 tests should pass
+}
+
+bool ST3215Servo::uart_test_open_ports(const char *port1, const char *port2, uint32_t baud_rate, int *fd1, int *fd2)
+{
+	// Open first serial port
+	*fd1 = ::open(port1, O_RDWR | O_NOCTTY | O_NONBLOCK);
+	if (*fd1 < 0) {
+		PX4_ERR("Failed to open %s: %s", port1, strerror(errno));
+		return false;
+	}
+
+	// Open second serial port
+	*fd2 = ::open(port2, O_RDWR | O_NOCTTY | O_NONBLOCK);
+	if (*fd2 < 0) {
+		PX4_ERR("Failed to open %s: %s", port2, strerror(errno));
+		::close(*fd1);
+		return false;
+	}
+
+	// Configure both ports with same settings
+	if (!uart_test_configure_port(*fd1, baud_rate) || !uart_test_configure_port(*fd2, baud_rate)) {
+		::close(*fd1);
+		::close(*fd2);
+		return false;
+	}
+
+	// Flush any existing data
+	tcflush(*fd1, TCIOFLUSH);
+	tcflush(*fd2, TCIOFLUSH);
+
+	PX4_INFO("Both ports configured successfully (%u baud, 8N1)", baud_rate);
+	return true;
+}
+
+void ST3215Servo::uart_test_close_ports(int fd1, int fd2)
+{
+	::close(fd1);
+	::close(fd2);
+}
+
+bool ST3215Servo::uart_test_configure_port(int fd, uint32_t baud_rate)
+{
+	struct termios tty;
+
+	if (tcgetattr(fd, &tty) != 0) {
+		PX4_ERR("Failed to get serial attributes: %s", strerror(errno));
+		return false;
+	}
+
+	// Convert baud rate to termios speed_t
+	speed_t speed;
+	switch (baud_rate) {
+	case 9600:
+		speed = B9600;
+		break;
+	case 19200:
+		speed = B19200;
+		break;
+	case 38400:
+		speed = B38400;
+		break;
+	case 57600:
+		speed = B57600;
+		break;
+	case 115200:
+		speed = B115200;
+		break;
+	case 230400:
+		speed = B230400;
+		break;
+	case 460800:
+		speed = B460800;
+		break;
+	case 500000:
+		speed = B500000;
+		break;
+	case 576000:
+		speed = B576000;
+		break;
+	case 921600:
+		speed = B921600;
+		break;
+	case 1000000:
+		speed = B1000000;
+		break;
+	case 1152000:
+		speed = B1152000;
+		break;
+	case 1500000:
+		speed = B1500000;
+		break;
+	case 2000000:
+		speed = B2000000;
+		break;
+	case 2500000:
+		speed = B2500000;
+		break;
+	case 3000000:
+		speed = B3000000;
+		break;
+	case 3500000:
+		speed = B3500000;
+		break;
+	case 4000000:
+		speed = B4000000;
+		break;
+	default:
+		PX4_ERR("Unsupported baud rate: %u", baud_rate);
+		return false;
+	}
+
+	// Set baud rate
+	if (cfsetospeed(&tty, speed) != 0 || cfsetispeed(&tty, speed) != 0) {
+		PX4_ERR("Failed to set baud rate to %u", baud_rate);
+		return false;
+	}
+
+	// Configure 8N1
+	tty.c_cflag &= ~PARENB;  // No parity
+	tty.c_cflag &= ~CSTOPB;  // One stop bit
+	tty.c_cflag &= ~CSIZE;   // Clear size mask
+	tty.c_cflag |= CS8;      // 8 data bits
+
+	// No flow control
+	tty.c_cflag &= ~CRTSCTS;
+
+	// Enable receiver, ignore modem control lines
+	tty.c_cflag |= CREAD | CLOCAL;
+
+	// Disable canonical mode, echo, echoe, and echok
+	tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK);
+
+	// Disable software flow control
+	tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+
+	// Raw output
+	tty.c_oflag &= ~OPOST;
+
+	// Set timeouts
+	tty.c_cc[VMIN] = 0;   // Non-blocking
+	tty.c_cc[VTIME] = 1;  // 100ms timeout
+
+	if (tcsetattr(fd, TCSANOW, &tty) != 0) {
+		PX4_ERR("Failed to set serial attributes: %s", strerror(errno));
+		return false;
+	}
+
+	return true;
+}
+
+int ST3215Servo::uart_test_communication(int fd1, int fd2)
+{
+	const char *test_messages[] = {
+		"Hello from port 1!",
+		"Test message 123",
+		"UART communication test",
+		"Final test message"
+	};
+	const int num_messages = sizeof(test_messages) / sizeof(test_messages[0]);
+
+	int success_count = 0;
+
+	// Test forward direction (port 1 to port 2)
+	for (int i = 0; i < num_messages; i++) {
+		if (uart_test_send_receive(fd1, fd2, test_messages[i], i + 1, num_messages)) {
+			success_count++;
+		}
+		px4_usleep(100000); // 100ms between tests
+	}
+
+	// Test reverse direction (port 2 to port 1)
+	PX4_INFO("Testing reverse direction...");
+	const char *reverse_msg = "Reverse test message";
+	if (uart_test_send_receive(fd2, fd1, reverse_msg, 0, 0)) {
+		success_count++;
+	}
+
+	return success_count;
+}
+
+bool ST3215Servo::uart_test_send_receive(int tx_fd, int rx_fd, const char *message, int test_num, int total_tests)
+{
+	if (test_num > 0) {
+		PX4_INFO("Test %d/%d: Sending '%s'", test_num, total_tests, message);
+	} else {
+		PX4_INFO("Sending '%s'", message);
+	}
+
+	// Send message
+	size_t msg_len = strlen(message);
+	ssize_t bytes_written = ::write(tx_fd, message, msg_len);
+
+	if (bytes_written != (ssize_t)msg_len) {
+		PX4_WARN("  Write failed: expected %zu bytes, wrote %zd bytes", msg_len, bytes_written);
+		return false;
+	}
+
+	// Force transmission
+	tcdrain(tx_fd);
+
+	// Wait for data to arrive
+	px4_usleep(10000); // 10ms
+
+	// Read response
+	uint8_t rx_buffer[256];
+	memset(rx_buffer, 0, sizeof(rx_buffer));
+
+	ssize_t bytes_read = ::read(rx_fd, rx_buffer, sizeof(rx_buffer) - 1);
+
+	if (bytes_read > 0) {
+		rx_buffer[bytes_read] = '\0'; // Null terminate
+		PX4_INFO("  Received %zd bytes: '%s'", bytes_read, (char*)rx_buffer);
+
+		// Check if received message matches sent message
+		if (bytes_read == (ssize_t)msg_len && memcmp(message, rx_buffer, msg_len) == 0) {
+			PX4_INFO("  ✓ Message match - SUCCESS");
+			return true;
+		} else {
+			PX4_WARN("  ✗ Message mismatch - FAILED");
+			PX4_WARN("    Expected: '%s' (%zu bytes)", message, msg_len);
+			PX4_WARN("    Received: '%s' (%zd bytes)", (char*)rx_buffer, bytes_read);
+			return false;
+		}
+	} else {
+		PX4_WARN("  ✗ No data received - FAILED");
+		return false;
+	}
+}
+
+void ST3215Servo::uart_test_print_results(int success_count)
+{
+	const int total_tests = 5; // 4 forward + 1 reverse
+
+	PX4_INFO("=== UART Test Results ===");
+	PX4_INFO("Successful tests: %d/%d", success_count, total_tests);
+	PX4_INFO("Success rate: %.1f%%", (double)success_count / total_tests * 100.0);
+
+	if (success_count >= 4) {
+		PX4_INFO("✓ Tests PASSED - UART communication working correctly");
+	} else {
+		PX4_WARN("✗ Tests FAILED - Check connections and port configuration");
+		PX4_INFO("Troubleshooting suggestions:");
+		PX4_INFO("1. Verify physical connections (TX1->RX2, RX1->TX2, GND-GND)");
+		PX4_INFO("2. Check if both ports exist and are accessible");
+		PX4_INFO("3. Ensure no other processes are using the ports");
+		PX4_INFO("4. Try different baud rates or port settings");
+		PX4_INFO("5. Check signal levels and cable integrity");
+	}
+}
+
 int ST3215Servo::print_status()
 {
 	PX4_INFO("ST3215 Servo Driver Status:");
@@ -732,11 +1174,11 @@ ST3215Servo *ST3215Servo::instantiate(int argc, char *argv[])
 
 int ST3215Servo::custom_command(int argc, char *argv[])
 {
-	if (argc < 2) {
+	if (argc < 1) {
 		return print_usage("missing command");
 	}
 
-	const char *command = argv[1];
+	const char *command = argv[0];
 
 	// Check if driver is running for commands that need it
 	if (!is_running() && strcmp(command, "start") != 0) {
@@ -753,8 +1195,8 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	if (!strcmp(command, "ping")) {
 		uint8_t servo_id = 1; // Default servo ID
 
-		if (argc >= 3) {
-			servo_id = atoi(argv[2]);
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
 		}
 
 		if (instance->ping_servo(servo_id)) {
@@ -769,8 +1211,8 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	if (!strcmp(command, "enable")) {
 		uint8_t servo_id = instance->_param_servo_id.get();
 
-		if (argc >= 3) {
-			servo_id = atoi(argv[2]);
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
 		}
 
 		if (instance->set_torque_enable(servo_id, true)) {
@@ -785,8 +1227,8 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	if (!strcmp(command, "disable")) {
 		uint8_t servo_id = instance->_param_servo_id.get();
 
-		if (argc >= 3) {
-			servo_id = atoi(argv[2]);
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
 		}
 
 		if (instance->set_torque_enable(servo_id, false)) {
@@ -799,15 +1241,15 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	}
 
 	if (!strcmp(command, "led")) {
-		if (argc < 3) {
+		if (argc < 2) {
 			return print_usage("led command requires state argument (0=off, 1=on, 2=blink)");
 		}
 
 		uint8_t servo_id = instance->_param_servo_id.get();
-		uint8_t led_state = atoi(argv[2]);
+		uint8_t led_state = atoi(argv[1]);
 
-		if (argc >= 4) {
-			servo_id = atoi(argv[3]);
+		if (argc >= 3) {
+			servo_id = atoi(argv[2]);
 		}
 
 		if (instance->set_led(servo_id, led_state)) {
@@ -820,24 +1262,24 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	}
 
 	if (!strcmp(command, "read")) {
-		if (argc < 3) {
+		if (argc < 2) {
 			return print_usage("read command requires register address");
 		}
 
 		uint8_t servo_id = instance->_param_servo_id.get();
-		uint8_t reg_addr = strtol(argv[2], nullptr, 0); // Support hex with 0x prefix
+		uint8_t reg_addr = strtol(argv[1], nullptr, 0); // Support hex with 0x prefix
 		bool read_word = false;
 
-		if (argc >= 4) {
-			if (!strcmp(argv[3], "word")) {
+		if (argc >= 3) {
+			if (!strcmp(argv[2], "word")) {
 				read_word = true;
 			} else {
-				servo_id = atoi(argv[3]);
+				servo_id = atoi(argv[2]);
 			}
 		}
 
-		if (argc >= 5) {
-			if (!strcmp(argv[4], "word")) {
+		if (argc >= 4) {
+			if (!strcmp(argv[3], "word")) {
 				read_word = true;
 			}
 		}
@@ -861,25 +1303,25 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	}
 
 	if (!strcmp(command, "write")) {
-		if (argc < 4) {
+		if (argc < 3) {
 			return print_usage("write command requires register address and value");
 		}
 
 		uint8_t servo_id = instance->_param_servo_id.get();
-		uint8_t reg_addr = strtol(argv[2], nullptr, 0); // Support hex with 0x prefix
-		uint16_t value = strtol(argv[3], nullptr, 0);
+		uint8_t reg_addr = strtol(argv[1], nullptr, 0); // Support hex with 0x prefix
+		uint16_t value = strtol(argv[2], nullptr, 0);
 		bool write_word = false;
 
-		if (argc >= 5) {
-			if (!strcmp(argv[4], "word")) {
+		if (argc >= 4) {
+			if (!strcmp(argv[3], "word")) {
 				write_word = true;
 			} else {
-				servo_id = atoi(argv[4]);
+				servo_id = atoi(argv[3]);
 			}
 		}
 
-		if (argc >= 6) {
-			if (!strcmp(argv[5], "word")) {
+		if (argc >= 5) {
+			if (!strcmp(argv[4], "word")) {
 				write_word = true;
 			}
 		}
@@ -904,8 +1346,8 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	if (!strcmp(command, "reset")) {
 		uint8_t servo_id = instance->_param_servo_id.get();
 
-		if (argc >= 3) {
-			servo_id = atoi(argv[2]);
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
 		}
 
 		if (instance->factory_reset(servo_id)) {
@@ -920,8 +1362,8 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 	if (!strcmp(command, "diagnose")) {
 		uint8_t servo_id = instance->_param_servo_id.get();
 
-		if (argc >= 3) {
-			servo_id = atoi(argv[2]);
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
 		}
 
 		PX4_INFO("=== ST3215 Servo Diagnostic ===");
@@ -987,6 +1429,212 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 		return PX4_OK;
 	}
 
+	if (!strcmp(command, "writepos")) {
+		if (argc < 3) {
+			return print_usage("writepos command requires position and speed arguments");
+		}
+
+		uint8_t servo_id = instance->_param_servo_id.get();
+		float position = strtof(argv[1], nullptr); // Position in radians
+		float speed = strtof(argv[2], nullptr);    // Speed in rad/s
+		uint8_t acceleration = 0;
+
+		if (argc >= 4) {
+			if (!strcmp(argv[3], "acc")) {
+				if (argc >= 5) {
+					acceleration = atoi(argv[4]);
+				}
+			} else {
+				servo_id = atoi(argv[3]);
+				if (argc >= 5 && !strcmp(argv[4], "acc") && argc >= 6) {
+					acceleration = atoi(argv[5]);
+				}
+			}
+		}
+
+		if (instance->write_position_ex(servo_id, position, speed, acceleration)) {
+			PX4_INFO("Servo ID %d: Position command sent (pos=%.3f rad, speed=%.3f rad/s, acc=%d)",
+				servo_id, (double)position, (double)speed, acceleration);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to send position command");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "wheel")) {
+		uint8_t servo_id = instance->_param_servo_id.get();
+
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
+		}
+
+		if (instance->set_wheel_mode(servo_id)) {
+			PX4_INFO("Servo ID %d: Wheel mode enabled", servo_id);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to enable wheel mode");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "speed")) {
+		if (argc < 2) {
+			return print_usage("speed command requires speed argument (rad/s)");
+		}
+
+		uint8_t servo_id = instance->_param_servo_id.get();
+		float speed = strtof(argv[1], nullptr); // Speed in rad/s
+		uint8_t acceleration = 0;
+
+		if (argc >= 3) {
+			if (!strcmp(argv[2], "acc")) {
+				if (argc >= 4) {
+					acceleration = atoi(argv[3]);
+				}
+			} else {
+				servo_id = atoi(argv[2]);
+				if (argc >= 4 && !strcmp(argv[3], "acc") && argc >= 5) {
+					acceleration = atoi(argv[4]);
+				}
+			}
+		}
+
+		if (instance->write_speed(servo_id, speed, acceleration)) {
+			PX4_INFO("Servo ID %d: Speed command sent (speed=%.3f rad/s, acc=%d)",
+				servo_id, (double)speed, acceleration);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to send speed command");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "torque_limit")) {
+		if (argc < 2) {
+			return print_usage("torque_limit command requires torque value (0-1000)");
+		}
+
+		uint8_t servo_id = instance->_param_servo_id.get();
+		uint16_t torque_limit = atoi(argv[1]);
+
+		if (argc >= 3) {
+			servo_id = atoi(argv[2]);
+		}
+
+		if (instance->set_torque_limit(servo_id, torque_limit)) {
+			PX4_INFO("Servo ID %d: Torque limit set to %d", servo_id, torque_limit);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to set torque limit");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "feedback")) {
+		uint8_t servo_id = instance->_param_servo_id.get();
+
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
+		}
+
+		if (instance->feedback(servo_id)) {
+			PX4_INFO("Servo ID %d: Feedback read successfully", servo_id);
+			PX4_INFO("  Position: %.3f rad (%.1f deg)",
+				(double)instance->_current_position,
+				(double)(instance->_current_position * 180.0f / M_PI_F));
+			PX4_INFO("  Speed: %.3f rad/s (%.1f deg/s)",
+				(double)instance->_current_speed,
+				(double)(instance->_current_speed * 180.0f / M_PI_F));
+			PX4_INFO("  Load: %.1f%%", (double)instance->_current_load);
+			PX4_INFO("  Voltage: %.1fV", (double)instance->_current_voltage / 10.0);
+			PX4_INFO("  Temperature: %d°C", instance->_current_temperature);
+			PX4_INFO("  Moving: %s", instance->_is_moving ? "Yes" : "No");
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to read feedback");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "unlock")) {
+		uint8_t servo_id = instance->_param_servo_id.get();
+
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
+		}
+
+		if (instance->unlock_eprom(servo_id)) {
+			PX4_INFO("Servo ID %d: EPROM unlocked", servo_id);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to unlock EPROM");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "lock")) {
+		uint8_t servo_id = instance->_param_servo_id.get();
+
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
+		}
+
+		if (instance->lock_eprom(servo_id)) {
+			PX4_INFO("Servo ID %d: EPROM locked", servo_id);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to lock EPROM");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "calibrate")) {
+		uint8_t servo_id = instance->_param_servo_id.get();
+
+		if (argc >= 2) {
+			servo_id = atoi(argv[1]);
+		}
+
+		if (instance->calibrate_center(servo_id)) {
+			PX4_INFO("Servo ID %d: Center position calibrated", servo_id);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Failed to calibrate center position");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(command, "uart_test")) {
+		if (argc < 3) {
+			return print_usage("uart_test command requires two serial port paths");
+		}
+
+		const char *port1 = argv[1];
+		const char *port2 = argv[2];
+		uint32_t baud_rate = 115200; // Default baud rate
+
+		// Check for optional baud rate parameter
+		if (argc >= 4) {
+			baud_rate = strtoul(argv[3], nullptr, 10);
+			if (baud_rate == 0) {
+				PX4_ERR("Invalid baud rate: %s", argv[3]);
+				return PX4_ERROR;
+			}
+		}
+
+		// Create a temporary instance for the test (don't need the driver running)
+		ST3215Servo test_instance("/dev/null");
+
+		if (test_instance.uart_test(port1, port2, baud_rate)) {
+			PX4_INFO("UART test completed successfully");
+			return PX4_OK;
+		} else {
+			PX4_ERR("UART test failed");
+			return PX4_ERROR;
+		}
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -1041,6 +1689,36 @@ $ st3215_servo write 0x1E 2048 word
 Factory reset servo:
 $ st3215_servo reset [servo_id]
 
+Enhanced position control with acceleration:
+$ st3215_servo writepos 1.57 2.0 [servo_id] [acc 50]
+
+Enable wheel mode (continuous rotation):
+$ st3215_servo wheel [servo_id]
+
+Control speed in wheel mode:
+$ st3215_servo speed 3.14 [servo_id] [acc 50]
+
+Set torque limit (0-1000):
+$ st3215_servo torque_limit 500 [servo_id]
+
+Read comprehensive feedback:
+$ st3215_servo feedback [servo_id]
+
+Unlock/lock EPROM:
+$ st3215_servo unlock [servo_id]
+$ st3215_servo lock [servo_id]
+
+Calibrate center position:
+$ st3215_servo calibrate [servo_id]
+
+Test UART communication between two ports:
+$ st3215_servo uart_test /dev/ttyS1 /dev/ttyS2 [baud_rate]
+
+Examples:
+$ st3215_servo uart_test /dev/ttyS1 /dev/ttyS2          # Default 115200 baud
+$ st3215_servo uart_test /dev/ttyS1 /dev/ttyS2 9600     # 9600 baud
+$ st3215_servo uart_test /dev/ttyS1 /dev/ttyS2 1000000  # 1M baud
+
 Stop the driver:
 $ st3215_servo stop
 )DESCR_STR");
@@ -1055,8 +1733,16 @@ $ st3215_servo stop
 	PRINT_MODULE_USAGE_COMMAND_DESCR("read", "Read servo register (add 'word' for 16-bit read)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("write", "Write servo register (add 'word' for 16-bit write)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Factory reset servo");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("writepos", "Enhanced position control with acceleration");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("wheel", "Enable wheel mode (continuous rotation)");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("speed", "Control speed in wheel mode");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("torque_limit", "Set torque limit (0-1000)");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("feedback", "Read comprehensive servo feedback");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("unlock", "Unlock EPROM for writing");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("lock", "Lock EPROM to prevent writes");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("calibrate", "Calibrate servo center position");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("uart_test", "Test UART communication between two ports (optional baud rate)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("diagnose", "Run comprehensive connection diagnostic");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop the driver");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
