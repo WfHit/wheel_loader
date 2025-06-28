@@ -43,14 +43,18 @@
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <lib/mathlib/mathlib.h>
+#include <cstring>
 
-ST3215Servo::ST3215Servo() :
+ST3215Servo::ST3215Servo(const char *serial_port) :
 	ModuleBase<ST3215Servo>(),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
 	_loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": loop")),
 	_comms_error_perf(perf_alloc(PC_COUNT, MODULE_NAME": comm_err"))
 {
+	// Set the serial port
+	strncpy(_serial_port, serial_port, SERIAL_PORT_MAX_LEN - 1);
+	_serial_port[SERIAL_PORT_MAX_LEN - 1] = '\0';
 }
 
 ST3215Servo::~ST3215Servo()
@@ -320,7 +324,25 @@ int ST3215Servo::print_status()
 
 int ST3215Servo::task_spawn(int argc, char *argv[])
 {
-	ST3215Servo *instance = new ST3215Servo();
+	const char *serial_port = "/dev/ttyS1"; // Default serial port
+
+	// Parse command line arguments
+	int myoptind = 1;
+	int ch;
+	const char *myoptarg = nullptr;
+
+	while ((ch = px4_getopt(argc, argv, "d:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'd':
+			serial_port = myoptarg;
+			break;
+		case '?':
+			PX4_WARN("Unknown option");
+			return PX4_ERROR;
+		}
+	}
+
+	ST3215Servo *instance = new ST3215Servo(serial_port);
 
 	if (instance) {
 		_object.store(instance);
@@ -343,7 +365,22 @@ int ST3215Servo::task_spawn(int argc, char *argv[])
 
 ST3215Servo *ST3215Servo::instantiate(int argc, char *argv[])
 {
-	return new ST3215Servo();
+	const char *serial_port = "/dev/ttyS1"; // Default serial port
+
+	// Parse command line arguments
+	int myoptind = 1;
+	int ch;
+	const char *myoptarg = nullptr;
+
+	while ((ch = px4_getopt(argc, argv, "d:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'd':
+			serial_port = myoptarg;
+			break;
+		}
+	}
+
+	return new ST3215Servo(serial_port);
 }
 
 int ST3215Servo::custom_command(int argc, char *argv[])
@@ -368,8 +405,11 @@ The driver communicates with the servo via UART and provides:
 - Feedback (position, speed, load, temperature)
 
 ### Examples
-Start the driver:
+Start the driver with default serial port (/dev/ttyS1):
 $ st3215_servo start
+
+Start the driver with custom serial port:
+$ st3215_servo start -d /dev/ttyS1
 
 Check status:
 $ st3215_servo status
@@ -380,6 +420,7 @@ $ st3215_servo stop
 
 	PRINT_MODULE_USAGE_NAME("st3215_servo", "driver");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the driver");
+	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS1", "<device>", "Serial device", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;

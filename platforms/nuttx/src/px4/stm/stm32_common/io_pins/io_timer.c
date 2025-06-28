@@ -870,6 +870,7 @@ int io_timer_channel_init(unsigned channel, io_timer_channel_mode_t mode,
 	case IOTimerChanMode_PWMOut:
 	case IOTimerChanMode_Trigger:
 	case IOTimerChanMode_Dshot:
+	case IOTimerChanMode_MotorPWM:
 		ccer_setbits = 0;
 		dier_setbits = 0;
 		setbits = CCMR_C1_PWMOUT_INIT;
@@ -1001,6 +1002,7 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 	case IOTimerChanMode_OneShot:
 	case IOTimerChanMode_PWMOut:
 	case IOTimerChanMode_Trigger:
+	case IOTimerChanMode_MotorPWM:
 		dier_bit = 0;
 		cr1_bit  = GTIM_CR1_CEN | GTIM_CR1_ARPE;
 		break;
@@ -1058,7 +1060,8 @@ int io_timer_set_enable(bool state, io_timer_channel_mode_t mode, io_timer_chann
 			      mode == IOTimerChanMode_OneShot ||
 			      mode == IOTimerChanMode_Dshot ||
 			      mode == IOTimerChanMode_DshotInverted ||
-			      mode == IOTimerChanMode_Trigger))) {
+			      mode == IOTimerChanMode_Trigger ||
+			      mode == IOTimerChanMode_MotorPWM))) {
 				action_cache[timer].gpio[shifts] = timer_io_channels[chan_index].gpio_out;
 			}
 		}
@@ -1119,7 +1122,8 @@ int io_timer_set_ccr(unsigned channel, uint16_t value)
 		    (mode != IOTimerChanMode_OneShot) &&
 		    (mode != IOTimerChanMode_Dshot) &&
 		    (mode != IOTimerChanMode_DshotInverted) &&
-		    (mode != IOTimerChanMode_Trigger)) {
+		    (mode != IOTimerChanMode_Trigger) &&
+		    (mode != IOTimerChanMode_MotorPWM)) {
 
 			rv = -EIO;
 
@@ -1143,7 +1147,8 @@ uint16_t io_channel_get_ccr(unsigned channel)
 
 		if ((mode == IOTimerChanMode_PWMOut) ||
 		    (mode == IOTimerChanMode_OneShot) ||
-		    (mode == IOTimerChanMode_Trigger)) {
+		    (mode == IOTimerChanMode_Trigger) ||
+		    (mode == IOTimerChanMode_MotorPWM)) {
 			value = REG(channels_timer(channel), timer_io_channels[channel].ccr_offset);
 		}
 	}

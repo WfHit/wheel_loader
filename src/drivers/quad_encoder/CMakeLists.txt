@@ -39,6 +39,4 @@ px4_add_module(
 		QuadEncoder.cpp
 	DEPENDS
 		px4_work_queue
-	MODULE_CONFIG
-		MODULE_NAME quad_encoder
 )

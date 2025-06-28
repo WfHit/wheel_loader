@@ -46,6 +46,9 @@
 static QuadEncoder *_objects[QuadEncoder::MAX_INSTANCES] = {};
 static_assert(QuadEncoder::MAX_INSTANCES == 4, "Update _objects array size");
 
+// Definition of static constexpr array
+constexpr const char *QuadEncoder::ENCODER_DEVICE_PATHS[QuadEncoder::MAX_ENCODERS];
+
 QuadEncoder::QuadEncoder(int instance_id) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
@@ -248,9 +251,9 @@ void QuadEncoder::read_encoders()
 					int32_t delta_pos = position - _prev_position[i];
 
 					// Rotary encoder calculations
-					float angular_velocity = (2.0f * M_PI * delta_pos) / (ppr * dt); // rad/s
+					float angular_velocity = (2.0f * static_cast<float>(M_PI) * delta_pos) / (ppr * dt); // rad/s
 					velocity = angular_velocity;
-					angle_rad = (2.0f * M_PI * position) / ppr; // cumulative angle in radians
+					angle_rad = (2.0f * static_cast<float>(M_PI) * position) / ppr; // cumulative angle in radians
 
 					_encoder_data[i].velocity_rad_s = velocity;
 					_encoder_data[i].angle_rad = angle_rad;
@@ -320,11 +323,11 @@ void QuadEncoder::parameters_update()
 	ScheduleOnInterval(update_interval_us);
 }
 
-void QuadEncoder::print_status()
+int QuadEncoder::print_status()
 {
 	PX4_INFO("QuadEncoder (instance %d) status:", _instance_id);
 	PX4_INFO("  Running: %s", _is_running ? "yes" : "no");
-	PX4_INFO("  Update rate: %d Hz", _param_update_rate.get());
+	PX4_INFO("  Update rate: %ld Hz", _param_update_rate.get());
 	PX4_INFO("  Active encoders: %d", _num_active_encoders);
 
 	// Show uORB topic instances
@@ -343,8 +346,8 @@ void QuadEncoder::print_status()
 	}
 
 	PX4_INFO("Statistics:");
-	PX4_INFO("  Read count: %u", _read_count);
-	PX4_INFO("  Error count: %u", _error_count);
+	PX4_INFO("  Read count: %lu", _read_count);
+	PX4_INFO("  Error count: %lu", _error_count);
 
 	if (_last_error_time > 0) {
 		PX4_INFO("  Last error: %llu us ago", hrt_absolute_time() - _last_error_time);
@@ -352,7 +355,8 @@ void QuadEncoder::print_status()
 
 	perf_print_counter(_loop_perf);
 	perf_print_counter(_read_perf);
-}
+
+	return 0;
 }
 
 int QuadEncoder::task_spawn(int argc, char *argv[])

@@ -69,7 +69,7 @@ class ST3215Servo : public ModuleBase<ST3215Servo>,
 		    public px4::ScheduledWorkItem
 {
 public:
-	ST3215Servo();
+	ST3215Servo(const char *serial_port = "/dev/ttyS1");
 	~ST3215Servo() override;
 
 	/** @see ModuleBase */
@@ -154,7 +154,7 @@ private:
 	// Serial communication
 	int _serial_fd{-1};
 	static constexpr size_t SERIAL_PORT_MAX_LEN = 32;
-	char _serial_port[SERIAL_PORT_MAX_LEN]{"/dev/ttyS6"};
+	char _serial_port[SERIAL_PORT_MAX_LEN]{"/dev/ttyS1"};
 
 	// uORB subscriptions
 	uORB::Subscription _servo_command_sub{ORB_ID(robotic_servo_command)};

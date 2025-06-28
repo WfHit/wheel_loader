@@ -61,6 +61,8 @@ using namespace time_literals;
 class QuadEncoder : public ModuleBase<QuadEncoder>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
+	static constexpr int MAX_INSTANCES = 4; // Support up to 4 module instances
+
 	/**
 	 * @brief Constructor
 	 * @param instance_id Encoder instance ID (0-based)
@@ -106,7 +108,7 @@ public:
 	/**
 	 * @brief Print driver status information
 	 */
-	void print_status() override;
+	int print_status() override;
 
 	/**
 	 * @brief Custom command handler
@@ -168,7 +170,6 @@ private:
 
 	// Device file descriptors
 	static constexpr int MAX_ENCODERS = 4;
-	static constexpr int MAX_INSTANCES = 4; // Support up to 4 module instances
 	int _fd_encoders[MAX_ENCODERS]{-1, -1, -1, -1}; // Up to 4 encoders
 	int _num_active_encoders{4}; // Default to 4 for compatibility
 

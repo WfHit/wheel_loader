@@ -41,12 +41,14 @@
  * Supports frequencies from 10 kHz to 100 kHz for motor control applications.
  */
 
+ #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 
 #include <sys/types.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include <assert.h>
 #include <debug.h>
@@ -121,7 +123,6 @@ int up_motor_pwm_init(uint32_t channel_mask)
 	uint32_t current = io_timer_get_mode_channels(IOTimerChanMode_MotorPWM);
 
 	/* First free the current set of motor PWM channels */
-
 	for (unsigned channel = 0; current != 0 && channel < MAX_TIMER_IO_CHANNELS; channel++) {
 		if (current & (1 << channel)) {
 			io_timer_set_enable(false, IOTimerChanMode_MotorPWM, 1 << channel);
@@ -131,15 +132,13 @@ int up_motor_pwm_init(uint32_t channel_mask)
 	}
 
 	/* Now allocate the new set */
-
 	int ret_val = OK;
 	int channels_init_mask = 0;
+	int last_error = 0;
 
 	for (unsigned channel = 0; channel_mask != 0 && channel < MAX_TIMER_IO_CHANNELS; channel++) {
 		if (channel_mask & (1 << channel)) {
-
 			/* Initialize channel for motor PWM mode */
-
 			ret_val = io_timer_channel_init(channel, IOTimerChanMode_MotorPWM, NULL, NULL);
 			channel_mask &= ~(1 << channel);
 
@@ -150,6 +149,10 @@ int up_motor_pwm_init(uint32_t channel_mask)
 			} else if (ret_val == -EBUSY) {
 				/* either timer or channel already used - this is not fatal */
 				ret_val = 0;
+			} else {
+				/* This is the error case - log it but continue with other channels */
+				last_error = ret_val;
+				ret_val = 0; // Don't fail immediately, try other channels
 			}
 		}
 	}
@@ -157,9 +160,10 @@ int up_motor_pwm_init(uint32_t channel_mask)
 	/* Set default motor PWM frequency to 25kHz for all initialized channels */
 	if (channels_init_mask > 0) {
 		up_motor_pwm_set_rate(MOTOR_PWM_DEFAULT_FREQ);
+		return channels_init_mask;  // Return success with the channels that worked
+	} else {
+		return last_error != 0 ? last_error : -EINVAL;
 	}
-
-	return ret_val == OK ? channels_init_mask : ret_val;
 }
 
 void up_motor_pwm_deinit(uint32_t channel_mask)
