@@ -41,7 +41,9 @@
 #include "st3215_servo.hpp"
 
 #include <px4_platform_common/log.h>
+#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/mathlib/mathlib.h>
+#include <drivers/drv_hrt.h>
 #include <cstring>
 #include <cerrno>
 
@@ -76,6 +78,7 @@ bool ST3215Servo::init()
 	// Start work queue
 	ScheduleOnInterval(SCHEDULE_INTERVAL);
 
+	PX4_INFO("ST3215 servo driver initialized successfully");
 	return true;
 }
 

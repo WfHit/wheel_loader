@@ -44,6 +44,7 @@
 #include <cstring>
 #include <cerrno>
 #include <termios.h>
+#include <fcntl.h>
 
 bool ST3215Servo::open_serial_port()
 {
@@ -149,10 +150,73 @@ void ST3215Servo::close_serial_port()
 	}
 }
 
+bool ST3215Servo::verify_serial_port()
+{
+	if (_serial_fd < 0) {
+		PX4_ERR("Serial port not open (fd=%d)", _serial_fd);
+		return false;
+	}
+
+	// Check if the file descriptor is valid using fcntl
+	int flags = fcntl(_serial_fd, F_GETFD);
+	if (flags == -1) {
+		int err = errno;
+		switch (err) {
+		case EBADF:
+			PX4_ERR("Serial FD %d is invalid (EBADF) - port closed or hardware disconnected", _serial_fd);
+			break;
+		case ENODEV:
+			PX4_ERR("Serial FD %d device removed (ENODEV) - hardware unplugged?", _serial_fd);
+			break;
+		case EIO:
+			PX4_ERR("Serial FD %d I/O error (EIO) - communication failure", _serial_fd);
+			break;
+		case EACCES:
+			PX4_ERR("Serial FD %d access denied (EACCES) - permission problem", _serial_fd);
+			break;
+		default:
+			PX4_ERR("Serial FD %d fcntl F_GETFD failed: %s (errno=%d)", _serial_fd, strerror(err), err);
+			break;
+		}
+
+		// Mark the file descriptor as invalid since fcntl failed
+		_serial_fd = -1;
+		return false;
+	}
+
+	PX4_DEBUG("Serial FD %d fcntl check passed (flags=0x%x)", _serial_fd, flags);
+
+	// Additional verification: try to get serial port attributes
+	struct termios tty;
+	if (tcgetattr(_serial_fd, &tty) != 0) {
+		int err = errno;
+		PX4_ERR("Serial FD %d tcgetattr failed: %s (errno=%d)", _serial_fd, strerror(err), err);
+		return false;
+	}
+
+	// Log current settings for debugging (only in debug mode to reduce spam)
+	speed_t ospeed = cfgetospeed(&tty);
+	speed_t ispeed = cfgetispeed(&tty);
+	PX4_DEBUG("Serial port verification successful:");
+	PX4_DEBUG("  Port: %s, FD: %d", _serial_port, _serial_fd);
+	PX4_DEBUG("  Output speed: %u, Input speed: %u", (unsigned)ospeed, (unsigned)ispeed);
+	PX4_DEBUG("  Data bits: %s", (tty.c_cflag & CS8) ? "8" : "not 8");
+	PX4_DEBUG("  Stop bits: %s", (tty.c_cflag & CSTOPB) ? "2" : "1");
+	PX4_DEBUG("  Parity: %s", (tty.c_cflag & PARENB) ? "enabled" : "disabled");
+
+	return true;
+}
+
 bool ST3215Servo::send_packet(const uint8_t *data, uint8_t length)
 {
 	if (_serial_fd < 0) {
 		PX4_ERR("Serial port not open, fd = %d", _serial_fd);
+		return false;
+	}
+
+	// Verify serial port is still valid before attempting to send
+	if (!verify_serial_port()) {
+		PX4_ERR("Serial port verification failed, cannot send packet");
 		return false;
 	}
 
@@ -194,6 +258,12 @@ int ST3215Servo::receive_packet(uint8_t *buffer, uint8_t max_length)
 		return -1;
 	}
 
+	// Verify serial port is still valid before attempting to read
+	if (!verify_serial_port()) {
+		PX4_ERR("Serial port verification failed, cannot receive packet");
+		return -1;
+	}
+
 	// Clear input buffer first
 	memset(buffer, 0, max_length);
 
@@ -230,6 +300,18 @@ uint8_t ST3215Servo::calculate_checksum(const uint8_t *data, uint8_t length)
 
 bool ST3215Servo::ping_servo(uint8_t servo_id)
 {
+	// First check if serial port is open and valid
+	if (_serial_fd < 0) {
+		PX4_ERR("Cannot ping servo - serial port not open (fd=%d)", _serial_fd);
+		return false;
+	}
+
+	// Verify the serial port is still accessible
+	if (!verify_serial_port()) {
+		PX4_ERR("Cannot ping servo - serial port verification failed");
+		return false;
+	}
+
 	uint8_t packet[6];
 	packet[0] = ST3215_HEADER;
 	packet[1] = ST3215_HEADER2;

@@ -450,6 +450,12 @@ private:
 	void close_serial_port();
 
 	/**
+	 * Verify serial port configuration and status
+	 * @return true if port is properly configured and accessible
+	 */
+	bool verify_serial_port();
+
+	/**
 	 * Send raw packet to servo
 	 * @param data Packet data
 	 * @param length Packet length
