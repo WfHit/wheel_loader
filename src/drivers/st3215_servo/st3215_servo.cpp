@@ -867,9 +867,9 @@ void ST3215Servo::run_diagnostics()
 
 	// 5. Performance counters
 	PX4_INFO("Performance counters:");
-	PX4_INFO("  Loop count: %llu", (unsigned long long)perf_count(_loop_perf));
-	PX4_INFO("  Comm errors: %llu", (unsigned long long)perf_count(_comms_error_perf));
-	PX4_INFO("  Packet count: %llu", (unsigned long long)perf_count(_packet_count_perf));
+	PX4_INFO("  Loop count: %llu", (unsigned long long)perf_event_count(_loop_perf));
+	PX4_INFO("  Comm errors: %llu", (unsigned long long)perf_event_count(_comms_error_perf));
+	PX4_INFO("  Packet count: %llu", (unsigned long long)perf_event_count(_packet_count_perf));
 
 	PX4_INFO("=== End of diagnostics ===");
 }
