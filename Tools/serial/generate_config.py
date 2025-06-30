@@ -143,6 +143,40 @@ serial_ports = {
         "default_baudrate": 57600,
         },
 
+    # UWB Ports
+    "UWB1": {
+        "label": "UWB 1",
+        "index": 501,
+        "default_baudrate": 921600,
+        },
+    "UWB2": {
+        "label": "UWB 2",
+        "index": 502,
+        "default_baudrate": 921600,
+        },
+    "UWB3": {
+        "label": "UWB 3",
+        "index": 503,
+        "default_baudrate": 921600,
+        },
+    "UWB4": {
+        "label": "UWB 4",
+        "index": 504,
+        "default_baudrate": 921600,
+        },
+
+    # Servo Ports
+    "SRV1": {
+        "label": "SERVO 1",
+        "index": 601,
+        "default_baudrate": 1000000,
+        },
+    "SRV2": {
+        "label": "SERVO 2",
+        "index": 602,
+        "default_baudrate": 1000000,
+        },
+
     }
 
 parser = argparse.ArgumentParser(description='Generate Serial params & startup script')

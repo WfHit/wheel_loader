@@ -39,6 +39,7 @@
 #include <lib/perf/perf_counter.h>
 #include <uORB/Publication.hpp>
 #include <uORB/topics/sensor_uwb.h>
+#include <sys/select.h>
 
 using namespace time_literals;
 
@@ -97,9 +98,11 @@ private:
 	bool load_anchors(const char *filename);
 	uint8_t calculate_checksum(const uint8_t *data, size_t length);
 
-	// Serial port
+	// Serial port (similar to UWB SR150)
 	char _port[32];
 	int _fd{-1};
+	fd_set _uart_set;
+	struct timeval _uart_timeout{};
 
 	// Anchors
 	AnchorConfig _anchors[MAX_ANCHORS];

@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2024 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,18 +31,15 @@
 #
 ############################################################################
 
+# Simplified ST3215 servo driver
 px4_add_module(
 	MODULE drivers__st3215_servo
 	MAIN st3215_servo
 	STACK_MAIN 2048
 	SRCS
-		st3215_servo_main.cpp
-		st3215_servo_core.cpp
-		st3215_servo_protocol.cpp
-		st3215_servo_enhanced.cpp
-		st3215_servo_commands.cpp
-		st3215_servo_test.cpp
-		# NOTE: st3215_servo_params.c is NOT included here per coding style
+		st3215_servo.cpp
 	DEPENDS
 		px4_work_queue
-	)
+	MODULE_CONFIG
+		module.yaml
+)

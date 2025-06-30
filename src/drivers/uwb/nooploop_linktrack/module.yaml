@@ -1,0 +1,65 @@
+module_name: NoopLoop LinkTrack UWB Driver
+serial_config:
+    - command: nooploop_linktrack start -d ${SERIAL_DEV}
+      port_config_param:
+          name: UWB_CONFIG
+          group: Serial
+
+parameters:
+    - group: UWB
+      definitions:
+          UWB_CONFIG:
+              description:
+                  short: UWB serial port configuration
+                  long: |
+                      Configure on which serial port to run NoopLoop LinkTrack UWB driver.
+              type: enum
+              values:
+                  0: Disabled
+                  6: UART 6
+                  101: TELEM 1
+                  102: TELEM 2
+                  103: TELEM 3
+                  201: GPS 1
+                  202: GPS 2
+                  401: UART 4
+                  402: UART 7
+                  403: UART 8
+                  501: UWB 1
+                  502: UWB 2
+                  503: UWB 3
+                  504: UWB 4
+              default: 0
+              reboot_required: true
+          UWB_EN:
+              description:
+                  short: Enable NoopLoop LinkTrack UWB
+                  long: Enable the NoopLoop LinkTrack UWB driver
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+          UWB_TAG_ID:
+              description:
+                  short: NoopLoop LinkTrack Tag ID
+                  long: The tag ID for this vehicle (0-39)
+              type: int32
+              min: 0
+              max: 39
+              default: 0
+          UWB_BAUD:
+              description:
+                  short: NoopLoop LinkTrack Baud Rate
+                  long: Serial port baud rate for communication
+              type: int32
+              min: 9600
+              max: 4000000
+              default: 921600
+          UWB_UPDATE_RATE:
+              description:
+                  short: NoopLoop LinkTrack Update Rate
+                  long: Update rate in Hz for LP_MODE2
+              type: int32
+              min: 1
+              max: 50
+              default: 10

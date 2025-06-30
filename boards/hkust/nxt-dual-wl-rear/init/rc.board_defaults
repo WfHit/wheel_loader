@@ -33,6 +33,14 @@ param set-default AS5600_OFFSET 0.0
 # Enable boom control module
 param set-default BOOM_CTRL_EN 1
 
+# ST3215 Servo Configuration - Use SRV1 port
+# Serial manager will automatically start the servo driver
+param set-default ST3215_CONFIG 601  # Use SRV1 port (index 601)
+param set-default ST3215_ID 1        # Servo ID
+param set-default ST3215_MIN_POS -2.618  # Min position (rad)
+param set-default ST3215_MAX_POS 2.618   # Max position (rad)
+param set-default ST3215_MAX_SPD 2.0     # Max speed (rad/s)
+
 # Rear wheel control parameters
 param set-default WL_REAR_WHEEL_EN 1
 param set-default WL_REAR_WHEEL_KP 0.5

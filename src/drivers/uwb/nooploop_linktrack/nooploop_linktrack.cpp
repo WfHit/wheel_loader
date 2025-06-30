@@ -49,7 +49,7 @@
 
 NoopLoopLinkTrack::NoopLoopLinkTrack(const char *port) :
     ModuleParams(nullptr),
-    ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default)
+    ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(port))
 {
     strncpy(_port, port, sizeof(_port) - 1);
     _port[sizeof(_port) - 1] = '\0';
@@ -62,7 +62,10 @@ NoopLoopLinkTrack::NoopLoopLinkTrack(const char *port) :
 NoopLoopLinkTrack::~NoopLoopLinkTrack()
 {
     ScheduleClear();
-    if (_fd >= 0) close(_fd);
+    if (_fd >= 0) {
+        close(_fd);
+        _fd = -1;
+    }
     perf_free(_sample_perf);
     perf_free(_comms_errors);
 }
@@ -72,26 +75,7 @@ int NoopLoopLinkTrack::init()
     // Load anchors
     load_anchors("/fs/microsd/uwb_anchors.conf");
 
-    // Open serial port
-    _fd = open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (_fd < 0) {
-        PX4_ERR("Failed to open %s", _port);
-        return PX4_ERROR;
-    }
-
-    // Configure port (921600, 8N1)
-    struct termios config;
-    tcgetattr(_fd, &config);
-    cfsetispeed(&config, B921600);
-    cfsetospeed(&config, B921600);
-    config.c_cflag = CS8 | CREAD | CLOCAL;
-    config.c_iflag = config.c_lflag = config.c_oflag = 0;
-    tcsetattr(_fd, TCSANOW, &config);
-
-    // Setup device
-    configure_device();
-
-    // Schedule at 100Hz
+    // Schedule at 100Hz (like SR150)
     ScheduleOnInterval(10_ms);
 
     PX4_INFO("LinkTrack started on %s", _port);
@@ -121,6 +105,67 @@ bool NoopLoopLinkTrack::configure_device()
 
 void NoopLoopLinkTrack::Run()
 {
+    if (should_exit()) {
+        ScheduleClear();
+        if (_fd >= 0) {
+            close(_fd);
+            _fd = -1;
+        }
+        return;
+    }
+
+    // Open and configure UART if not already open (similar to UWB SR150)
+    if (_fd < 0) {
+        /* open fd */
+        _fd = ::open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
+
+        if (_fd < 0) {
+            PX4_ERR("open failed (%i)", errno);
+            return;
+        }
+
+        struct termios uart_config;
+        int termios_state;
+
+        /* fill the struct for the new configuration */
+        tcgetattr(_fd, &uart_config);
+
+        /* clear ONLCR flag (which appends a CR for every LF) */
+        uart_config.c_oflag &= ~ONLCR;
+
+        /* no parity, one stop bit */
+        uart_config.c_cflag &= ~(CSTOPB | PARENB);
+
+        /* set baud rate based on parameter */
+        speed_t speed = B921600; // default
+        int32_t baud_param = _param_baud_rate.get();
+
+        switch (baud_param) {
+            case 115200: speed = B115200; break;
+            case 921600: speed = B921600; break;
+            default:
+                PX4_WARN("Unsupported baud rate %d, using 921600", baud_param);
+                speed = B921600;
+                break;
+        }
+
+        /* set baud rate */
+        if ((termios_state = cfsetispeed(&uart_config, speed)) < 0) {
+            PX4_ERR("CFG: %d ISPD", termios_state);
+        }
+
+        if ((termios_state = cfsetospeed(&uart_config, speed)) < 0) {
+            PX4_ERR("CFG: %d OSPD", termios_state);
+        }
+
+        if ((termios_state = tcsetattr(_fd, TCSANOW, &uart_config)) < 0) {
+            PX4_ERR("baud %d ATTR", termios_state);
+        }
+
+        // Setup device configuration
+        configure_device();
+    }
+
     if (!_param_enable.get()) {
         ScheduleDelayed(1_s);
         return;
