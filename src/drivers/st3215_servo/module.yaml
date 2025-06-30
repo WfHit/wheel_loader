@@ -43,7 +43,7 @@ parameters:
               type: int32
               min: 9600
               max: 4000000
-              default: 1000000
+              default: 115200
           ST3215_MIN_POS:
               description:
                   short: ST3215 minimum position limit
