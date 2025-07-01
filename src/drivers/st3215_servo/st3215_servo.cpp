@@ -107,14 +107,14 @@ bool ST3215Servo::configure_port()
 	/* clear ONLCR flag (which appends a CR for every LF) */
 	uart_config.c_oflag &= ~ONLCR;
 
+	//TODO: should I keep this?
 	/* no parity, one stop bit */
 	uart_config.c_cflag &= ~(CSTOPB | PARENB);
 
 	// Get baudrate parameter (default to 1000000 if not set)
-	unsigned speed = B1000000;  // Default
-	int32_t baudrate = 1000000;
+	unsigned speed = B1000000;  // Default for ST3215
 	if (_param_baudrate.get() > 0) {
-		baudrate = _param_baudrate.get();
+		int32_t baudrate = _param_baudrate.get();
 
 		switch (baudrate) {
 		case 9600:   speed = B9600; break;
@@ -124,7 +124,7 @@ bool ST3215Servo::configure_port()
 		case 115200: speed = B115200; break;
 		case 1000000: speed = B1000000; break;
 		default:
-			PX4_WARN("Unsupported baudrate: %d, using 1000000", baudrate);
+			PX4_WARN("Unsupported baudrate: %ld, using 1000000", baudrate);
 			speed = B1000000;
 			break;
 		}

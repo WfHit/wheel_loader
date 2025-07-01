@@ -37,6 +37,7 @@ param set-default BOOM_CTRL_EN 1
 # Serial manager will automatically start the servo driver
 param set-default ST3215_CONFIG 601  # Use SRV1 port (index 601)
 param set-default ST3215_ID 1        # Servo ID
+param set-default ST3215_BAUDRATE 1000000  # Baudrate for ST3215
 param set-default ST3215_MIN_POS -2.618  # Min position (rad)
 param set-default ST3215_MAX_POS 2.618   # Max position (rad)
 param set-default ST3215_MAX_SPD 2.0     # Max speed (rad/s)
