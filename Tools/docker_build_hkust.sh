@@ -21,25 +21,22 @@ mkdir -p "${CCACHE_DIR}"
 echo "Cleaning previous build..."
 rm -rf "$SRC_DIR/build/hkust_nxt-dual-wl-rear_default"
 
-# Run docker build with root permissions to avoid ownership issues
+# Run docker build as root - simplest working solution
 echo "Starting Docker build..."
 docker run --rm \
     -w /workspace \
-    --env=CCACHE_DIR=/tmp/ccache \
-    --env=HOME=/tmp \
-    --volume="${CCACHE_DIR}:/tmp/ccache:rw" \
+    --env=CCACHE_DIR=/workspace/.ccache \
+    --env=HOME=/root \
+    --volume="${CCACHE_DIR}:/workspace/.ccache:rw" \
     --volume="${SRC_DIR}:/workspace:rw" \
-    --volume=/tmp:/tmp:rw \
     ${PX4_DOCKER_REPO} \
     bash -c "
         cd /workspace && \
-        git config --global --add safe.directory /workspace && \
-        git config --global --add safe.directory /workspace/platforms/nuttx/NuttX/nuttx && \
-        git config --global --add safe.directory /workspace/src/modules/uxrce_dds_client/Micro-XRCE-DDS-Client && \
-        git config --global --add safe.directory /workspace/src/modules/mavlink/mavlink && \
-        git config --global --add safe.directory /workspace/src/drivers/gps/devices && \
-        make hkust_nxt-dual-wl-rear_default && \
-        chown -R $(id -u):$(id -g) /workspace/build
+        make hkust_nxt-dual-wl-rear_default
     "
+
+# Fix ownership of build artifacts after build completes
+echo "Fixing file ownership..."
+sudo chown -R $(id -u):$(id -g) "$SRC_DIR/build"
 
 echo "Build completed!"
