@@ -88,73 +88,60 @@ bool ST3215Servo::init()
 
 bool ST3215Servo::configure_port()
 {
+	/* open fd */
+	_uart = ::open(_port_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
+
+	if (_uart < 0) {
+		PX4_ERR("open failed (%i)", errno);
+		return false;
+	}
+
+	struct termios uart_config;
+
+	int termios_state;
+
+	/* fill the struct for the new configuration */
+	tcgetattr(_uart, &uart_config);
+
+	/* clear ONLCR flag (which appends a CR for every LF) */
+	uart_config.c_oflag &= ~ONLCR;
+
+	/* no parity, one stop bit */
+	uart_config.c_cflag &= ~(CSTOPB | PARENB);
+
 	// Get baudrate parameter (default to 1000000 if not set)
+	unsigned speed = B1000000;  // Default
 	int32_t baudrate = 1000000;
 	if (_param_baudrate.get() > 0) {
 		baudrate = _param_baudrate.get();
+
+		switch (baudrate) {
+		case 9600:   speed = B9600; break;
+		case 19200:  speed = B19200; break;
+		case 38400:  speed = B38400; break;
+		case 57600:  speed = B57600; break;
+		case 115200: speed = B115200; break;
+		case 1000000: speed = B1000000; break;
+		default:
+			PX4_WARN("Unsupported baudrate: %d, using 1000000", baudrate);
+			speed = B1000000;
+			break;
+		}
 	}
 
-	// Open serial port
-	_uart = ::open(_port_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
-	if (_uart < 0) {
-		PX4_WARN("Failed to open serial port %s", _port_name);
-		return false;
+	/* set baud rate */
+	if ((termios_state = cfsetispeed(&uart_config, speed)) < 0) {
+		PX4_ERR("CFG: %d ISPD", termios_state);
 	}
 
-	// Configure port settings
-	struct termios tty;
-	if (tcgetattr(_uart, &tty) != 0) {
-		PX4_WARN("Failed to get serial port attributes");
-		::close(_uart);
-		_uart = -1;
-		return false;
+	if ((termios_state = cfsetospeed(&uart_config, speed)) < 0) {
+		PX4_ERR("CFG: %d OSPD", termios_state);
 	}
 
-	// Set baud rate
-	speed_t baud_rate = B1000000;  // Default
-	switch (baudrate) {
-	case 9600:   baud_rate = B9600; break;
-	case 19200:  baud_rate = B19200; break;
-	case 38400:  baud_rate = B38400; break;
-	case 57600:  baud_rate = B57600; break;
-	case 115200: baud_rate = B115200; break;
-	case 1000000: baud_rate = B1000000; break;
-	default:
-		PX4_WARN("Unsupported baudrate: %ld, using 1000000", baudrate);
-		baud_rate = B1000000;
-		break;
+	if ((termios_state = tcsetattr(_uart, TCSANOW, &uart_config)) < 0) {
+		PX4_ERR("baud %d ATTR", termios_state);
 	}
 
-	cfsetospeed(&tty, baud_rate);
-	cfsetispeed(&tty, baud_rate);
-
-	// Configure for 8N1, no flow control
-	tty.c_cflag &= ~PARENB;        // No parity
-	tty.c_cflag &= ~CSTOPB;        // 1 stop bit
-	tty.c_cflag &= ~CSIZE;         // Clear size bits
-	tty.c_cflag |= CS8;            // 8 bits
-	tty.c_cflag &= ~CRTSCTS;       // No flow control
-	tty.c_cflag |= CREAD | CLOCAL; // Enable reading
-
-	// Raw mode
-	tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK);
-	tty.c_iflag &= ~(IXON | IXOFF | IXANY);
-	tty.c_oflag &= ~OPOST;
-
-	// Timeouts
-	tty.c_cc[VMIN] = 0;
-	tty.c_cc[VTIME] = 1;
-
-	if (tcsetattr(_uart, TCSANOW, &tty) != 0) {
-		PX4_WARN("Failed to set serial port attributes");
-		::close(_uart);
-		_uart = -1;
-		return false;
-	}
-
-	tcflush(_uart, TCIOFLUSH);
-
-	PX4_DEBUG("Serial port configured: %s at %d baud", _port_name, baudrate);
 	return true;
 }
 
