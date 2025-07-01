@@ -46,9 +46,10 @@
 #include <drivers/drv_hrt.h>
 #include <cstring>
 #include <errno.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 ST3215Servo::ST3215Servo(const char *serial_port) :
-	ModuleBase<ST3215Servo>(),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(serial_port)),
 	_loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": loop")),
@@ -593,7 +594,7 @@ int ST3215Servo::print_status()
 
 ST3215Servo *ST3215Servo::instantiate(int argc, char *argv[])
 {
-	const char *serial_port = "/dev/ttyS1";
+	const char *serial_port = "/dev/ttyS3";
 
 	int myoptind = 1;
 	int ch;
@@ -634,24 +635,90 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 		return 0;
 	}
 
+	if (!strcmp(argv[0], "diag") || !strcmp(argv[0], "diagnostics")) {
+		if (!_object.load()) {
+			PX4_ERR("driver not running");
+			return -1;
+		}
+
+		_object.load()->run_diagnostics();
+		return 0;
+	}
+
+	if (!strcmp(argv[0], "raw_test")) {
+		if (!_object.load()) {
+			PX4_ERR("driver not running");
+			return -1;
+		}
+
+		_object.load()->test_raw_communication();
+		return 0;
+	}
+
+	if (!strcmp(argv[0], "position")) {
+		if (argc < 2) {
+			return print_usage("missing position argument");
+		}
+
+		if (!_object.load()) {
+			PX4_ERR("driver not running");
+			return -1;
+		}
+
+		float position = strtof(argv[1], nullptr);
+		uint8_t servo_id = _object.load()->_param_servo_id.get();
+
+		PX4_INFO("Setting servo %d to position %.3f rad", servo_id, (double)position);
+
+		if (_object.load()->write_position(servo_id, position, 2.0f)) {
+			PX4_INFO("Position command sent successfully");
+		} else {
+			PX4_ERR("Failed to send position command");
+		}
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 
 int ST3215Servo::task_spawn(int argc, char *argv[])
 {
-	_task_id = px4_task_spawn_cmd("st3215_servo",
-				      SCHED_DEFAULT,
-				      SCHED_PRIORITY_DEFAULT,
-				      2000,  // Increased stack size
-				      (px4_main_t)&run_trampoline,
-				      (char *const *)argv);
+	const char *device_name = "/dev/ttyS3";
+	int ch;
+	int myoptind = 1;
+	const char *myoptarg = nullptr;
 
-	if (_task_id < 0) {
-		_task_id = -1;
-		return -errno;
+	while ((ch = px4_getopt(argc, argv, "d:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'd':
+			device_name = myoptarg;
+			break;
+
+		default:
+			PX4_WARN("unrecognized flag");
+			return PX4_ERROR;
+		}
 	}
 
-	return 0;
+	ST3215Servo *instance = new ST3215Servo(device_name);
+
+	if (instance) {
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
+
+		if (instance->init()) {
+			return PX4_OK;
+		}
+
+	} else {
+		PX4_ERR("alloc failed");
+	}
+
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
+
+	return PX4_ERROR;
 }
 
 int ST3215Servo::print_usage(const char *reason)
@@ -663,35 +730,200 @@ int ST3215Servo::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Simplified driver for ST3215 smart servo connected via UART.
+Driver for ST3215 smart servo over serial interface
 
-Uses device::SerialPort API for robust serial communication similar to UWB SR150.
-Subscribes to robotic_servo_command and publishes robotic_servo_feedback.
-
-Features:
-- Automatic reconnection on serial port failures
-- State machine packet parsing for reliable communication
-- Position control with configurable speed
-- Real-time feedback of position, speed, load, temperature, and voltage
+### Implementation
+This driver communicates with ST3215 servo using its serial protocol.
+The driver supports position control, speed setting, and status feedback.
 
 ### Examples
-Start the driver on default port:
-$ st3215_servo start
+To start the driver on UART4 (default):
+$ st3215_servo start -d /dev/ttyS3
 
-Start on specific port:
-$ st3215_servo start -d /dev/ttyS2
-
-Ping servo to test communication:
+To test servo communication:
 $ st3215_servo ping
+
+To set position:
+$ st3215_servo position 0.5
+
+To stop the driver:
+$ st3215_servo stop
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("st3215_servo", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS1", nullptr, "Serial device", false);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("ping", "Test servo communication");
+	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS3", "<file:dev>", "UART device", false);
+
+	PRINT_MODULE_USAGE_COMMAND("ping");
+	PRINT_MODULE_USAGE_COMMAND("status");
+	PRINT_MODULE_USAGE_COMMAND("position");
+	PRINT_MODULE_USAGE_ARG("<angle>", "Angle in radians", false);
+
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
+}
+
+void ST3215Servo::run_diagnostics()
+{
+	PX4_INFO("=== ST3215 Servo Diagnostics ===");
+
+	// 1. Check serial port configuration
+	PX4_INFO("Serial port: %s", _port_name);
+	PX4_INFO("Configured baudrate: %ld", (long)_param_baudrate.get());
+	PX4_INFO("Servo ID: %ld", (long)_param_servo_id.get());
+
+	// 2. Check if UART is open
+	if (_uart < 0) {
+		PX4_ERR("UART is not open!");
+
+		// Try to open the port
+		int test_fd = ::open(_port_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
+		if (test_fd < 0) {
+			PX4_ERR("Failed to open %s: %s", _port_name, strerror(errno));
+
+			// Check if device exists
+			if (access(_port_name, F_OK) != 0) {
+				PX4_ERR("Device %s does not exist!", _port_name);
+			} else if (access(_port_name, R_OK | W_OK) != 0) {
+				PX4_ERR("No read/write permission for %s", _port_name);
+			}
+		} else {
+			PX4_INFO("Port can be opened, closing test fd");
+			::close(test_fd);
+		}
+	} else {
+		PX4_INFO("UART is open (fd=%d)", _uart);
+
+		// Check port status
+		int status;
+		if (ioctl(_uart, TIOCMGET, &status) == 0) {
+			PX4_INFO("Port status: DTR=%d RTS=%d CTS=%d DSR=%d",
+					 (status & TIOCM_DTR) ? 1 : 0,
+					 (status & TIOCM_RTS) ? 1 : 0,
+					 (status & TIOCM_CTS) ? 1 : 0,
+					 (status & TIOCM_DSR) ? 1 : 0);
+		}
+	}
+
+	// 3. Check connection status
+	PX4_INFO("Connection status: %s", _connection_ok ? "OK" : "NOT OK");
+	if (_last_update_time > 0) {
+		uint64_t time_since_update = hrt_elapsed_time(&_last_update_time) / 1000; // ms
+		PX4_INFO("Time since last update: %llu ms", (unsigned long long)time_since_update);
+	}
+
+	// 4. Try to ping the servo
+	PX4_INFO("Attempting to ping servo ID %ld...", (long)_param_servo_id.get());
+
+	if (_uart >= 0) {
+		// Clear any pending data
+		tcflush(_uart, TCIOFLUSH);
+
+		// Send ping command
+		uint8_t servo_id = _param_servo_id.get();
+		if (ping_servo(servo_id)) {
+			PX4_INFO("PING SUCCESSFUL! Servo is responding");
+
+			// Try to read status
+			if (read_status(servo_id)) {
+				PX4_INFO("Status read successful:");
+				PX4_INFO("  Position: %.3f rad", (double)_current_position);
+				PX4_INFO("  Speed: %.3f rad/s", (double)_current_speed);
+				PX4_INFO("  Load: %.1f%%", (double)_current_load);
+				PX4_INFO("  Voltage: %d (%.1fV)", _current_voltage, _current_voltage / 10.0);
+				PX4_INFO("  Temperature: %d C", _current_temperature);
+			} else {
+				PX4_WARN("Failed to read servo status");
+			}
+		} else {
+			PX4_ERR("PING FAILED! No response from servo");
+
+			// Check for any data in buffer
+			uint8_t buffer[256];
+			int bytes = ::read(_uart, buffer, sizeof(buffer));
+			if (bytes > 0) {
+				PX4_INFO("Found %d bytes in buffer:", bytes);
+				for (int i = 0; i < bytes && i < 32; i++) {
+					printf("%02X ", buffer[i]);
+				}
+				printf("\n");
+			}
+		}
+	}
+
+	// 5. Performance counters
+	PX4_INFO("Performance counters:");
+	PX4_INFO("  Loop count: %llu", (unsigned long long)perf_event_count(_loop_perf));
+	PX4_INFO("  Comm errors: %llu", (unsigned long long)perf_event_count(_comms_error_perf));
+	PX4_INFO("  Packet count: %llu", (unsigned long long)perf_event_count(_packet_count_perf));
+
+	PX4_INFO("=== End of diagnostics ===");
+}
+
+void ST3215Servo::test_raw_communication()
+{
+	PX4_INFO("=== Raw Communication Test ===");
+
+	if (_uart < 0) {
+		PX4_ERR("UART not open, cannot test");
+		return;
+	}
+
+	// Test 1: Send ping and wait for raw response
+	uint8_t servo_id = _param_servo_id.get();
+	uint8_t ping_packet[6] = {
+		0xFF, 0xFF,     // Header
+		servo_id,       // ID
+		0x02,           // Length
+		0x01,           // PING command
+		0x00            // Checksum
+	};
+	ping_packet[5] = calculate_checksum(&ping_packet[2], 3);
+
+	PX4_INFO("Sending PING packet:");
+	for (int i = 0; i < 6; i++) {
+		printf("%02X ", ping_packet[i]);
+	}
+	printf("\n");
+
+	// Clear buffers
+	tcflush(_uart, TCIOFLUSH);
+
+	// Send packet
+	ssize_t written = ::write(_uart, ping_packet, 6);
+	PX4_INFO("Wrote %d bytes", (int)written);
+
+	if (written == 6) {
+		// Wait for response
+		usleep(10000); // 10ms
+
+		uint8_t response[256];
+		int total_bytes = 0;
+
+		// Read with timeout
+		for (int i = 0; i < 10; i++) {
+			int bytes = ::read(_uart, response + total_bytes, sizeof(response) - total_bytes);
+			if (bytes > 0) {
+				total_bytes += bytes;
+				PX4_INFO("Read %d bytes (total: %d)", bytes, total_bytes);
+			}
+			usleep(1000); // 1ms
+		}
+
+		if (total_bytes > 0) {
+			PX4_INFO("Received %d bytes:", total_bytes);
+			for (int i = 0; i < total_bytes && i < 64; i++) {
+				printf("%02X ", response[i]);
+				if ((i + 1) % 16 == 0) printf("\n");
+			}
+			printf("\n");
+		} else {
+			PX4_ERR("No response received");
+		}
+	}
+
+	PX4_INFO("=== End of raw test ===");
 }
 
 extern "C" __EXPORT int st3215_servo_main(int argc, char *argv[])

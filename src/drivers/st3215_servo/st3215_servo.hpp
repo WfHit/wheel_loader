@@ -76,6 +76,10 @@ public:
 	int print_status() override;
 	bool init();
 
+	// Add diagnostic methods
+	void run_diagnostics();
+	void test_raw_communication();
+
 private:
 	void Run() override;
 
