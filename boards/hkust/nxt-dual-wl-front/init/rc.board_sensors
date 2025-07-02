@@ -22,3 +22,42 @@ then
 	as5600 -I -b 1 start
 	echo "AS5600 magnetic encoder started for bucket position"
 fi
+
+# Start quadrature encoder driver for front wheel and bucket control
+if param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder drivers for front wheel and bucket"
+
+	# Start encoder instances with specific device paths and configurations
+	# Instance 0: Front wheel encoder
+	if param compare QE_PPR_0 0
+	then
+		param set QE_PPR_0 1024      # Default PPR for front wheel
+		param set QE_INVERT_0 0      # Normal direction
+	fi
+	quad_encoder start -i 0 -d /dev/qe0
+
+	# Instance 1: Bucket position encoder
+	if param compare QE_PPR_1 0
+	then
+		param set QE_PPR_1 1024      # Default PPR for bucket position
+		param set QE_INVERT_1 0      # Normal direction
+	fi
+	quad_encoder start -i 1 -d /dev/qe1
+
+	# Wait for drivers to initialize
+	sleep 1
+
+	# Verify encoder devices are available and instances are running
+	if [ -c /dev/qe0 ] && [ -c /dev/qe1 ]
+	then
+		echo "Front wheel and bucket quadrature encoders initialized successfully"
+		quad_encoder status
+	else
+		echo "Warning: Front wheel/bucket quadrature encoder initialization failed"
+		echo "Available encoder devices:"
+		ls -la /dev/qe* 2>/dev/null || echo "No encoder devices found"
+	fi
+else
+	echo "Quadrature encoder disabled (QUADENC_ENABLE=0)"
+fi

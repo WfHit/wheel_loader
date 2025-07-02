@@ -543,26 +543,28 @@ Configure each encoder instance using the following parameters:
 - QE_INVERT_0/1/2/3: Invert direction for instance 0/1/2/3
 
 ### Examples
-Start multiple instances with different configurations:
-$ param set QE_PPR_0 1024      # Instance 0: 1024 PPR
-$ param set QE_INVERT_0 0      # Instance 0: normal direction
-$ param set QE_PPR_1 2048      # Instance 1: 2048 PPR
-$ param set QE_INVERT_1 1      # Instance 1: inverted direction
+Start multiple instances for wheel loader configuration:
+$ param set QE_PPR_0 1024      # Front/rear wheel encoder: 1024 PPR
+$ param set QE_INVERT_0 0      # Wheel encoder: normal direction
+$ param set QE_PPR_1 1024      # Bucket position encoder: 1024 PPR
+$ param set QE_INVERT_1 0      # Bucket encoder: normal direction
 
-$ quad_encoder start -i 0 -d /dev/qe0     # Start instance 0
-$ quad_encoder start -i 1 -d /dev/qe1     # Start instance 1
+# Front board: wheel + bucket encoders
+$ quad_encoder start -i 0 -d /dev/qe0     # Front wheel encoder
+$ quad_encoder start -i 1 -d /dev/qe1     # Bucket position encoder
+
+# Rear board: wheel encoder only
+$ quad_encoder start -i 0 -d /dev/qe0     # Rear wheel encoder
 
 Reset encoder position:
-$ quad_encoder reset
-
-Reset specific instance:
-$ quad_encoder reset -i 1
+$ quad_encoder reset           # Reset all instances
+$ quad_encoder reset -i 1      # Reset specific instance
 
 Check status of all instances:
 $ quad_encoder status
 
 Stop specific instance:
-$ quad_encoder stop -i 1
+$ quad_encoder stop -i 1       # Stop specific instance (default: instance 0)
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("quad_encoder", "driver");
@@ -605,17 +607,22 @@ Configure each encoder instance using the following parameters:
 - QE_INVERT_0/1/2/3: Invert direction for instance 0/1/2/3
 
 ### Examples
-Start multiple instances with different configurations:
-$ param set QE_PPR_0 1024      # Instance 0: 1024 PPR
-$ param set QE_INVERT_0 0      # Instance 0: normal direction
-$ param set QE_PPR_1 2048      # Instance 1: 2048 PPR
-$ param set QE_INVERT_1 1      # Instance 1: inverted direction
+Start multiple instances for wheel loader configuration:
+$ param set QE_PPR_0 1024      # Front/rear wheel encoder: 1024 PPR
+$ param set QE_INVERT_0 0      # Wheel encoder: normal direction
+$ param set QE_PPR_1 1024      # Bucket position encoder: 1024 PPR
+$ param set QE_INVERT_1 0      # Bucket encoder: normal direction
 
-$ quad_encoder start -i 0 -d /dev/qe0     # Start instance 0
-$ quad_encoder start -i 1 -d /dev/qe1     # Start instance 1
+# Front board: wheel + bucket encoders
+$ quad_encoder start -i 0 -d /dev/qe0     # Front wheel encoder
+$ quad_encoder start -i 1 -d /dev/qe1     # Bucket position encoder
+
+# Rear board: wheel encoder only
+$ quad_encoder start -i 0 -d /dev/qe0     # Rear wheel encoder
 
 Reset encoder position:
-$ quad_encoder reset
+$ quad_encoder reset           # Reset all instances
+$ quad_encoder reset -i 1      # Reset specific instance
 
 Check status:
 $ quad_encoder status

@@ -16,12 +16,40 @@ bmi088 -s -b 4 -G -R 2 start
 # internal baro
 spl06 -X -a 0x77 start
 
-# Start quad encoder driver for rear wheel odometry
-quad_encoder start
-
 # Start magnetic encoder for boom position feedback
 if param compare SENS_EN_AS5600 1
 then
 	as5600 -I -b 1 start
 	echo "AS5600 magnetic encoder started for boom position"
+fi
+
+# Start quadrature encoder driver for rear wheel control
+if param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder driver for rear wheel"
+
+	# Start encoder instance with specific device path and configuration
+	# Instance 0: Rear wheel encoder
+	if param compare QE_PPR_0 0
+	then
+		param set QE_PPR_0 1024      # Default PPR for rear wheel
+		param set QE_INVERT_0 0      # Normal direction
+	fi
+	quad_encoder start -i 0 -d /dev/qe0
+
+	# Wait for drivers to initialize
+	sleep 1
+
+	# Verify encoder device is available and instance is running
+	if [ -c /dev/qe0 ]
+	then
+		echo "Rear wheel quadrature encoder initialized successfully"
+		quad_encoder status
+	else
+		echo "Warning: Rear wheel quadrature encoder initialization failed"
+		echo "Available encoder devices:"
+		ls -la /dev/qe* 2>/dev/null || echo "No encoder devices found"
+	fi
+else
+	echo "Quadrature encoder disabled (QUADENC_ENABLE=0)"
 fi

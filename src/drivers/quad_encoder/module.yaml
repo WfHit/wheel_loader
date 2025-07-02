@@ -13,57 +13,57 @@ parameters:
               unit: Hz
           QE_PPR_0:
               description:
-                  short: Pulses per revolution for encoder instance 0
-                  long: Number of pulses per revolution for quadrature encoder instance 0
+                  short: Pulses per revolution for wheel encoder
+                  long: Number of pulses per revolution for the wheel quadrature encoder (instance 0)
               type: int32
               min: 1
               max: 10000
               default: 1024
           QE_INVERT_0:
               description:
-                  short: Invert encoder 0 direction
-                  long: Invert the counting direction for quadrature encoder instance 0
+                  short: Invert wheel encoder direction
+                  long: Invert the direction of the wheel quadrature encoder (instance 0)
               type: bool
               default: false
           QE_PPR_1:
               description:
-                  short: Pulses per revolution for encoder instance 1
-                  long: Number of pulses per revolution for quadrature encoder instance 1
+                  short: Pulses per revolution for bucket encoder
+                  long: Number of pulses per revolution for the bucket position quadrature encoder (instance 1)
               type: int32
               min: 1
               max: 10000
               default: 1024
           QE_INVERT_1:
               description:
-                  short: Invert encoder 1 direction
-                  long: Invert the counting direction for quadrature encoder instance 1
+                  short: Invert bucket encoder direction
+                  long: Invert the direction of the bucket position quadrature encoder (instance 1)
               type: bool
               default: false
           QE_PPR_2:
               description:
                   short: Pulses per revolution for encoder instance 2
-                  long: Number of pulses per revolution for quadrature encoder instance 2
+                  long: Number of pulses per revolution for quadrature encoder instance 2 (reserved)
               type: int32
               min: 1
               max: 10000
               default: 1024
           QE_INVERT_2:
               description:
-                  short: Invert encoder 2 direction
-                  long: Invert the counting direction for quadrature encoder instance 2
+                  short: Invert encoder instance 2 direction
+                  long: Invert the direction of quadrature encoder instance 2 (reserved)
               type: bool
               default: false
           QE_PPR_3:
               description:
                   short: Pulses per revolution for encoder instance 3
-                  long: Number of pulses per revolution for quadrature encoder instance 3
+                  long: Number of pulses per revolution for quadrature encoder instance 3 (reserved)
               type: int32
               min: 1
               max: 10000
               default: 1024
           QE_INVERT_3:
               description:
-                  short: Invert encoder 3 direction
-                  long: Invert the counting direction for quadrature encoder instance 3
+                  short: Invert encoder instance 3 direction
+                  long: Invert the direction of quadrature encoder instance 3 (reserved)
               type: bool
               default: false
