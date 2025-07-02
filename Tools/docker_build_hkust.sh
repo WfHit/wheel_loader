@@ -17,11 +17,7 @@ SRC_DIR="$SCRIPT_DIR/.."
 CCACHE_DIR=${HOME}/.ccache
 mkdir -p "${CCACHE_DIR}"
 
-# Clean any existing build
-echo "Cleaning previous build..."
-rm -rf "$SRC_DIR/build/hkust_nxt-dual-wl-rear_default"
-
-# Run docker build as root - simplest working solution
+# Run docker build with all operations inside container
 echo "Starting Docker build..."
 docker run --rm \
     -w /workspace \
@@ -32,11 +28,11 @@ docker run --rm \
     ${PX4_DOCKER_REPO} \
     bash -c "
         cd /workspace && \
-        make hkust_nxt-dual-wl-rear_default
+        echo 'Cleaning previous build...' && \
+        rm -rf build/hkust_nxt-dual-wl-rear_default && \
+        make hkust_nxt-dual-wl-rear_default && \
+        echo 'Fixing file ownership...' && \
+        chown -R $(id -u):$(id -g) build
     "
-
-# Fix ownership of build artifacts after build completes
-echo "Fixing file ownership..."
-sudo chown -R $(id -u):$(id -g) "$SRC_DIR/build"
 
 echo "Build completed!"

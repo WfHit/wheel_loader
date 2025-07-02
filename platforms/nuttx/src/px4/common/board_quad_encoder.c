@@ -31,75 +31,94 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
-#define __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <px4_arch/nuttx_qencoder.h>
+#include <sys/types.h>
+#include <errno.h>
+
+#include <px4_arch/quad_encoder.h>
+#include <px4_platform_common/board_common.h>
+#include <board_quad_encoder.h>
 
 /****************************************************************************
- * Public Function Prototypes
+ * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef __cplusplus
-#define EXTERN extern "C"
-extern "C"
+/****************************************************************************
+ * External Data - Board must provide these
+ ****************************************************************************/
+
+/* Board must provide these symbols */
+/* Board-specific encoder configuration array */
+extern const struct nuttx_qe_config_s board_quad_encoder_configs[];
+
+/* Number of encoders on the board */
+extern const unsigned int board_quad_encoder_count;
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: board_quad_encoder_initialize
+ *
+ * Description:
+ *   Initialize all board-specific quadrature encoders
+ *
+ ****************************************************************************/
+
+__EXPORT int board_quad_encoder_initialize(void)
 {
+#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
+    if (board_quad_encoder_count == 0) {
+        return OK;  /* No encoders to initialize */
+    }
+
+    return px4_arch_quad_encoder_initialize(board_quad_encoder_configs, board_quad_encoder_count);
 #else
-#define EXTERN extern
+    return OK;
 #endif
-
-/****************************************************************************
- * Name: board_qencoder_initialize
- *
- * Description:
- *   Initialize all quadrature encoders for the board
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
-
-int board_qencoder_initialize(void);
-
-/****************************************************************************
- * Name: board_qencoder_get_config
- *
- * Description:
- *   Get encoder configuration for a specific encoder
- *
- * Input Parameters:
- *   encoder_id - Encoder index (0-based)
- *   config     - Pointer to configuration structure to fill
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
-
-int board_qencoder_get_config(int encoder_id,
-                             FAR struct nuttx_qe_config_s *config);
-
-/****************************************************************************
- * Name: board_qencoder_get_count
- *
- * Description:
- *   Get the number of available encoders
- *
- * Returned Value:
- *   Number of encoders available on this board.
- *
- ****************************************************************************/
-
-int board_qencoder_get_count(void);
-
-#undef EXTERN
-#ifdef __cplusplus
 }
-#endif
 
-#endif /* __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H */
+/****************************************************************************
+ * Name: board_quad_encoder_get_config
+ *
+ * Description:
+ *   Get board-specific encoder configuration for a specific encoder
+ *
+ ****************************************************************************/
+
+__EXPORT int board_quad_encoder_get_config(int encoder_id,
+                                          FAR struct nuttx_qe_config_s *config)
+{
+#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
+    if (encoder_id < 0 || encoder_id >= (int)board_quad_encoder_count || !config) {
+        return -EINVAL;
+    }
+
+    *config = board_quad_encoder_configs[encoder_id];
+    return OK;
+#else
+    return -ENOTSUP;
+#endif
+}
+
+/****************************************************************************
+ * Name: board_quad_encoder_get_count
+ *
+ * Description:
+ *   Get the number of available encoders on this board
+ *
+ ****************************************************************************/
+
+__EXPORT int board_quad_encoder_get_count(void)
+{
+#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
+    return board_quad_encoder_count;
+#else
+    return 0;
+#endif
+}

@@ -200,7 +200,7 @@
 #define BOARD_HAS_ON_RESET 1
 
 /* Quadrature Encoder Support */
-#define CONFIG_BOARD_NXT_QENCODER 1
+#define CONFIG_BOARD_QUADRATURE_ENCODER 1
 #define BOARD_HAS_QENCODER 1
 
 /* Raw GPIO definitions for QEncoder driver (without flags) */

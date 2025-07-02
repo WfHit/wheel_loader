@@ -40,6 +40,8 @@
 
 #include <nuttx/config.h>
 #include <nuttx/sensors/qencoder.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 /****************************************************************************
  * Pre-processor Definitions

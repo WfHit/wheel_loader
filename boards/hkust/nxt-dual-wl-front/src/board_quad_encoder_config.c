@@ -31,75 +31,57 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
-#define __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
-
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
 #include <px4_arch/nuttx_qencoder.h>
+#include "board_config.h"
 
 /****************************************************************************
- * Public Function Prototypes
+ * Public Data
  ****************************************************************************/
 
-#ifdef __cplusplus
-#define EXTERN extern "C"
-extern "C"
+#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
+
+/* Board-specific encoder configurations for nxt-dual-wl-front */
+const struct nuttx_qe_config_s board_quad_encoder_configs[] =
 {
+  /* Motor Encoder 1 - GPIO mode */
+  {
+    .gpio = {
+      .phase_a = QENCODER1_A_GPIO_RAW,
+      .phase_b = QENCODER1_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
+    },
+    .resolution = 1024,    /* 1024 CPR encoder */
+    .use_index = false,    /* No index signal for motor encoders */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
+    .invert_dir = false,
+  },
+
+  /* Motor Encoder 2 - GPIO mode */
+  {
+    .gpio = {
+      .phase_a = QENCODER2_A_GPIO_RAW,
+      .phase_b = QENCODER2_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
+    },
+    .resolution = 1024,    /* 1024 CPR encoder */
+    .use_index = false,    /* No index signal for motor encoders */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
+    .invert_dir = false,
+  },
+};
+
+/* Number of encoders on this board */
+const unsigned int board_quad_encoder_count = sizeof(board_quad_encoder_configs) / sizeof(board_quad_encoder_configs[0]);
+
 #else
-#define EXTERN extern
-#endif
 
-/****************************************************************************
- * Name: board_qencoder_initialize
- *
- * Description:
- *   Initialize all quadrature encoders for the board
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
+/* Empty configuration when encoder support is disabled */
+const struct nuttx_qe_config_s board_quad_encoder_configs[] = {};
+const unsigned int board_quad_encoder_count = 0;
 
-int board_qencoder_initialize(void);
-
-/****************************************************************************
- * Name: board_qencoder_get_config
- *
- * Description:
- *   Get encoder configuration for a specific encoder
- *
- * Input Parameters:
- *   encoder_id - Encoder index (0-based)
- *   config     - Pointer to configuration structure to fill
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
-
-int board_qencoder_get_config(int encoder_id,
-                             FAR struct nuttx_qe_config_s *config);
-
-/****************************************************************************
- * Name: board_qencoder_get_count
- *
- * Description:
- *   Get the number of available encoders
- *
- * Returned Value:
- *   Number of encoders available on this board.
- *
- ****************************************************************************/
-
-int board_qencoder_get_count(void);
-
-#undef EXTERN
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H */
+#endif /* CONFIG_BOARD_QUADRATURE_ENCODER */

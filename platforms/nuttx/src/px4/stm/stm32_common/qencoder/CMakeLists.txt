@@ -33,6 +33,7 @@
 
 px4_add_library(arch_qencoder
 	nuttx_qencoder.c
+	quad_encoder.c
 )
 
 target_compile_options(arch_qencoder PRIVATE ${MAX_CUSTOM_OPT_LEVEL})

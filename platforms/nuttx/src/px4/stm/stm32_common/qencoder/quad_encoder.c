@@ -43,99 +43,68 @@
 #include <errno.h>
 
 #include "stm32_gpio.h"
-#include "board_config.h"
-#include "board_qencoder.h"
+#include <px4_arch/quad_encoder.h>
 #include <px4_arch/nuttx_qencoder.h>
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Private Data
- ****************************************************************************/
-
-#ifdef CONFIG_BOARD_NXT_QENCODER
-
-/* Encoder configurations for nxt-dual-wl-rear motor encoder */
-static const struct nuttx_qe_config_s g_motor_encoders[] =
-{
-  /* Motor Encoder - GPIO mode */
-  {
-    .gpio = {
-      .phase_a = QENCODER_A_GPIO_RAW,
-      .phase_b = QENCODER_B_GPIO_RAW,
-      .index = 0,  /* No index signal */
-    },
-    .resolution = 1024,    /* 1024 CPR encoder */
-    .use_index = false,    /* No index signal for motor encoder */
-    .x4_mode = true,       /* 4x counting mode for higher resolution */
-    .invert_dir = false,
-  },
-};
-
-#define NUM_ENCODERS (sizeof(g_motor_encoders) / sizeof(g_motor_encoders[0]))
-
-#endif /* CONFIG_BOARD_NXT_QENCODER */
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: board_qencoder_gpio_config
+ * Name: qencoder_gpio_config
  *
  * Description:
  *   Configure GPIO pins for index signals
  *
  ****************************************************************************/
 
-#ifdef CONFIG_BOARD_NXT_QENCODER
-static void board_qencoder_gpio_config(void)
+static void qencoder_gpio_config(FAR const struct nuttx_qe_config_s *configs,
+                                unsigned count)
 {
   /* Configure index pins as GPIO inputs for encoders */
-  for (unsigned int i = 0; i < NUM_ENCODERS; i++)
+  for (unsigned int i = 0; i < count; i++)
     {
-      if (g_motor_encoders[i].use_index &&
-          g_motor_encoders[i].gpio.index != 0)
+      if (configs[i].use_index && configs[i].gpio.index != 0)
         {
           /* Configure index pin as input with pull-up */
-          stm32_configgpio(g_motor_encoders[i].gpio.index |
-                          GPIO_INPUT | GPIO_PULLUP);
+          stm32_configgpio(configs[i].gpio.index | GPIO_INPUT | GPIO_PULLUP);
         }
     }
 }
-#endif
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: board_qencoder_initialize
+ * Name: px4_arch_quad_encoder_initialize
  *
  * Description:
- *   Initialize all quadrature encoders for the board
+ *   Initialize quadrature encoders from board configuration
  *
  ****************************************************************************/
 
-int board_qencoder_initialize(void)
+int px4_arch_quad_encoder_initialize(FAR const struct nuttx_qe_config_s *configs,
+                                    unsigned count)
 {
-#ifdef CONFIG_BOARD_NXT_QENCODER
   int ret;
   char devpath[16];
 
-  syslog(LOG_INFO, "Initializing %d quadrature encoders\n", NUM_ENCODERS);
+  if (!configs || count == 0) {
+    return -EINVAL;
+  }
+
+  syslog(LOG_INFO, "Initializing %u quadrature encoders\n", count);
 
   /* Configure GPIO pins */
-  board_qencoder_gpio_config();
+  qencoder_gpio_config(configs, count);
 
   /* Initialize each encoder */
-  for (unsigned int i = 0; i < NUM_ENCODERS; i++)
+  for (unsigned int i = 0; i < count; i++)
     {
-      snprintf(devpath, sizeof(devpath), "/dev/qe%d", i);
+      snprintf(devpath, sizeof(devpath), "/dev/qe%u", i);
 
-      ret = nuttx_qencoder_initialize(&g_motor_encoders[i], devpath);
+      ret = nuttx_qencoder_initialize(&configs[i], devpath);
       if (ret < 0)
         {
           syslog(LOG_ERR, "ERROR: Failed to initialize encoder %s: %d\n",
@@ -143,58 +112,23 @@ int board_qencoder_initialize(void)
           return ret;
         }
 
-      syslog(LOG_INFO, "Initialized encoder %s (mode=%s, resolution=%lu)\n",
-             devpath,
-             "GPIO",
-             (unsigned long)g_motor_encoders[i].resolution);
+      syslog(LOG_INFO, "Initialized encoder %s (mode=GPIO, resolution=%lu)\n",
+             devpath, (unsigned long)configs[i].resolution);
     }
 
   syslog(LOG_INFO, "All encoders initialized successfully\n");
   return OK;
-
-#else
-  syslog(LOG_INFO, "Quadrature encoder support not enabled\n");
-  return OK;
-#endif
 }
 
 /****************************************************************************
- * Name: board_qencoder_get_config
+ * Name: px4_arch_quad_encoder_uninitialize_all
  *
  * Description:
- *   Get encoder configuration for a specific encoder
+ *   Uninitialize all active quadrature encoder instances
  *
  ****************************************************************************/
 
-int board_qencoder_get_config(int encoder_id,
-                             FAR struct nuttx_qe_config_s *config)
+int px4_arch_quad_encoder_uninitialize_all(void)
 {
-#ifdef CONFIG_BOARD_NXT_QENCODER
-  if (encoder_id < 0 || encoder_id >= (int)NUM_ENCODERS || !config)
-    {
-      return -EINVAL;
-    }
-
-  memcpy(config, &g_motor_encoders[encoder_id], sizeof(struct nuttx_qe_config_s));
-  return OK;
-#else
-  return -ENOTSUP;
-#endif
-}
-
-/****************************************************************************
- * Name: board_qencoder_get_count
- *
- * Description:
- *   Get the number of available encoders
- *
- ****************************************************************************/
-
-int board_qencoder_get_count(void)
-{
-#ifdef CONFIG_BOARD_NXT_QENCODER
-  return NUM_ENCODERS;
-#else
-  return 0;
-#endif
+  return nuttx_qencoder_uninitialize_all();
 }

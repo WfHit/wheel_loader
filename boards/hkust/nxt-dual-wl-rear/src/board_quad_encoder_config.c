@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,83 +31,44 @@
  *
  ****************************************************************************/
 
-/**
- * @file led.c
- *
- * LED backend.
- */
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
 
-#include <px4_platform_common/px4_config.h>
-
-#include <stdbool.h>
-
-#include "chip.h"
-#include "stm32_gpio.h"
+#include <nuttx/config.h>
+#include <px4_arch/nuttx_qencoder.h>
 #include "board_config.h"
 
-#include <nuttx/board.h>
-#include <arch/board/board.h>
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
 
-/*
- * Ideally we'd be able to get these from arm_internal.h,
- * but since we want to be able to disable the NuttX use
- * of leds for system indication at will and there is no
- * separate switch, we need to build independent of the
- * CONFIG_ARCH_LEDS configuration switch.
- */
-__BEGIN_DECLS
-extern void led_init(void);
-extern void led_on(int led);
-extern void led_off(int led);
-extern void led_toggle(int led);
-__END_DECLS
+#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
 
-#  define xlat(p) (p)
-static uint32_t g_ledmap[] = {
-	GPIO_nLED_GREEN,   // Indexed by BOARD_LED_GREEN
-	GPIO_nLED_BLUE,    // Indexed by BOARD_LED_BLUE
-	GPIO_nLED_RED,     // Indexed by BOARD_LED_RED
+/* Board-specific encoder configurations for nxt-dual-wl-rear */
+const struct nuttx_qe_config_s board_quad_encoder_configs[] =
+{
+  /* Motor Encoder - GPIO mode */
+  {
+    .gpio = {
+      .phase_a = QENCODER_A_GPIO_RAW,
+      .phase_b = QENCODER_B_GPIO_RAW,
+      .index = 0,  /* No index signal */
+    },
+    .resolution = 1024,    /* 1024 CPR encoder */
+    .use_index = false,    /* No index signal for motor encoder */
+    .x4_mode = true,       /* 4x counting mode for higher resolution */
+    .invert_dir = false,
+  },
 };
 
-__EXPORT void led_init(void)
-{
-	/* Configure LED GPIOs for output */
-	for (size_t l = 0; l < (sizeof(g_ledmap) / sizeof(g_ledmap[0])); l++) {
-		if (g_ledmap[l] != 0) {
-			stm32_configgpio(g_ledmap[l]);
-		}
-	}
-}
+/* Number of encoders on this board */
+const unsigned int board_quad_encoder_count = sizeof(board_quad_encoder_configs) / sizeof(board_quad_encoder_configs[0]);
 
-static void phy_set_led(int led, bool state)
-{
-	/* Drive Low to switch on */
-	if (g_ledmap[led] != 0) {
-		stm32_gpiowrite(g_ledmap[led], !state);
-	}
-}
+#else
 
-static bool phy_get_led(int led)
-{
-	/* If Low it is on */
-	if (g_ledmap[led] != 0) {
-		return !stm32_gpioread(g_ledmap[led]);
-	}
+/* Empty configuration when encoder support is disabled */
+const struct nuttx_qe_config_s board_quad_encoder_configs[] = {};
+const unsigned int board_quad_encoder_count = 0;
 
-	return false;
-}
-
-__EXPORT void led_on(int led)
-{
-	phy_set_led(xlat(led), true);
-}
-
-__EXPORT void led_off(int led)
-{
-	phy_set_led(xlat(led), false);
-}
-
-__EXPORT void led_toggle(int led)
-{
-	phy_set_led(xlat(led), !phy_get_led(xlat(led)));
-}
+#endif /* CONFIG_BOARD_QUADRATURE_ENCODER */

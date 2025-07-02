@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,26 +31,52 @@
  *
  ****************************************************************************/
 
-#include <px4_arch/spi_hw_description.h>
-#include <drivers/drv_sensor.h>
-#include <nuttx/spi/spi.h>
+/**
+ * @file quad_encoder.h
+ *
+ * Platform-level quadrature encoder interface
+ */
 
+#pragma once
 
-constexpr px4_spi_bus_t px4_spi_buses[SPI_BUS_MAX_BUS_ITEMS] = {
-	initSPIBus(SPI::Bus::SPI1, {
-		initSPIDevice(DRV_GYR_DEVTYPE_BMI088, SPI::CS{GPIO::PortA, GPIO::Pin3}, SPI::DRDY{GPIO::PortA, GPIO::Pin1}),
-		initSPIDevice(DRV_ACC_DEVTYPE_BMI088, SPI::CS{GPIO::PortA, GPIO::Pin2}, SPI::DRDY{GPIO::PortA, GPIO::Pin0}),
-	}),
-	initSPIBus(SPI::Bus::SPI2, {
-		initSPIDevice(SPIDEV_FLASH(0), SPI::CS{GPIO::PortD, GPIO::Pin4})
-	}),
-	initSPIBus(SPI::Bus::SPI3, {
-		// not in use, future development
-	}),
-	initSPIBus(SPI::Bus::SPI4, {
-		initSPIDevice(DRV_GYR_DEVTYPE_BMI088, SPI::CS{GPIO::PortC, GPIO::Pin2}, SPI::DRDY{GPIO::PortE, GPIO::Pin3}),
-		initSPIDevice(DRV_ACC_DEVTYPE_BMI088, SPI::CS{GPIO::PortC, GPIO::Pin13}, SPI::DRDY{GPIO::PortE, GPIO::Pin4}),
-	}),
-};
+#include <px4_platform_common/px4_config.h>
+#include <px4_arch/nuttx_qencoder.h>
 
-static constexpr bool unused = validateSPIConfig(px4_spi_buses);
+__BEGIN_DECLS
+
+/****************************************************************************
+ * Public Function Prototypes
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: px4_arch_quad_encoder_initialize
+ *
+ * Description:
+ *   Initialize quadrature encoders from board configuration
+ *
+ * Input Parameters:
+ *   configs - Array of encoder configurations
+ *   count   - Number of encoders
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+__EXPORT int px4_arch_quad_encoder_initialize(FAR const struct nuttx_qe_config_s *configs,
+                                             unsigned count);
+
+/****************************************************************************
+ * Name: px4_arch_quad_encoder_uninitialize_all
+ *
+ * Description:
+ *   Uninitialize all active quadrature encoder instances
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+__EXPORT int px4_arch_quad_encoder_uninitialize_all(void);
+
+__END_DECLS

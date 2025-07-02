@@ -31,75 +31,68 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
-#define __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H
+/**
+ * @file board_quad_encoder.h
+ *
+ * Common board interface for quadrature encoder operations
+ */
 
-/****************************************************************************
- * Included Files
- ****************************************************************************/
+#pragma once
 
-#include <nuttx/config.h>
-#include "nxt_qencoder.h"
+#include <px4_arch/nuttx_qencoder.h>
 
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
 
 #ifdef __cplusplus
-#define EXTERN extern "C"
-extern "C"
-{
-#else
-#define EXTERN extern
+extern "C" {
 #endif
 
 /****************************************************************************
- * Name: board_qencoder_initialize
+ * Name: board_quad_encoder_initialize
  *
  * Description:
- *   Initialize all quadrature encoders for the board
+ *   Initialize all board-specific quadrature encoders
  *
  * Returned Value:
  *   Zero (OK) on success; a negated errno value on failure.
  *
  ****************************************************************************/
 
-int board_qencoder_initialize(void);
+__EXPORT int board_quad_encoder_initialize(void);
 
 /****************************************************************************
- * Name: board_qencoder_get_config
+ * Name: board_quad_encoder_get_config
  *
  * Description:
- *   Get encoder configuration for a specific encoder
+ *   Get board-specific encoder configuration for a specific encoder
  *
  * Input Parameters:
- *   encoder_id - Encoder index (0-based)
- *   config     - Pointer to configuration structure to fill
+ *   encoder_id - Encoder ID (0-based)
+ *   config     - Pointer to store configuration
  *
  * Returned Value:
  *   Zero (OK) on success; a negated errno value on failure.
  *
  ****************************************************************************/
 
-int board_qencoder_get_config(int encoder_id,
-                             FAR struct nxt_qe_config_s *config);
+__EXPORT int board_quad_encoder_get_config(int encoder_id,
+                                          FAR struct nuttx_qe_config_s *config);
 
 /****************************************************************************
- * Name: board_qencoder_get_count
+ * Name: board_quad_encoder_get_count
  *
  * Description:
- *   Get the number of available encoders
+ *   Get the number of available encoders on this board
  *
  * Returned Value:
- *   Number of encoders available on this board.
+ *   Number of encoders available on this board
  *
  ****************************************************************************/
 
-int board_qencoder_get_count(void);
+__EXPORT int board_quad_encoder_get_count(void);
 
-#undef EXTERN
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __BOARDS_NXT_DUAL_WL_SRC_BOARD_QENCODER_H */
