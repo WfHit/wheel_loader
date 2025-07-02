@@ -144,7 +144,7 @@ void NoopLoopLinkTrack::Run()
             case 115200: speed = B115200; break;
             case 921600: speed = B921600; break;
             default:
-                PX4_WARN("Unsupported baud rate %d, using 921600", baud_param);
+                PX4_WARN("Unsupported baud rate %ld, using 921600", (long)baud_param);
                 speed = B921600;
                 break;
         }

@@ -176,6 +176,24 @@ menu "Serial ports"
 
     config BOARD_SERIAL_EXT2
         string "EXT2 tty port"
+
+    config BOARD_SERIAL_SRV1
+        string "SRV1 tty port"
+
+    config BOARD_SERIAL_SRV2
+        string "SRV2 tty port"
+
+    config BOARD_SERIAL_UWB1
+        string "UWB1 tty port"
+
+    config BOARD_SERIAL_UWB2
+        string "UWB2 tty port"
+
+    config BOARD_SERIAL_UWB3
+        string "UWB3 tty port"
+
+    config BOARD_SERIAL_UWB4
+        string "UWB4 tty port"
 endmenu
 
 menu "File paths"
