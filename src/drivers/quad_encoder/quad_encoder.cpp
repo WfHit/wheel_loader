@@ -31,7 +31,7 @@
  *
  ****************************************************************************/
 
-#include "QuadEncoder.hpp"
+#include "quad_encoder.hpp"
 
 #include <fcntl.h>
 #include <math.h>
@@ -46,19 +46,23 @@
 static QuadEncoder *_objects[QuadEncoder::MAX_INSTANCES] = {};
 static_assert(QuadEncoder::MAX_INSTANCES == 4, "Update _objects array size");
 
-// Definition of static constexpr array
-constexpr const char *QuadEncoder::ENCODER_DEVICE_PATHS[QuadEncoder::MAX_ENCODERS];
-
-QuadEncoder::QuadEncoder(int instance_id) :
+QuadEncoder::QuadEncoder(int instance_id, const char *device_path) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	_instance_id(instance_id)
 {
-	// Initialize encoder data
-	for (int i = 0; i < MAX_ENCODERS; i++) {
-		_encoder_data[i] = {};
-		_prev_position[i] = 0;
+	// Store device path or use default
+	if (device_path) {
+		strncpy(_device_path, device_path, sizeof(_device_path) - 1);
+		_device_path[sizeof(_device_path) - 1] = '\0';
+	} else {
+		// Default device path based on instance
+		snprintf(_device_path, sizeof(_device_path), "/dev/qe%d", instance_id);
 	}
+
+	// Initialize encoder data
+	_encoder_data = {};
+	_prev_position = 0;
 }
 
 QuadEncoder::~QuadEncoder()
@@ -68,7 +72,7 @@ QuadEncoder::~QuadEncoder()
 		orb_unadvertise(_sensor_quad_encoder_pub);
 	}
 
-	close_encoders();
+	close_encoder();
 
 	perf_free(_loop_perf);
 	perf_free(_read_perf);
@@ -79,29 +83,9 @@ bool QuadEncoder::init()
 	// Load initial parameters
 	parameters_update();
 
-	// Determine number of active encoders
-	_num_active_encoders = _param_num_encoders.get();
-	if (_num_active_encoders == 0) {
-		// Auto-detect available encoders
-		_num_active_encoders = 0;
-		for (int i = 0; i < MAX_ENCODERS; i++) {
-			int fd = open(ENCODER_DEVICE_PATHS[i], O_RDONLY);
-			if (fd >= 0) {
-				close(fd);
-				_num_active_encoders = i + 1;
-			} else {
-				break; // Stop at first unavailable encoder
-			}
-		}
-		if (_num_active_encoders == 0) {
-			_num_active_encoders = 4; // Default fallback
-		}
-		PX4_INFO("Auto-detected %d encoders", _num_active_encoders);
-	}
-
-	// Open encoder devices
-	if (!open_encoders()) {
-		PX4_ERR("Failed to open encoder devices");
+	// Open encoder device
+	if (!open_encoder()) {
+		PX4_ERR("Failed to open encoder device %s", _device_path);
 		return false;
 	}
 
@@ -119,43 +103,37 @@ bool QuadEncoder::init()
 	}
 	PX4_INFO("Advertising sensor_quad_encoder instance %d", _sensor_encoder_instance);
 
-	// Reset encoders
-	reset_encoders();
+	// Reset encoder
+	reset_encoder();
 
 	// Start work queue
 	ScheduleOnInterval(SCHEDULE_INTERVAL);
 
 	_is_running = true;
 
-	PX4_INFO("QuadEncoder initialized (instance %d, %d encoders)", _instance_id, _num_active_encoders);
+	PX4_INFO("QuadEncoder initialized (instance %d, device %s)", _instance_id, _device_path);
 	return true;
 }
 
-bool QuadEncoder::open_encoders()
+bool QuadEncoder::open_encoder()
 {
-	bool success = true;
+	_fd_encoder = open(_device_path, O_RDONLY);
 
-	for (int i = 0; i < _num_active_encoders; i++) {
-		_fd_encoders[i] = open(ENCODER_DEVICE_PATHS[i], O_RDONLY);
-
-		if (_fd_encoders[i] < 0) {
-			PX4_ERR("Failed to open %s: %d", ENCODER_DEVICE_PATHS[i], errno);
-			success = false;
-		} else {
-			PX4_DEBUG("Opened encoder %d: %s (fd=%d)", i, ENCODER_DEVICE_PATHS[i], _fd_encoders[i]);
-		}
+	if (_fd_encoder < 0) {
+		PX4_ERR("Failed to open %s: %d", _device_path, errno);
+		return false;
+	} else {
+		PX4_DEBUG("Opened encoder: %s (fd=%d)", _device_path, _fd_encoder);
 	}
 
-	return success;
+	return true;
 }
 
-void QuadEncoder::close_encoders()
+void QuadEncoder::close_encoder()
 {
-	for (int i = 0; i < MAX_ENCODERS; i++) {
-		if (_fd_encoders[i] >= 0) {
-			close(_fd_encoders[i]);
-			_fd_encoders[i] = -1;
-		}
+	if (_fd_encoder >= 0) {
+		close(_fd_encoder);
+		_fd_encoder = -1;
 	}
 }
 
@@ -176,110 +154,86 @@ void QuadEncoder::Run()
 	}
 
 	// Read encoder data
-	read_encoders();
+	read_encoder();
 
 	perf_end(_loop_perf);
 }
 
-void QuadEncoder::read_encoders()
+void QuadEncoder::read_encoder()
 {
 	perf_begin(_read_perf);
 
 	sensor_quad_encoder_s sensor_msg{};
 	sensor_msg.timestamp = hrt_absolute_time();
-	sensor_msg.count = _num_active_encoders;
+	sensor_msg.count = 1;
 
 	bool any_valid = false;
 
-	for (int i = 0; i < _num_active_encoders; i++) {
-		if (_fd_encoders[i] < 0) {
-			_encoder_data[i].valid = false;
-			sensor_msg.valid[i] = 0;
-			continue;
+	if (_fd_encoder < 0) {
+		_encoder_data.valid = false;
+		sensor_msg.valid[0] = 0;
+		perf_end(_read_perf);
+		return;
+	}
+
+	// Read position from encoder using IOCTL
+	int32_t position = 0;
+	int ret = ioctl(_fd_encoder, QEIOC_POSITION, &position);
+
+	if (ret == 0) {
+		// Get encoder parameters for this specific instance
+		int32_t ppr = get_ppr_for_instance();
+		bool invert = get_invert_for_instance();
+
+		if (invert) {
+			position = -position;
 		}
 
-		// Read position from encoder using IOCTL
-		int32_t position = 0;
-		int ret = ioctl(_fd_encoders[i], QEIOC_POSITION, &position);
+		_encoder_data.position = position;
+		_encoder_data.timestamp = sensor_msg.timestamp;
+		_encoder_data.valid = true;
+		_encoder_data.pulses_per_rev = ppr;
+		_encoder_data.invert_direction = invert;
+		any_valid = true;
 
-		if (ret == 0) {
-			// Get encoder-specific parameters
-			int32_t ppr = 1024; // default
-			bool invert = false;
+		// Calculate velocity and angle for rotary encoders
+		float velocity = 0.0f;
+		float angle_rad = 0.0f;
 
-			switch (i) {
-			case 0:
-				ppr = _param_ppr_0.get();
-				invert = _param_invert_0.get();
-				break;
-			case 1:
-				ppr = _param_ppr_1.get();
-				invert = _param_invert_1.get();
-				break;
-			case 2:
-				ppr = _param_ppr_2.get();
-				invert = _param_invert_2.get();
-				break;
-			case 3:
-				ppr = _param_ppr_3.get();
-				invert = _param_invert_3.get();
-				break;
-			default:
-				ppr = 1024;
-				invert = false;
-				break;
+		if (_prev_timestamp > 0) {
+			float dt = (sensor_msg.timestamp - _prev_timestamp) * 1e-6f;
+			if (dt > 0.0f) {
+				int32_t delta_pos = position - _prev_position;
+
+				// Rotary encoder calculations
+				float angular_velocity = (2.0f * static_cast<float>(M_PI) * delta_pos) / (ppr * dt); // rad/s
+				velocity = angular_velocity;
+				angle_rad = (2.0f * static_cast<float>(M_PI) * position) / ppr; // cumulative angle in radians
+
+				_encoder_data.velocity_rad_s = velocity;
+				_encoder_data.angle_rad = angle_rad;
 			}
-
-			if (invert) {
-				position = -position;
-			}
-
-			_encoder_data[i].position = position;
-			_encoder_data[i].timestamp = sensor_msg.timestamp;
-			_encoder_data[i].valid = true;
-			_encoder_data[i].pulses_per_rev = ppr;
-			_encoder_data[i].invert_direction = invert;
-			any_valid = true;
-
-			// Calculate velocity and angle for rotary encoders
-			float velocity = 0.0f;
-			float angle_rad = 0.0f;
-
-			if (_prev_timestamp > 0) {
-				float dt = (sensor_msg.timestamp - _prev_timestamp) * 1e-6f;
-				if (dt > 0.0f) {
-					int32_t delta_pos = position - _prev_position[i];
-
-					// Rotary encoder calculations
-					float angular_velocity = (2.0f * static_cast<float>(M_PI) * delta_pos) / (ppr * dt); // rad/s
-					velocity = angular_velocity;
-					angle_rad = (2.0f * static_cast<float>(M_PI) * position) / ppr; // cumulative angle in radians
-
-					_encoder_data[i].velocity_rad_s = velocity;
-					_encoder_data[i].angle_rad = angle_rad;
-				}
-			}
-
-			// Fill message
-			sensor_msg.position[i] = position;
-			sensor_msg.velocity[i] = _encoder_data[i].velocity_rad_s;
-			sensor_msg.angle_or_distance[i] = _encoder_data[i].angle_rad;
-			sensor_msg.valid[i] = 1;
-			sensor_msg.pulses_per_rev[i] = ppr;
-			sensor_msg.invert_direction[i] = invert;
-
-			_prev_position[i] = position;
-
-		} else {
-			_encoder_data[i].valid = false;
-			sensor_msg.valid[i] = 0;
-			_error_count++;
-			PX4_DEBUG("Failed to read encoder %d: %d", i, ret);
 		}
+
+		// Fill message
+		sensor_msg.position[0] = position;
+		sensor_msg.velocity[0] = _encoder_data.velocity_rad_s;
+		sensor_msg.angle_or_distance[0] = _encoder_data.angle_rad;
+		sensor_msg.valid[0] = 1;
+		sensor_msg.pulses_per_rev[0] = ppr;
+		sensor_msg.invert_direction[0] = invert;
+
+		_prev_position = position;
+
+	} else {
+		_encoder_data.valid = false;
+		sensor_msg.valid[0] = 0;
+		_error_count++;
+		PX4_DEBUG("Failed to read encoder: %d", ret);
 	}
 
 	// Fill remaining slots with invalid data
-	for (int i = _num_active_encoders; i < sensor_quad_encoder_s::MAX_ENCODERS; i++) {
+	for (int i = 1; i < sensor_quad_encoder_s::MAX_ENCODERS; i++) {
 		sensor_msg.position[i] = 0;
 		sensor_msg.velocity[i] = 0.0f;
 		sensor_msg.angle_or_distance[i] = 0.0f;
@@ -297,21 +251,19 @@ void QuadEncoder::read_encoders()
 	perf_end(_read_perf);
 }
 
-void QuadEncoder::reset_encoders()
+void QuadEncoder::reset_encoder()
 {
-	for (int i = 0; i < _num_active_encoders; i++) {
-		if (_fd_encoders[i] >= 0) {
-			// Reset encoder position
-			if (ioctl(_fd_encoders[i], QEIOC_RESET, 0) < 0) {
-				PX4_WARN("Failed to reset encoder %d", i);
-			}
+	if (_fd_encoder >= 0) {
+		// Reset encoder position
+		if (ioctl(_fd_encoder, QEIOC_RESET, 0) < 0) {
+			PX4_WARN("Failed to reset encoder");
 		}
-		_prev_position[i] = 0;
 	}
+	_prev_position = 0;
 
 	_prev_timestamp = 0;
 
-	PX4_INFO("Encoders reset");
+	PX4_INFO("Encoder reset");
 }
 
 void QuadEncoder::parameters_update()
@@ -323,27 +275,46 @@ void QuadEncoder::parameters_update()
 	ScheduleOnInterval(update_interval_us);
 }
 
+int32_t QuadEncoder::get_ppr_for_instance() const
+{
+	switch (_instance_id) {
+	case 0: return _param_ppr_0.get();
+	case 1: return _param_ppr_1.get();
+	case 2: return _param_ppr_2.get();
+	case 3: return _param_ppr_3.get();
+	default: return 1024; // Default fallback
+	}
+}
+
+bool QuadEncoder::get_invert_for_instance() const
+{
+	switch (_instance_id) {
+	case 0: return _param_invert_0.get();
+	case 1: return _param_invert_1.get();
+	case 2: return _param_invert_2.get();
+	case 3: return _param_invert_3.get();
+	default: return false; // Default fallback
+	}
+}
+
 int QuadEncoder::print_status()
 {
 	PX4_INFO("QuadEncoder (instance %d) status:", _instance_id);
 	PX4_INFO("  Running: %s", _is_running ? "yes" : "no");
 	PX4_INFO("  Update rate: %ld Hz", _param_update_rate.get());
-	PX4_INFO("  Active encoders: %d", _num_active_encoders);
+	PX4_INFO("  Device: %s", _device_path);
 
 	// Show uORB topic instances
 	PX4_INFO("  Sensor encoder topic instance: %d", _sensor_encoder_instance);
 
 	PX4_INFO("Encoder status:");
-	for (int i = 0; i < _num_active_encoders; i++) {
-		PX4_INFO("  Enc %d: %s, pos=%ld, vel=%.2f rad/s, angle=%.2f rad, ppr=%ld, invert=%s",
-			i,
-			_encoder_data[i].valid ? "OK" : "FAIL",
-			(long)_encoder_data[i].position,
-			(double)_encoder_data[i].velocity_rad_s,
-			(double)_encoder_data[i].angle_rad,
-			(long)_encoder_data[i].pulses_per_rev,
-			_encoder_data[i].invert_direction ? "yes" : "no");
-	}
+	PX4_INFO("  Enc: %s, pos=%ld, vel=%.2f rad/s, angle=%.2f rad, ppr=%ld, invert=%s",
+		_encoder_data.valid ? "OK" : "FAIL",
+		(long)_encoder_data.position,
+		(double)_encoder_data.velocity_rad_s,
+		(double)_encoder_data.angle_rad,
+		(long)_encoder_data.pulses_per_rev,
+		_encoder_data.invert_direction ? "yes" : "no");
 
 	PX4_INFO("Statistics:");
 	PX4_INFO("  Read count: %lu", _read_count);
@@ -362,16 +333,20 @@ int QuadEncoder::print_status()
 int QuadEncoder::task_spawn(int argc, char *argv[])
 {
 	int instance_id = 0;
+	const char *device_path = nullptr;
 
 	// Parse command line arguments
 	int myoptind = 1;
 	int ch;
 	const char *myoptarg = nullptr;
 
-	while ((ch = px4_getopt(argc, argv, "i:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "i:d:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'i':
 			instance_id = atoi(myoptarg);
+			break;
+		case 'd':
+			device_path = myoptarg;
 			break;
 		case '?':
 			PX4_WARN("Unknown option");
@@ -392,7 +367,7 @@ int QuadEncoder::task_spawn(int argc, char *argv[])
 	}
 
 	// Create new instance
-	QuadEncoder *instance = instantiate(instance_id);
+	QuadEncoder *instance = instantiate(instance_id, device_path);
 
 	if (instance == nullptr) {
 		PX4_ERR("Allocation failed");
@@ -421,9 +396,9 @@ int QuadEncoder::task_spawn(int argc, char *argv[])
 	return 0;
 }
 
-QuadEncoder *QuadEncoder::instantiate(int instance)
+QuadEncoder *QuadEncoder::instantiate(int instance, const char *device_path)
 {
-	QuadEncoder *obj = new QuadEncoder(instance);
+	QuadEncoder *obj = new QuadEncoder(instance, device_path);
 	return obj;
 }
 
@@ -513,7 +488,7 @@ int QuadEncoder::custom_command(int argc, char *argv[])
 			}
 
 			if (_objects[instance_id] != nullptr) {
-				_objects[instance_id]->reset_encoders();
+				_objects[instance_id]->reset_encoder();
 				return 0;
 			}
 
@@ -524,7 +499,7 @@ int QuadEncoder::custom_command(int argc, char *argv[])
 			bool any_reset = false;
 			for (int i = 0; i < MAX_INSTANCES; i++) {
 				if (_objects[i] != nullptr) {
-					_objects[i]->reset_encoders();
+					_objects[i]->reset_encoder();
 					any_reset = true;
 				}
 			}
@@ -558,24 +533,26 @@ to provide encoder data for rotary applications including:
 - Motors and position sensors
 
 Features:
-- Supports up to 4 encoders per instance with auto-detection
+- Single encoder per instance with configurable device path
 - Multi-instance support (up to 4 instances) with independent uORB topics
-- Independent parameter configuration per encoder
 - Configurable pulses per revolution and direction inversion
 
 ### Configuration
-Configure each encoder using the following parameters:
-- QE_PPR_X: Pulses per revolution for encoder X
-- QE_INVERT_X: Invert direction for encoder X
+Configure each encoder instance using the following parameters:
+- QE_PPR_0/1/2/3: Pulses per revolution for instance 0/1/2/3
+- QE_INVERT_0/1/2/3: Invert direction for instance 0/1/2/3
 
 ### Examples
-Start the driver (instance 0):
-$ quad_encoder start
+Start multiple instances with different configurations:
+$ param set QE_PPR_0 1024      # Instance 0: 1024 PPR
+$ param set QE_INVERT_0 0      # Instance 0: normal direction
+$ param set QE_PPR_1 2048      # Instance 1: 2048 PPR
+$ param set QE_INVERT_1 1      # Instance 1: inverted direction
 
-Start with specific instance:
-$ quad_encoder start -i 1
+$ quad_encoder start -i 0 -d /dev/qe0     # Start instance 0
+$ quad_encoder start -i 1 -d /dev/qe1     # Start instance 1
 
-Reset encoder positions:
+Reset encoder position:
 $ quad_encoder reset
 
 Reset specific instance:
@@ -591,7 +568,8 @@ $ quad_encoder stop -i 1
 	PRINT_MODULE_USAGE_NAME("quad_encoder", "driver");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the driver");
 	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 3, "Instance ID", true);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Reset encoder positions");
+	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/qe0", "<file:dev>", "Encoder device path", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Reset encoder position");
 	PRINT_MODULE_USAGE_PARAM_INT('i', -1, -1, 3, "Instance ID (-1 for all instances)", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop specific instance");
 	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 3, "Instance ID", true);
@@ -617,24 +595,26 @@ to provide encoder data for rotary applications including:
 - Motors and position sensors
 
 Features:
-- Supports up to 4 encoders per instance with auto-detection
+- Single encoder per instance with configurable device path
 - Multi-instance support (up to 4 instances) with independent uORB topics
-- Independent parameter configuration per encoder
 - Configurable pulses per revolution and direction inversion
 
 ### Configuration
-Configure each encoder using the following parameters:
-- QE_PPR_X: Pulses per revolution for encoder X
-- QE_INVERT_X: Invert direction for encoder X
+Configure each encoder instance using the following parameters:
+- QE_PPR_0/1/2/3: Pulses per revolution for instance 0/1/2/3
+- QE_INVERT_0/1/2/3: Invert direction for instance 0/1/2/3
 
 ### Examples
-Start the driver:
-$ quad_encoder start
+Start multiple instances with different configurations:
+$ param set QE_PPR_0 1024      # Instance 0: 1024 PPR
+$ param set QE_INVERT_0 0      # Instance 0: normal direction
+$ param set QE_PPR_1 2048      # Instance 1: 2048 PPR
+$ param set QE_INVERT_1 1      # Instance 1: inverted direction
 
-Start with specific instance:
-$ quad_encoder start -i 1
+$ quad_encoder start -i 0 -d /dev/qe0     # Start instance 0
+$ quad_encoder start -i 1 -d /dev/qe1     # Start instance 1
 
-Reset encoder positions:
+Reset encoder position:
 $ quad_encoder reset
 
 Check status:
@@ -647,7 +627,8 @@ $ quad_encoder stop
 	PRINT_MODULE_USAGE_NAME("quad_encoder", "driver");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the driver");
 	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 3, "Instance ID", true);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Reset encoder positions");
+	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/qe0", "<file:dev>", "Encoder device path", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("reset", "Reset encoder position");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 }
 

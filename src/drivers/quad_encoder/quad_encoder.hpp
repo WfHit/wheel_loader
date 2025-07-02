@@ -66,8 +66,9 @@ public:
 	/**
 	 * @brief Constructor
 	 * @param instance_id Encoder instance ID (0-based)
+	 * @param device_path Path to the encoder device (e.g., "/dev/qe0")
 	 */
-	QuadEncoder(int instance_id = 0);
+	QuadEncoder(int instance_id = 0, const char *device_path = nullptr);
 
 	/**
 	 * @brief Destructor
@@ -85,9 +86,10 @@ public:
 	/**
 	 * @brief Instantiate specific instance
 	 * @param instance Instance ID
+	 * @param device_path Path to encoder device
 	 * @return QuadEncoder instance or nullptr
 	 */
-	static QuadEncoder *instantiate(int instance);
+	static QuadEncoder *instantiate(int instance, const char *device_path = nullptr);
 
 	/**
 	 * @brief Print module usage information
@@ -118,6 +120,16 @@ public:
 	 */
 	static int custom_command(int argc, char *argv[]);
 
+	/**
+	 * @brief Get PPR parameter for this instance
+	 */
+	int32_t get_ppr_for_instance() const;
+
+	/**
+	 * @brief Get invert parameter for this instance
+	 */
+	bool get_invert_for_instance() const;
+
 private:
 	/**
 	 * @brief Main work loop - scheduled execution
@@ -132,48 +144,46 @@ private:
 	/**
 	 * @brief Read encoder data from NuttX driver
 	 */
-	void read_encoders();
+	void read_encoder();
 
 	/**
-	 * @brief Reset encoder positions
+	 * @brief Reset encoder position
 	 */
-	void reset_encoders();
+	void reset_encoder();
 
 	/**
-	 * @brief Open encoder device files
+	 * @brief Open encoder device file
 	 * @return true on success, false otherwise
 	 */
-	bool open_encoders();
+	bool open_encoder();
 
 	/**
-	 * @brief Close encoder device files
+	 * @brief Close encoder device file
 	 */
-	void close_encoders();
+	void close_encoder();
 
 	// Parameters
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::QE_UPDATE_RATE>) _param_update_rate,
-		(ParamInt<px4::params::QE_NUM_ENCODERS>) _param_num_encoders,
 		(ParamInt<px4::params::QE_PPR_0>) _param_ppr_0,
-		(ParamInt<px4::params::QE_PPR_1>) _param_ppr_1,
-		(ParamInt<px4::params::QE_PPR_2>) _param_ppr_2,
-		(ParamInt<px4::params::QE_PPR_3>) _param_ppr_3,
 		(ParamBool<px4::params::QE_INVERT_0>) _param_invert_0,
+		(ParamInt<px4::params::QE_PPR_1>) _param_ppr_1,
 		(ParamBool<px4::params::QE_INVERT_1>) _param_invert_1,
+		(ParamInt<px4::params::QE_PPR_2>) _param_ppr_2,
 		(ParamBool<px4::params::QE_INVERT_2>) _param_invert_2,
+		(ParamInt<px4::params::QE_PPR_3>) _param_ppr_3,
 		(ParamBool<px4::params::QE_INVERT_3>) _param_invert_3
 	)
 
 	// Instance configuration
 	int _instance_id{0};
 	bool _is_running{false};
+	char _device_path[32]{};  // Store the device path
 
-	// Device file descriptors
-	static constexpr int MAX_ENCODERS = 4;
-	int _fd_encoders[MAX_ENCODERS]{-1, -1, -1, -1}; // Up to 4 encoders
-	int _num_active_encoders{4}; // Default to 4 for compatibility
+	// Device file descriptors - now single device per instance
+	int _fd_encoder{-1};
 
-	// Encoder data
+	// Encoder data - simplified to single encoder per instance
 	struct encoder_data_s {
 		int32_t position;
 		float velocity_rad_s;     // rad/s
@@ -183,10 +193,10 @@ private:
 		int32_t pulses_per_rev;   // PPR
 		bool invert_direction;
 	};
-	encoder_data_s _encoder_data[MAX_ENCODERS]{};
+	encoder_data_s _encoder_data{};
 
-	// Previous encoder positions for velocity calculation
-	int32_t _prev_position[MAX_ENCODERS]{};
+	// Previous encoder position for velocity calculation
+	int32_t _prev_position{0};
 	hrt_abstime _prev_timestamp{0};
 
 	// Publishers - use orb_advert_t for multi-instance
@@ -209,7 +219,4 @@ private:
 
 	// Configuration
 	static constexpr uint32_t SCHEDULE_INTERVAL{10_ms}; // 100 Hz default
-	static constexpr const char *ENCODER_DEVICE_PATHS[MAX_ENCODERS] = {
-		"/dev/qe0", "/dev/qe1", "/dev/qe2", "/dev/qe3"
-	};
 };

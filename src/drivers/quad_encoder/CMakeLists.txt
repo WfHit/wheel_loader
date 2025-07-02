@@ -36,7 +36,7 @@ px4_add_module(
 	MAIN quad_encoder
 	STACK_MAIN 2048
 	SRCS
-		QuadEncoder.cpp
+		quad_encoder.cpp
 	DEPENDS
 		px4_work_queue
 	MODULE_CONFIG
