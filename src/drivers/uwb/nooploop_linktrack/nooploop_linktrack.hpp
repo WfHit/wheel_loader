@@ -59,10 +59,12 @@ public:
 private:
 	// Protocol constants
 	static constexpr uint8_t NLINK_HEADER = 0x55;
-	static constexpr uint8_t NLINK_FRAME_END = 0x77;
 	static constexpr uint8_t NLINK_NODE_FRAME3 = 0x06;
+	static constexpr uint8_t NLINK_ROLE_TAG = 0x02;
+	static constexpr uint8_t NLINK_ROLE_ANCHOR = 0x01;
 	static constexpr int MAX_ANCHORS = 50;
-	static constexpr int MAX_RANGES_PER_FRAME = 20;
+	static constexpr int MAX_RANGES_PER_FRAME = 16; // Reserve space for 16 anchors as requested
+	static constexpr size_t RX_BUFFER_SIZE = 1024;  // Larger buffer for big frames
 
 	// Anchor configuration
 	struct AnchorConfig {
@@ -71,28 +73,42 @@ private:
 		bool active;
 	};
 
-	// Range measurement from Node_Frame3
-	struct RangeData {
-		uint8_t anchor_id;
-		uint32_t distance_mm;
-		int8_t rssi;
-		uint16_t los_confidence;
+	// Range measurement from Node_Frame3 - variable length protocol
+	struct NodeFrame3Header {
+		uint8_t frame_header;    // 0x55
+		uint8_t function_mark;   // 0x06 for Node_Frame3
+		uint16_t frame_length;   // Total frame length excluding header and function_mark (2 bytes)
+		uint8_t role;           // 0x01=ANCHOR, 0x02=TAG
+		uint8_t id;             // Node ID
+		uint32_t local_time;    // Local timestamp
+		uint32_t system_time;   // System timestamp
+		uint16_t voltage;       // Supply voltage * 1000
+		uint8_t valid_quantity; // Number of valid anchor measurements
 	} __attribute__((packed));
 
-	// Parser state
+	struct AnchorData {
+		uint8_t role;           // Should be 0x01 for ANCHOR
+		uint8_t id;             // Anchor ID
+		uint8_t distance[3];    // Distance in mm (3 bytes, little endian, int24)
+		uint8_t signal_strength; // Signal strength (negative dBm)
+		uint8_t reserved;       // Reserved byte
+	} __attribute__((packed));
+
+	// Parser state machine (similar to MAVLink)
 	enum class ParserState {
 		WAIT_HEADER,
-		WAIT_LENGTH,
-		WAIT_TYPE,
-		WAIT_DATA,
-		WAIT_END
+		WAIT_FUNCTION,
+		WAIT_LENGTH_LOW,
+		WAIT_LENGTH_HIGH,
+		WAIT_PAYLOAD,
+		WAIT_CHECKSUM
 	};
 
 	void Run() override;
 
 	// Core functions
 	bool parse_frame(const uint8_t *data, size_t length);
-	void process_ranges(uint8_t tag_id, uint8_t num_ranges, const RangeData *ranges);
+	void process_ranges(uint8_t tag_id, uint8_t num_ranges, const AnchorData *ranges);
 	void publish_range(uint8_t anchor_id, float distance, float accuracy);
 	bool configure_device();
 	bool load_anchors(const char *filename);

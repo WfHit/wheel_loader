@@ -89,11 +89,11 @@ bool NoopLoopLinkTrack::configure_device()
         return false;
     }
 
-    // Configure LP_MODE2
-    uint8_t cmd[] = {NLINK_HEADER, 0x08, 0x00, 0x10, 0x02, (uint8_t)_param_tag_id.get(), 0x01, 0x00, 0x00, NLINK_FRAME_END};
+    // Configure LP_MODE2 - Set Tag Mode with ID
+    uint8_t cmd[] = {NLINK_HEADER, 0x08, 0x10, 0x02, (uint8_t)_param_tag_id.get(), 0x01, 0x00};
     uint8_t sum = 0;
-    for (int i = 1; i < 8; i++) sum += cmd[i];
-    cmd[8] = sum;
+    for (int i = 1; i < 6; i++) sum += cmd[i];
+    cmd[6] = sum; // Checksum
 
     ssize_t written = write(_fd, cmd, sizeof(cmd));
     if (written != sizeof(cmd)) {
@@ -103,11 +103,11 @@ bool NoopLoopLinkTrack::configure_device()
     }
     usleep(100000);
 
-    // Enable Node_Frame3
-    uint8_t out[] = {NLINK_HEADER, 0x06, 0x00, 0x13, NLINK_NODE_FRAME3, 0x01, 0x00, NLINK_FRAME_END};
+    // Enable Node_Frame3 output
+    uint8_t out[] = {NLINK_HEADER, 0x06, 0x13, NLINK_NODE_FRAME3, 0x01};
     sum = 0;
-    for (int i = 1; i < 6; i++) sum += out[i];
-    out[6] = sum;
+    for (int i = 1; i < 4; i++) sum += out[i];
+    out[4] = sum; // Checksum
 
     written = write(_fd, out, sizeof(out));
     if (written != sizeof(out)) {
@@ -237,17 +237,46 @@ void NoopLoopLinkTrack::Run()
         for (ssize_t i = 0; i < bytes; i++) {
             _rx_buffer[_rx_buffer_pos++] = data[i];
 
-            if (_rx_buffer_pos >= sizeof(_rx_buffer)) _rx_buffer_pos = 0;
+            if (_rx_buffer_pos >= sizeof(_rx_buffer)) {
+                _rx_buffer_pos = 0; // Buffer overflow protection
+            }
 
-            // Look for complete frame
-            if (_rx_buffer_pos >= 25 && _rx_buffer[_rx_buffer_pos-1] == NLINK_FRAME_END) {
-                for (size_t j = 0; j < _rx_buffer_pos - 4; j++) {
-                    if (_rx_buffer[j] == NLINK_HEADER && _rx_buffer[j+3] == NLINK_NODE_FRAME3) {
-                        parse_frame(_rx_buffer + j, _rx_buffer_pos - j);
-                        break;
+            // Look for complete Node_Frame3 packets
+            if (_rx_buffer_pos >= 4) { // Minimum to read header + function + length(2 bytes)
+                // Scan for frame start
+                for (size_t j = 0; j <= _rx_buffer_pos - 4; j++) {
+                    if (_rx_buffer[j] == NLINK_HEADER && _rx_buffer[j+1] == NLINK_NODE_FRAME3) {
+                        // Frame length is 2 bytes, little endian
+                        uint16_t frame_length = _rx_buffer[j+2] | (_rx_buffer[j+3] << 8);
+                        size_t total_frame_size = 4 + frame_length; // header + function + length(2) + payload
+
+                        // Check if we have received the complete frame
+                        if (j + total_frame_size <= _rx_buffer_pos) {
+                            // Verify checksum
+                            uint8_t calculated_checksum = 0;
+                            for (size_t k = j + 1; k < j + total_frame_size - 1; k++) {
+                                calculated_checksum += _rx_buffer[k];
+                            }
+                            uint8_t received_checksum = _rx_buffer[j + total_frame_size - 1];
+
+                            if (calculated_checksum == received_checksum) {
+                                parse_frame(_rx_buffer + j, total_frame_size);
+                            } else {
+                                PX4_WARN("Checksum mismatch: calc=0x%02X, recv=0x%02X",
+                                        calculated_checksum, received_checksum);
+                                perf_count(_comms_errors);
+                            }
+
+                            // Remove processed frame from buffer
+                            size_t remaining = _rx_buffer_pos - (j + total_frame_size);
+                            if (remaining > 0) {
+                                memmove(_rx_buffer, _rx_buffer + j + total_frame_size, remaining);
+                            }
+                            _rx_buffer_pos = remaining;
+                            break;
+                        }
                     }
                 }
-                _rx_buffer_pos = 0;
             }
         }
     }
@@ -371,35 +400,83 @@ NoopLoop LinkTrack UWB driver for positioning using Ultra-Wideband ranging.
 
 bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 {
-    if (length < 25) return false;
+    if (length < sizeof(NodeFrame3Header)) {
+        PX4_DEBUG("Frame too short: %zu bytes", length);
+        return false;
+    }
 
-    uint8_t tag_id = data[4];
-    if (tag_id != (uint8_t)_param_tag_id.get()) return false;
+    const NodeFrame3Header *header = (const NodeFrame3Header *)data;
 
-    uint8_t num_ranges = data[23];
-    if (num_ranges > MAX_RANGES_PER_FRAME) return false;
+    // Verify frame header and function mark
+    if (header->frame_header != NLINK_HEADER || header->function_mark != NLINK_NODE_FRAME3) {
+        PX4_DEBUG("Invalid frame header or function mark");
+        return false;
+    }
 
-    const RangeData *ranges = (const RangeData *)(data + 24);
+    // Check if this is from our tag (we can process any tag, but filter if needed)
+    uint8_t node_id = header->id;
+    if (header->role == NLINK_ROLE_TAG && node_id != (uint8_t)_param_tag_id.get()) {
+        // This frame is from a different tag, ignore it
+        return false;
+    }
 
-    for (int i = 0; i < num_ranges; i++) {
-        const RangeData &r = ranges[i];
+    // Only process frames from tags (role 0x02) that contain anchor measurements
+    if (header->role != NLINK_ROLE_TAG) {
+        return false;
+    }
 
-        if (r.distance_mm > 0 && r.distance_mm < 100000 && r.rssi > -100) {
-            float distance = r.distance_mm / 1000.0f;
-            publish_range(r.anchor_id, distance, r.rssi);
+    uint8_t valid_quantity = header->valid_quantity;
+    if (valid_quantity > MAX_RANGES_PER_FRAME) {
+        PX4_WARN("Too many ranges: %d", valid_quantity);
+        return false;
+    }
+
+    // Calculate expected frame size
+    size_t expected_size = sizeof(NodeFrame3Header) +
+                          (valid_quantity * sizeof(AnchorData)) +
+                          1; // checksum
+
+    if (length < expected_size) {
+        PX4_DEBUG("Frame incomplete: got %zu, expected %zu", length, expected_size);
+        return false;
+    }
+
+    // Parse anchor data
+    const AnchorData *anchor_data = (const AnchorData *)(data + sizeof(NodeFrame3Header));
+
+    for (int i = 0; i < valid_quantity; i++) {
+        const AnchorData &anchor = anchor_data[i];
+
+        // Verify this is anchor data (role should be 0x01)
+        if (anchor.role == NLINK_ROLE_ANCHOR) {
+            // Decode 3-byte distance field (int24, little endian) from mm to meters
+            uint32_t distance_mm = anchor.distance[0] |
+                                  (anchor.distance[1] << 8) |
+                                  (anchor.distance[2] << 16);
+
+            float distance_m = distance_mm / 1000.0f;
+
+            // Convert signal strength (positive value) to negative dBm
+            float rssi = -(float)anchor.signal_strength;
+
+            // Validate range
+            if (distance_m > 0.1f && distance_m < 100.0f && rssi > -120.0f) {
+                publish_range(anchor.id, distance_m, rssi);
+            }
         }
     }
 
     return true;
 }
 
-void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const RangeData *ranges)
+void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const AnchorData *ranges)
 {
     for (int i = 0; i < num_ranges; i++) {
-        const RangeData &r = ranges[i];
-        if (r.distance_mm > 0 && r.distance_mm < 100000 && r.rssi > -100) {
-            float distance = r.distance_mm / 1000.0f;
-            publish_range(r.anchor_id, distance, r.rssi);
+        const AnchorData &r = ranges[i];
+        if (r.role == NLINK_ROLE_ANCHOR && r.distance > 100 && r.distance < 100000) {
+            float distance = r.distance / 1000.0f; // Convert mm to meters
+            float rssi = -(float)r.signal_strength; // Convert to negative dBm
+            publish_range(r.id, distance, rssi);
         }
     }
 }
@@ -469,10 +546,10 @@ void NoopLoopLinkTrack::debug_uart()
 
     // Send a test command to see TX data
     PX4_INFO("=== Sending test configuration command ===");
-    uint8_t test_cmd[] = {NLINK_HEADER, 0x08, 0x00, 0x10, 0x02, 0x00, 0x01, 0x00, 0x00, NLINK_FRAME_END};
+    uint8_t test_cmd[] = {NLINK_HEADER, 0x08, 0x10, 0x02, 0x00, 0x01, 0x00};
     uint8_t sum = 0;
-    for (int i = 1; i < 8; i++) sum += test_cmd[i];
-    test_cmd[8] = sum;
+    for (int i = 1; i < 6; i++) sum += test_cmd[i];
+    test_cmd[6] = sum;
 
     printf("TX (%zu bytes): ", sizeof(test_cmd));
     for (size_t i = 0; i < sizeof(test_cmd); i++) {
@@ -534,30 +611,40 @@ void NoopLoopLinkTrack::decode_debug_frame(const uint8_t *data, size_t length)
 
     // Look for LinkTrack header
     for (size_t i = 0; i <= length - 4; i++) {
-        if (data[i] == NLINK_HEADER && (i + 3) < length) {
-            uint8_t frame_type = data[i + 3];
-            printf("  -> Frame detected: Header=0x%02X, Type=0x%02X", data[i], frame_type);
+        if (data[i] == NLINK_HEADER && data[i + 1] == NLINK_NODE_FRAME3) {
+            printf("  -> Frame detected: Header=0x%02X, Function=0x%02X", data[i], data[i + 1]);
 
-            switch (frame_type) {
-                case NLINK_NODE_FRAME3:
-                    printf(" (NODE_FRAME3 - Position Data)");
-                    if (length >= i + 25) {
-                        uint8_t tag_id = data[i + 4];
-                        uint8_t num_ranges = (i + 23 < length) ? data[i + 23] : 0;
-                        printf(" Tag_ID=%d, Ranges=%d", tag_id, num_ranges);
-                    }
-                    break;
-                case 0x10:
-                    printf(" (Configuration Response)");
-                    break;
-                case 0x13:
-                    printf(" (Frame Enable Response)");
-                    break;
-                default:
-                    printf(" (Unknown Type)");
-                    break;
+            if (length >= i + sizeof(NodeFrame3Header)) {
+                const NodeFrame3Header *header = (const NodeFrame3Header *)(data + i);
+
+                printf(" (NODE_FRAME3 - Position Data)\n");
+                printf("     Frame Length: %d bytes\n", header->frame_length);
+                printf("     Role: 0x%02X (%s), ID: %d\n",
+                       header->role,
+                       header->role == NLINK_ROLE_TAG ? "TAG" : "ANCHOR",
+                       header->id);
+                printf("     Valid Quantity: %d\n", header->valid_quantity);
+
+                // Decode anchor data if present
+                size_t anchor_offset = i + sizeof(NodeFrame3Header);
+                for (int j = 0; j < header->valid_quantity && anchor_offset + sizeof(AnchorData) <= length; j++) {
+                    const AnchorData *anchor = (const AnchorData *)(data + anchor_offset);
+
+                    // Decode 3-byte distance (int24, little endian)
+                    uint32_t distance_mm = anchor->distance[0] |
+                                          (anchor->distance[1] << 8) |
+                                          (anchor->distance[2] << 16);
+                    float distance_m = distance_mm / 1000.0f;
+
+                    printf("     Anchor[%d]: ID=%d, Distance=%.3fm (%dmm), RSSI=-%ddBm\n",
+                           j, anchor->id, distance_m, distance_mm, anchor->signal_strength);
+
+                    anchor_offset += sizeof(AnchorData);
+                }
+            } else {
+                printf(" (NODE_FRAME3 - Incomplete)\n");
             }
-            printf("\n");
+            return; // Found the frame, no need to continue searching
         }
     }
 }
