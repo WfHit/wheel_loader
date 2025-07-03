@@ -84,12 +84,23 @@ int NoopLoopLinkTrack::init()
 
 bool NoopLoopLinkTrack::configure_device()
 {
+    if (_fd < 0) {
+        PX4_ERR("Cannot configure device: serial port not open");
+        return false;
+    }
+
     // Configure LP_MODE2
     uint8_t cmd[] = {NLINK_HEADER, 0x08, 0x00, 0x10, 0x02, (uint8_t)_param_tag_id.get(), 0x01, 0x00, 0x00, NLINK_FRAME_END};
     uint8_t sum = 0;
     for (int i = 1; i < 8; i++) sum += cmd[i];
     cmd[8] = sum;
-    write(_fd, cmd, sizeof(cmd));
+
+    ssize_t written = write(_fd, cmd, sizeof(cmd));
+    if (written != sizeof(cmd)) {
+        PX4_ERR("Write failed: %zd/%zu bytes (errno: %d)", written, sizeof(cmd), errno);
+        perf_count(_comms_errors);
+        return false;
+    }
     usleep(100000);
 
     // Enable Node_Frame3
@@ -97,9 +108,16 @@ bool NoopLoopLinkTrack::configure_device()
     sum = 0;
     for (int i = 1; i < 6; i++) sum += out[i];
     out[6] = sum;
-    write(_fd, out, sizeof(out));
+
+    written = write(_fd, out, sizeof(out));
+    if (written != sizeof(out)) {
+        PX4_ERR("Write failed: %zd/%zu bytes (errno: %d)", written, sizeof(out), errno);
+        perf_count(_comms_errors);
+        return false;
+    }
     usleep(100000);
 
+    PX4_INFO("Device configuration completed successfully");
     return true;
 }
 
@@ -120,7 +138,8 @@ void NoopLoopLinkTrack::Run()
         _fd = ::open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
         if (_fd < 0) {
-            PX4_ERR("open failed (%i)", errno);
+            PX4_ERR("open failed (%i): %s", errno, strerror(errno));
+            perf_count(_comms_errors);
             return;
         }
 
@@ -128,20 +147,39 @@ void NoopLoopLinkTrack::Run()
         int termios_state;
 
         /* fill the struct for the new configuration */
-        tcgetattr(_fd, &uart_config);
+        if (tcgetattr(_fd, &uart_config) < 0) {
+            PX4_ERR("tcgetattr failed: %s", strerror(errno));
+            close(_fd);
+            _fd = -1;
+            return;
+        }
 
         /* clear ONLCR flag (which appends a CR for every LF) */
         uart_config.c_oflag &= ~ONLCR;
 
-        /* no parity, one stop bit */
+        /* no parity, one stop bit, 8 data bits */
         uart_config.c_cflag &= ~(CSTOPB | PARENB);
+        uart_config.c_cflag |= CS8;
+
+        /* disable flow control */
+        uart_config.c_cflag &= ~CRTSCTS;
+
+        /* set raw input/output mode */
+        uart_config.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+        uart_config.c_iflag &= ~(IXON | IXOFF | IXANY | INLCR | ICRNL);
 
         /* set baud rate based on parameter */
         speed_t speed = B921600; // default
         int32_t baud_param = _param_baud_rate.get();
 
         switch (baud_param) {
+            case 9600: speed = B9600; break;
+            case 19200: speed = B19200; break;
+            case 38400: speed = B38400; break;
+            case 57600: speed = B57600; break;
             case 115200: speed = B115200; break;
+            case 230400: speed = B230400; break;
+            case 460800: speed = B460800; break;
             case 921600: speed = B921600; break;
             default:
                 PX4_WARN("Unsupported baud rate %ld, using 921600", (long)baud_param);
@@ -152,18 +190,37 @@ void NoopLoopLinkTrack::Run()
         /* set baud rate */
         if ((termios_state = cfsetispeed(&uart_config, speed)) < 0) {
             PX4_ERR("CFG: %d ISPD", termios_state);
+            close(_fd);
+            _fd = -1;
+            return;
         }
 
         if ((termios_state = cfsetospeed(&uart_config, speed)) < 0) {
             PX4_ERR("CFG: %d OSPD", termios_state);
+            close(_fd);
+            _fd = -1;
+            return;
         }
 
         if ((termios_state = tcsetattr(_fd, TCSANOW, &uart_config)) < 0) {
-            PX4_ERR("baud %d ATTR", termios_state);
+            PX4_ERR("baud %d ATTR: %s", termios_state, strerror(errno));
+            close(_fd);
+            _fd = -1;
+            return;
         }
 
+        // Flush any existing data
+        tcflush(_fd, TCIOFLUSH);
+
+        PX4_INFO("Serial port %s configured at %ld baud", _port, (long)baud_param);
+
         // Setup device configuration
-        configure_device();
+        if (!configure_device()) {
+            PX4_ERR("Device configuration failed");
+            close(_fd);
+            _fd = -1;
+            return;
+        }
     }
 
     if (!_param_enable.get()) {
@@ -425,7 +482,9 @@ void NoopLoopLinkTrack::debug_uart()
 
     ssize_t written = write(debug_fd, test_cmd, sizeof(test_cmd));
     if (written != sizeof(test_cmd)) {
-        PX4_WARN("Write failed: %zd/%zu bytes", written, sizeof(test_cmd));
+        PX4_WARN("Write failed: %zd/%zu bytes (errno: %d - %s)", written, sizeof(test_cmd), errno, strerror(errno));
+    } else {
+        PX4_INFO("Test command sent successfully");
     }
 
     PX4_INFO("=== Listening for RX data (10 seconds) ===");
