@@ -259,12 +259,31 @@ int NoopLoopLinkTrack::task_spawn(int argc, char *argv[])
 
 int NoopLoopLinkTrack::custom_command(int argc, char *argv[])
 {
-    if (!is_running()) return PX4_ERROR;
+    if (argc > 0 && strcmp(argv[0], "stop") == 0) {
+        // Handle stop command even if not running
+        return PX4_OK;
+    }
+
+    if (argc > 0 && strcmp(argv[0], "debug") == 0) {
+        NoopLoopLinkTrack *instance = get_instance();
+        if (instance) {
+            instance->debug_uart();
+        }
+        return PX4_OK;
+    }
+
+    if (!is_running()) {
+        PX4_ERR("not running");
+        return PX4_ERROR;
+    }
 
     if (argc > 0 && strcmp(argv[0], "status") == 0) {
         NoopLoopLinkTrack *instance = get_instance();
         if (instance) {
             PX4_INFO("Port: %s, Anchors: %d", instance->_port, instance->_num_anchors);
+            PX4_INFO("Performance:");
+            perf_print_counter(instance->_sample_perf);
+            perf_print_counter(instance->_comms_errors);
         }
     }
     return PX4_OK;
@@ -273,7 +292,23 @@ int NoopLoopLinkTrack::custom_command(int argc, char *argv[])
 int NoopLoopLinkTrack::print_usage(const char *reason)
 {
     if (reason) PX4_WARN("%s", reason);
-    PX4_INFO("Usage: nooploop_linktrack {start|status|stop} [-d device]");
+
+    PRINT_MODULE_DESCRIPTION(
+        R"DESCR_STR(
+### Description
+NoopLoop LinkTrack UWB driver for positioning using Ultra-Wideband ranging.
+
+### Usage
+)DESCR_STR");
+
+    PRINT_MODULE_USAGE_NAME("nooploop_linktrack", "driver");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start the driver");
+    PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS6", "<device>", "Serial device", true);
+    PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop the driver");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Show driver status");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("debug", "Debug UART communication (send/receive raw data)");
+    PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+
     return PX4_OK;
 }
 
@@ -346,6 +381,126 @@ uint8_t NoopLoopLinkTrack::calculate_checksum(const uint8_t *data, size_t length
         sum += data[i];
     }
     return sum;
+}
+
+void NoopLoopLinkTrack::debug_uart()
+{
+    PX4_INFO("Starting UART debug mode on %s (Press Ctrl+C to exit)", _port);
+    PX4_INFO("Will show raw TX/RX data with timestamps");
+
+    // Open UART if not already open
+    int debug_fd = _fd;
+    bool should_close = false;
+
+    if (debug_fd < 0) {
+        debug_fd = ::open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
+        if (debug_fd < 0) {
+            PX4_ERR("Failed to open %s for debug: %d", _port, errno);
+            return;
+        }
+        should_close = true;
+
+        // Configure UART
+        struct termios uart_config;
+        tcgetattr(debug_fd, &uart_config);
+        uart_config.c_oflag &= ~ONLCR;
+        uart_config.c_cflag &= ~(CSTOPB | PARENB);
+        cfsetispeed(&uart_config, B921600);
+        cfsetospeed(&uart_config, B921600);
+        tcsetattr(debug_fd, TCSANOW, &uart_config);
+    }
+
+    // Send a test command to see TX data
+    PX4_INFO("=== Sending test configuration command ===");
+    uint8_t test_cmd[] = {NLINK_HEADER, 0x08, 0x00, 0x10, 0x02, 0x00, 0x01, 0x00, 0x00, NLINK_FRAME_END};
+    uint8_t sum = 0;
+    for (int i = 1; i < 8; i++) sum += test_cmd[i];
+    test_cmd[8] = sum;
+
+    printf("TX (%zu bytes): ", sizeof(test_cmd));
+    for (size_t i = 0; i < sizeof(test_cmd); i++) {
+        printf("%02X ", test_cmd[i]);
+    }
+    printf("\n");
+
+    ssize_t written = write(debug_fd, test_cmd, sizeof(test_cmd));
+    if (written != sizeof(test_cmd)) {
+        PX4_WARN("Write failed: %zd/%zu bytes", written, sizeof(test_cmd));
+    }
+
+    PX4_INFO("=== Listening for RX data (10 seconds) ===");
+
+    uint8_t rx_buffer[256];
+    uint64_t start_time = hrt_absolute_time();
+    uint64_t timeout = 10000000; // 10 seconds in microseconds
+
+    while ((hrt_absolute_time() - start_time) < timeout) {
+        ssize_t bytes = read(debug_fd, rx_buffer, sizeof(rx_buffer));
+
+        if (bytes > 0) {
+            uint64_t timestamp = hrt_absolute_time();
+            printf("RX (%zd bytes) [%llu us]: ", bytes, timestamp);
+
+            for (ssize_t i = 0; i < bytes; i++) {
+                printf("%02X ", rx_buffer[i]);
+
+                // Print ASCII if printable
+                if (i == bytes - 1) {
+                    printf(" | ");
+                    for (ssize_t j = 0; j < bytes; j++) {
+                        char c = rx_buffer[j];
+                        printf("%c", (c >= 32 && c <= 126) ? c : '.');
+                    }
+                }
+            }
+            printf("\n");
+
+            // Try to decode known frame types
+            decode_debug_frame(rx_buffer, bytes);
+        }
+
+        usleep(1000); // 1ms delay to prevent busy waiting
+    }
+
+    PX4_INFO("=== Debug session completed ===");
+
+    if (should_close && debug_fd >= 0) {
+        close(debug_fd);
+    }
+}
+
+void NoopLoopLinkTrack::decode_debug_frame(const uint8_t *data, size_t length)
+{
+    if (length < 4) return;
+
+    // Look for LinkTrack header
+    for (size_t i = 0; i <= length - 4; i++) {
+        if (data[i] == NLINK_HEADER && (i + 3) < length) {
+            uint8_t frame_type = data[i + 3];
+            printf("  -> Frame detected: Header=0x%02X, Type=0x%02X", data[i], frame_type);
+
+            switch (frame_type) {
+                case NLINK_NODE_FRAME3:
+                    printf(" (NODE_FRAME3 - Position Data)");
+                    if (length >= i + 25) {
+                        uint8_t tag_id = data[i + 4];
+                        uint8_t num_ranges = (i + 23 < length) ? data[i + 23] : 0;
+                        printf(" Tag_ID=%d, Ranges=%d", tag_id, num_ranges);
+                    }
+                    break;
+                case 0x10:
+                    printf(" (Configuration Response)");
+                    break;
+                case 0x13:
+                    printf(" (Frame Enable Response)");
+                    break;
+                default:
+                    printf(" (Unknown Type)");
+                    break;
+            }
+            printf("\n");
+        }
+    }
 }
 
 

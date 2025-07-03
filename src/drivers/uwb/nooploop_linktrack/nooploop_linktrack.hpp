@@ -98,6 +98,10 @@ private:
 	bool load_anchors(const char *filename);
 	uint8_t calculate_checksum(const uint8_t *data, size_t length);
 
+	// Debug functions
+	void debug_uart();
+	void decode_debug_frame(const uint8_t *data, size_t length);
+
 	// Serial port (similar to UWB SR150)
 	char _port[32];
 	int _fd{-1};

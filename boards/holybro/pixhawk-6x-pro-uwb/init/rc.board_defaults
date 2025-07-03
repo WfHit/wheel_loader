@@ -9,11 +9,10 @@ param set-default SENS_EN_INA238 0
 param set-default SENS_EN_INA228 0
 param set-default SENS_EN_INA226 0
 
-# UWB Configuration - Use UWB1 port (/dev/ttyS6)
-# Serial manager will automatically start the UWB driver
+# UWB Configuration - Serial auto-start handled by module.yaml
 param set-default UWB_CONFIG 501    # Use UWB1 port (index 501)
 param set-default UWB_EN 1          # Enable UWB positioning
-param set-default UWB_TAG_ID 0      # Track all tags
+param set-default UWB_TAG_ID 0      # Default tag ID
 
 # Enable UWB fusion in EKF2
 param set-default EKF2_UWB_EN 1
