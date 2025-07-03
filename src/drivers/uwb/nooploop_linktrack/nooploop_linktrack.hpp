@@ -82,6 +82,7 @@ private:
 		uint8_t id;             // Node ID
 		uint32_t local_time;    // Local timestamp
 		uint32_t system_time;   // System timestamp
+		uint8_t reserved[4];    // Reserved (4 bytes)
 		uint16_t voltage;       // Supply voltage * 1000
 		uint8_t valid_quantity; // Number of valid anchor measurements
 	} __attribute__((packed));
@@ -90,8 +91,8 @@ private:
 		uint8_t role;           // Should be 0x01 for ANCHOR
 		uint8_t id;             // Anchor ID
 		uint8_t distance[3];    // Distance in mm (3 bytes, little endian, int24)
-		uint8_t signal_strength; // Signal strength (negative dBm)
-		uint8_t reserved;       // Reserved byte
+		uint8_t fp_rssi;        // First path power level, dB
+		uint8_t rx_rssi;        // Received power level, dB
 	} __attribute__((packed));
 
 	// Parser state machine (similar to MAVLink)
@@ -112,11 +113,6 @@ private:
 	void publish_range(uint8_t anchor_id, float distance, float accuracy);
 	bool configure_device();
 	bool load_anchors(const char *filename);
-	uint8_t calculate_checksum(const uint8_t *data, size_t length);
-
-	// Debug functions
-	void debug_uart();
-	void decode_debug_frame(const uint8_t *data, size_t length);
 
 	// Serial port (similar to UWB SR150)
 	char _port[32];

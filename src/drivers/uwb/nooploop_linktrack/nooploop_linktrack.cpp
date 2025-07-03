@@ -350,14 +350,6 @@ int NoopLoopLinkTrack::custom_command(int argc, char *argv[])
         return PX4_OK;
     }
 
-    if (argc > 0 && strcmp(argv[0], "debug") == 0) {
-        NoopLoopLinkTrack *instance = get_instance();
-        if (instance) {
-            instance->debug_uart();
-        }
-        return PX4_OK;
-    }
-
     if (!is_running()) {
         PX4_ERR("not running");
         return PX4_ERROR;
@@ -392,7 +384,6 @@ NoopLoop LinkTrack UWB driver for positioning using Ultra-Wideband ranging.
     PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS6", "<device>", "Serial device", true);
     PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop the driver");
     PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Show driver status");
-    PRINT_MODULE_USAGE_COMMAND_DESCR("debug", "Debug UART communication (send/receive raw data)");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return PX4_OK;
@@ -456,8 +447,8 @@ bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 
             float distance_m = distance_mm / 1000.0f;
 
-            // Convert signal strength (positive value) to negative dBm
-            float rssi = -(float)anchor.signal_strength;
+            // Use rx_rssi as received power level (negative dBm)
+            float rssi = -(float)anchor.rx_rssi;
 
             // Validate range
             if (distance_m > 0.1f && distance_m < 100.0f && rssi > -120.0f) {
@@ -473,9 +464,10 @@ void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const
 {
     for (int i = 0; i < num_ranges; i++) {
         const AnchorData &r = ranges[i];
-        if (r.role == NLINK_ROLE_ANCHOR && r.distance > 100 && r.distance < 100000) {
-            float distance = r.distance / 1000.0f; // Convert mm to meters
-            float rssi = -(float)r.signal_strength; // Convert to negative dBm
+        uint32_t distance_mm = r.distance[0] | (r.distance[1] << 8) | (r.distance[2] << 16);
+        if (r.role == NLINK_ROLE_ANCHOR && distance_mm > 100 && distance_mm < 100000) {
+            float distance = distance_mm / 1000.0f; // Convert mm to meters
+            float rssi = -(float)r.rx_rssi; // Use rx_rssi as in parse_frame
             publish_range(r.id, distance, rssi);
         }
     }
@@ -505,148 +497,7 @@ bool NoopLoopLinkTrack::load_anchors(const char *filename)
     }
 
     fclose(file);
-    return true;
-}
-
-uint8_t NoopLoopLinkTrack::calculate_checksum(const uint8_t *data, size_t length)
-{
-    uint8_t sum = 0;
-    for (size_t i = 0; i < length; i++) {
-        sum += data[i];
-    }
-    return sum;
-}
-
-void NoopLoopLinkTrack::debug_uart()
-{
-    PX4_INFO("Starting UART debug mode on %s (Press Ctrl+C to exit)", _port);
-    PX4_INFO("Will show raw TX/RX data with timestamps");
-
-    // Open UART if not already open
-    int debug_fd = _fd;
-    bool should_close = false;
-
-    if (debug_fd < 0) {
-        debug_fd = ::open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-        if (debug_fd < 0) {
-            PX4_ERR("Failed to open %s for debug: %d", _port, errno);
-            return;
-        }
-        should_close = true;
-
-        // Configure UART
-        struct termios uart_config;
-        tcgetattr(debug_fd, &uart_config);
-        uart_config.c_oflag &= ~ONLCR;
-        uart_config.c_cflag &= ~(CSTOPB | PARENB);
-        cfsetispeed(&uart_config, B921600);
-        cfsetospeed(&uart_config, B921600);
-        tcsetattr(debug_fd, TCSANOW, &uart_config);
-    }
-
-    // Send a test command to see TX data
-    PX4_INFO("=== Sending test configuration command ===");
-    uint8_t test_cmd[] = {NLINK_HEADER, 0x08, 0x10, 0x02, 0x00, 0x01, 0x00};
-    uint8_t sum = 0;
-    for (int i = 1; i < 6; i++) sum += test_cmd[i];
-    test_cmd[6] = sum;
-
-    printf("TX (%zu bytes): ", sizeof(test_cmd));
-    for (size_t i = 0; i < sizeof(test_cmd); i++) {
-        printf("%02X ", test_cmd[i]);
-    }
-    printf("\n");
-
-    ssize_t written = write(debug_fd, test_cmd, sizeof(test_cmd));
-    if (written != sizeof(test_cmd)) {
-        PX4_WARN("Write failed: %zd/%zu bytes (errno: %d - %s)", written, sizeof(test_cmd), errno, strerror(errno));
-    } else {
-        PX4_INFO("Test command sent successfully");
-    }
-
-    PX4_INFO("=== Listening for RX data (10 seconds) ===");
-
-    uint8_t rx_buffer[256];
-    uint64_t start_time = hrt_absolute_time();
-    uint64_t timeout = 10000000; // 10 seconds in microseconds
-
-    while ((hrt_absolute_time() - start_time) < timeout) {
-        ssize_t bytes = read(debug_fd, rx_buffer, sizeof(rx_buffer));
-
-        if (bytes > 0) {
-            uint64_t timestamp = hrt_absolute_time();
-            printf("RX (%zd bytes) [%llu us]: ", bytes, timestamp);
-
-            for (ssize_t i = 0; i < bytes; i++) {
-                printf("%02X ", rx_buffer[i]);
-
-                // Print ASCII if printable
-                if (i == bytes - 1) {
-                    printf(" | ");
-                    for (ssize_t j = 0; j < bytes; j++) {
-                        char c = rx_buffer[j];
-                        printf("%c", (c >= 32 && c <= 126) ? c : '.');
-                    }
-                }
-            }
-            printf("\n");
-
-            // Try to decode known frame types
-            decode_debug_frame(rx_buffer, bytes);
-        }
-
-        usleep(1000); // 1ms delay to prevent busy waiting
-    }
-
-    PX4_INFO("=== Debug session completed ===");
-
-    if (should_close && debug_fd >= 0) {
-        close(debug_fd);
-    }
-}
-
-void NoopLoopLinkTrack::decode_debug_frame(const uint8_t *data, size_t length)
-{
-    if (length < 4) return;
-
-    // Look for LinkTrack header
-    for (size_t i = 0; i <= length - 4; i++) {
-        if (data[i] == NLINK_HEADER && data[i + 1] == NLINK_NODE_FRAME3) {
-            printf("  -> Frame detected: Header=0x%02X, Function=0x%02X", data[i], data[i + 1]);
-
-            if (length >= i + sizeof(NodeFrame3Header)) {
-                const NodeFrame3Header *header = (const NodeFrame3Header *)(data + i);
-
-                printf(" (NODE_FRAME3 - Position Data)\n");
-                printf("     Frame Length: %d bytes\n", header->frame_length);
-                printf("     Role: 0x%02X (%s), ID: %d\n",
-                       header->role,
-                       header->role == NLINK_ROLE_TAG ? "TAG" : "ANCHOR",
-                       header->id);
-                printf("     Valid Quantity: %d\n", header->valid_quantity);
-
-                // Decode anchor data if present
-                size_t anchor_offset = i + sizeof(NodeFrame3Header);
-                for (int j = 0; j < header->valid_quantity && anchor_offset + sizeof(AnchorData) <= length; j++) {
-                    const AnchorData *anchor = (const AnchorData *)(data + anchor_offset);
-
-                    // Decode 3-byte distance (int24, little endian)
-                    uint32_t distance_mm = anchor->distance[0] |
-                                          (anchor->distance[1] << 8) |
-                                          (anchor->distance[2] << 16);
-                    float distance_m = distance_mm / 1000.0f;
-
-                    printf("     Anchor[%d]: ID=%d, Distance=%.3fm (%dmm), RSSI=-%ddBm\n",
-                           j, anchor->id, distance_m, distance_mm, anchor->signal_strength);
-
-                    anchor_offset += sizeof(AnchorData);
-                }
-            } else {
-                printf(" (NODE_FRAME3 - Incomplete)\n");
-            }
-            return; // Found the frame, no need to continue searching
-        }
-    }
+	return true;
 }
 
 
