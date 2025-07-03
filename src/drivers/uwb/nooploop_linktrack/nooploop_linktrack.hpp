@@ -59,12 +59,12 @@ public:
 private:
 	// Protocol constants
 	static constexpr uint8_t NLINK_HEADER = 0x55;
-	static constexpr uint8_t NLINK_NODE_FRAME3 = 0x06;
+	static constexpr uint8_t NLINK_NODE_FRAME3 = 0x05;
 	static constexpr uint8_t NLINK_ROLE_TAG = 0x02;
 	static constexpr uint8_t NLINK_ROLE_ANCHOR = 0x01;
 	static constexpr int MAX_ANCHORS = 50;
 	static constexpr int MAX_RANGES_PER_FRAME = 16; // Reserve space for 16 anchors as requested
-	static constexpr size_t RX_BUFFER_SIZE = 1024;  // Larger buffer for big frames
+	static constexpr size_t RX_BUFFER_SIZE = 2048;  // Larger buffer for big frames (16 anchors * ~8 bytes each + header + overhead)
 
 	// Anchor configuration
 	struct AnchorConfig {
@@ -96,27 +96,26 @@ private:
 
 	// Parser state machine (similar to MAVLink)
 	enum class ParserState {
-		WAIT_HEADER,
-		WAIT_FUNCTION,
-		WAIT_LENGTH_LOW,
-		WAIT_LENGTH_HIGH,
-		WAIT_PAYLOAD,
-		WAIT_CHECKSUM
+		UNINIT = 0,
+		IDLE,
+		GOT_HEADER,
+		GOT_FUNCTION,
+		GOT_LENGTH_LOW,
+		GOT_PAYLOAD,
+		GOT_CHECKSUM
 	};
 
 	void Run() override;
 
 	// Core functions
+	bool parse_char(uint8_t c);
 	bool parse_frame(const uint8_t *data, size_t length);
 	void process_ranges(uint8_t tag_id, uint8_t num_ranges, const AnchorData *ranges);
 	void publish_range(uint8_t anchor_id, float distance, float accuracy);
 	bool configure_device();
 	bool load_anchors(const char *filename);
-	uint8_t calculate_checksum(const uint8_t *data, size_t length);
 
-	// Debug functions
-	void debug_uart();
-	void decode_debug_frame(const uint8_t *data, size_t length);
+
 
 	// Serial port (similar to UWB SR150)
 	char _port[32];
@@ -129,10 +128,18 @@ private:
 	uint8_t _num_anchors{0};
 
 	// Parser
-	ParserState _parser_state{ParserState::WAIT_HEADER};
-	uint8_t _rx_buffer[512];
+	ParserState _parser_state{ParserState::IDLE};
+	uint8_t _rx_buffer[RX_BUFFER_SIZE];
 	size_t _rx_buffer_pos{0};
 	uint16_t _frame_length{0};
+	size_t _packet_idx{0};
+	uint8_t _frame_buffer[RX_BUFFER_SIZE]; // Static buffer for complete frames
+	uint8_t _calculated_checksum{0};
+
+	// Frame parsing statistics
+	uint32_t _parse_errors{0};
+	uint32_t _buffer_overruns{0};
+	uint32_t _frames_received{0};
 
 	// Publications
 	uORB::Publication<sensor_uwb_s> _sensor_uwb_pub{ORB_ID(sensor_uwb)};

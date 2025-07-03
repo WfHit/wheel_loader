@@ -230,53 +230,18 @@ void NoopLoopLinkTrack::Run()
 
     perf_begin(_sample_perf);
 
-    uint8_t data[128];
+    // Read data from UART
+    uint8_t data[256];
     ssize_t bytes = read(_fd, data, sizeof(data));
 
     if (bytes > 0) {
+        PX4_INFO("Received %zd bytes from UART", bytes);
+        // Parse each byte through the state machine
         for (ssize_t i = 0; i < bytes; i++) {
-            _rx_buffer[_rx_buffer_pos++] = data[i];
-
-            if (_rx_buffer_pos >= sizeof(_rx_buffer)) {
-                _rx_buffer_pos = 0; // Buffer overflow protection
-            }
-
-            // Look for complete Node_Frame3 packets
-            if (_rx_buffer_pos >= 4) { // Minimum to read header + function + length(2 bytes)
-                // Scan for frame start
-                for (size_t j = 0; j <= _rx_buffer_pos - 4; j++) {
-                    if (_rx_buffer[j] == NLINK_HEADER && _rx_buffer[j+1] == NLINK_NODE_FRAME3) {
-                        // Frame length is 2 bytes, little endian
-                        uint16_t frame_length = _rx_buffer[j+2] | (_rx_buffer[j+3] << 8);
-                        size_t total_frame_size = 4 + frame_length; // header + function + length(2) + payload
-
-                        // Check if we have received the complete frame
-                        if (j + total_frame_size <= _rx_buffer_pos) {
-                            // Verify checksum
-                            uint8_t calculated_checksum = 0;
-                            for (size_t k = j + 1; k < j + total_frame_size - 1; k++) {
-                                calculated_checksum += _rx_buffer[k];
-                            }
-                            uint8_t received_checksum = _rx_buffer[j + total_frame_size - 1];
-
-                            if (calculated_checksum == received_checksum) {
-                                parse_frame(_rx_buffer + j, total_frame_size);
-                            } else {
-                                PX4_WARN("Checksum mismatch: calc=0x%02X, recv=0x%02X",
-                                        calculated_checksum, received_checksum);
-                                perf_count(_comms_errors);
-                            }
-
-                            // Remove processed frame from buffer
-                            size_t remaining = _rx_buffer_pos - (j + total_frame_size);
-                            if (remaining > 0) {
-                                memmove(_rx_buffer, _rx_buffer + j + total_frame_size, remaining);
-                            }
-                            _rx_buffer_pos = remaining;
-                            break;
-                        }
-                    }
-                }
+            if (parse_char(data[i])) {
+                // Complete frame received, process it
+                _frames_received++;
+                PX4_INFO("Frame #%lu successfully parsed and processed", (unsigned long)_frames_received);
             }
         }
     }
@@ -287,7 +252,18 @@ void NoopLoopLinkTrack::Run()
 
 void NoopLoopLinkTrack::publish_range(uint8_t anchor_id, float distance, float rssi)
 {
-    if (anchor_id >= MAX_ANCHORS || !_anchors[anchor_id].active) return;
+    if (anchor_id >= MAX_ANCHORS) {
+        PX4_WARN("Anchor ID %d exceeds MAX_ANCHORS (%d)", anchor_id, MAX_ANCHORS);
+        return;
+    }
+
+    if (!_anchors[anchor_id].active) {
+        PX4_INFO("Anchor %d not active in configuration", anchor_id);
+        return;
+    }
+
+    PX4_INFO("Publishing UWB range: Anchor %d, Distance %.3fm, RSSI %.1fdBm",
+             anchor_id, (double)distance, (double)rssi);
 
     sensor_uwb_s msg = {};
     msg.timestamp = hrt_absolute_time();
@@ -316,6 +292,7 @@ void NoopLoopLinkTrack::publish_range(uint8_t anchor_id, float distance, float r
     msg.offset_z = 0.0f;
 
     _sensor_uwb_pub.publish(msg);
+    PX4_INFO("UWB message published successfully");
 }
 
 int NoopLoopLinkTrack::task_spawn(int argc, char *argv[])
@@ -350,14 +327,6 @@ int NoopLoopLinkTrack::custom_command(int argc, char *argv[])
         return PX4_OK;
     }
 
-    if (argc > 0 && strcmp(argv[0], "debug") == 0) {
-        NoopLoopLinkTrack *instance = get_instance();
-        if (instance) {
-            instance->debug_uart();
-        }
-        return PX4_OK;
-    }
-
     if (!is_running()) {
         PX4_ERR("not running");
         return PX4_ERROR;
@@ -367,6 +336,14 @@ int NoopLoopLinkTrack::custom_command(int argc, char *argv[])
         NoopLoopLinkTrack *instance = get_instance();
         if (instance) {
             PX4_INFO("Port: %s, Anchors: %d", instance->_port, instance->_num_anchors);
+            PX4_INFO("Frames received: %lu", (unsigned long)instance->_frames_received);
+            PX4_INFO("Parse errors: %lu", (unsigned long)instance->_parse_errors);
+            PX4_INFO("Buffer overruns: %lu", (unsigned long)instance->_buffer_overruns);
+            PX4_INFO("Parser state: %d", (int)instance->_parser_state);
+            PX4_INFO("Parameters: TAG_ID=%d, ENABLE=%d, BAUD=%d",
+                     (int)instance->_param_tag_id.get(),
+                     (int)instance->_param_enable.get(),
+                     (int)instance->_param_baud_rate.get());
             PX4_INFO("Performance:");
             perf_print_counter(instance->_sample_perf);
             perf_print_counter(instance->_comms_errors);
@@ -392,7 +369,6 @@ NoopLoop LinkTrack UWB driver for positioning using Ultra-Wideband ranging.
     PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS6", "<device>", "Serial device", true);
     PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop the driver");
     PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Show driver status");
-    PRINT_MODULE_USAGE_COMMAND_DESCR("debug", "Debug UART communication (send/receive raw data)");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return PX4_OK;
@@ -400,6 +376,7 @@ NoopLoop LinkTrack UWB driver for positioning using Ultra-Wideband ranging.
 
 bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 {
+    // State machine already validated the frame format and checksum
     if (length < sizeof(NodeFrame3Header)) {
         PX4_DEBUG("Frame too short: %zu bytes", length);
         return false;
@@ -407,37 +384,35 @@ bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 
     const NodeFrame3Header *header = (const NodeFrame3Header *)data;
 
-    // Verify frame header and function mark
-    if (header->frame_header != NLINK_HEADER || header->function_mark != NLINK_NODE_FRAME3) {
-        PX4_DEBUG("Invalid frame header or function mark");
-        return false;
-    }
-
     // Check if this is from our tag (we can process any tag, but filter if needed)
     uint8_t node_id = header->id;
     if (header->role == NLINK_ROLE_TAG && node_id != (uint8_t)_param_tag_id.get()) {
         // This frame is from a different tag, ignore it
+        PX4_INFO("Ignoring frame from different tag: expected %d, got %d",
+                  (int)_param_tag_id.get(), node_id);
         return false;
     }
 
     // Only process frames from tags (role 0x02) that contain anchor measurements
     if (header->role != NLINK_ROLE_TAG) {
+        PX4_INFO("Ignoring non-TAG frame: role=0x%02X", header->role);
         return false;
     }
 
     uint8_t valid_quantity = header->valid_quantity;
     if (valid_quantity > MAX_RANGES_PER_FRAME) {
-        PX4_WARN("Too many ranges: %d", valid_quantity);
-        return false;
+        PX4_WARN("Too many ranges: %d, limiting to %d", valid_quantity, MAX_RANGES_PER_FRAME);
+        valid_quantity = MAX_RANGES_PER_FRAME; // Limit to reserved space
     }
 
-    // Calculate expected frame size
-    size_t expected_size = sizeof(NodeFrame3Header) +
-                          (valid_quantity * sizeof(AnchorData)) +
-                          1; // checksum
+    PX4_INFO("Processing frame with %d anchor measurements", valid_quantity);
 
-    if (length < expected_size) {
-        PX4_DEBUG("Frame incomplete: got %zu, expected %zu", length, expected_size);
+    // Calculate expected payload size (excluding header and checksum)
+    size_t expected_payload_size = sizeof(NodeFrame3Header) - 4 + // Header without frame_header, function_mark, frame_length
+                                  (valid_quantity * sizeof(AnchorData));
+
+    if ((length - 5) < expected_payload_size) { // 5 = header(1) + function(1) + length(2) + checksum(1)
+        PX4_DEBUG("Frame incomplete: got %zu, expected %zu", length - 5, expected_payload_size);
         return false;
     }
 
@@ -446,6 +421,8 @@ bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 
     for (int i = 0; i < valid_quantity; i++) {
         const AnchorData &anchor = anchor_data[i];
+
+        PX4_INFO("Anchor[%d]: role=0x%02X, id=%d", i, anchor.role, anchor.id);
 
         // Verify this is anchor data (role should be 0x01)
         if (anchor.role == NLINK_ROLE_ANCHOR) {
@@ -459,10 +436,18 @@ bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
             // Convert signal strength (positive value) to negative dBm
             float rssi = -(float)anchor.signal_strength;
 
+            PX4_INFO("Anchor %d: distance=%.3fm, rssi=%.1fdBm",
+                      anchor.id, (double)distance_m, (double)rssi);
+
             // Validate range
             if (distance_m > 0.1f && distance_m < 100.0f && rssi > -120.0f) {
                 publish_range(anchor.id, distance_m, rssi);
+            } else {
+                PX4_WARN("Invalid range data: distance=%.3fm, rssi=%.1fdBm",
+                         (double)distance_m, (double)rssi);
             }
+        } else {
+            PX4_INFO("Skipping non-anchor data: role=0x%02X", anchor.role);
         }
     }
 
@@ -473,10 +458,17 @@ void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const
 {
     for (int i = 0; i < num_ranges; i++) {
         const AnchorData &r = ranges[i];
-        if (r.role == NLINK_ROLE_ANCHOR && r.distance > 100 && r.distance < 100000) {
-            float distance = r.distance / 1000.0f; // Convert mm to meters
-            float rssi = -(float)r.signal_strength; // Convert to negative dBm
-            publish_range(r.id, distance, rssi);
+        if (r.role == NLINK_ROLE_ANCHOR) {
+            // Decode 3-byte distance field (int24, little endian) from mm to meters
+            uint32_t distance_mm = r.distance[0] |
+                                  (r.distance[1] << 8) |
+                                  (r.distance[2] << 16);
+
+            if (distance_mm > 100 && distance_mm < 100000) { // Valid range check in mm
+                float distance_m = distance_mm / 1000.0f; // Convert mm to meters
+                float rssi = -(float)r.signal_strength; // Convert to negative dBm
+                publish_range(r.id, distance_m, rssi);
+            }
         }
     }
 }
@@ -484,7 +476,10 @@ void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const
 bool NoopLoopLinkTrack::load_anchors(const char *filename)
 {
     FILE *file = fopen(filename, "r");
-    if (!file) return false;
+    if (!file) {
+        PX4_WARN("Could not open anchor config file: %s", filename);
+        return false;
+    }
 
     _num_anchors = 0;
     char line[128];
@@ -500,153 +495,150 @@ bool NoopLoopLinkTrack::load_anchors(const char *filename)
             if (id < MAX_ANCHORS) {
                 _anchors[id] = {(uint8_t)id, x, y, z, active != 0};
                 _num_anchors++;
+                PX4_INFO("Loaded anchor %d: %s at (%.2f, %.2f, %.2f) %s",
+                         id, name, (double)x, (double)y, (double)z,
+                         active ? "ACTIVE" : "INACTIVE");
             }
         }
     }
 
     fclose(file);
+    PX4_INFO("Loaded %d anchors from %s", _num_anchors, filename);
     return true;
 }
 
-uint8_t NoopLoopLinkTrack::calculate_checksum(const uint8_t *data, size_t length)
+bool NoopLoopLinkTrack::parse_char(uint8_t c)
 {
-    uint8_t sum = 0;
-    for (size_t i = 0; i < length; i++) {
-        sum += data[i];
-    }
-    return sum;
-}
-
-void NoopLoopLinkTrack::debug_uart()
-{
-    PX4_INFO("Starting UART debug mode on %s (Press Ctrl+C to exit)", _port);
-    PX4_INFO("Will show raw TX/RX data with timestamps");
-
-    // Open UART if not already open
-    int debug_fd = _fd;
-    bool should_close = false;
-
-    if (debug_fd < 0) {
-        debug_fd = ::open(_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-        if (debug_fd < 0) {
-            PX4_ERR("Failed to open %s for debug: %d", _port, errno);
-            return;
-        }
-        should_close = true;
-
-        // Configure UART
-        struct termios uart_config;
-        tcgetattr(debug_fd, &uart_config);
-        uart_config.c_oflag &= ~ONLCR;
-        uart_config.c_cflag &= ~(CSTOPB | PARENB);
-        cfsetispeed(&uart_config, B921600);
-        cfsetospeed(&uart_config, B921600);
-        tcsetattr(debug_fd, TCSANOW, &uart_config);
-    }
-
-    // Send a test command to see TX data
-    PX4_INFO("=== Sending test configuration command ===");
-    uint8_t test_cmd[] = {NLINK_HEADER, 0x08, 0x10, 0x02, 0x00, 0x01, 0x00};
-    uint8_t sum = 0;
-    for (int i = 1; i < 6; i++) sum += test_cmd[i];
-    test_cmd[6] = sum;
-
-    printf("TX (%zu bytes): ", sizeof(test_cmd));
-    for (size_t i = 0; i < sizeof(test_cmd); i++) {
-        printf("%02X ", test_cmd[i]);
-    }
-    printf("\n");
-
-    ssize_t written = write(debug_fd, test_cmd, sizeof(test_cmd));
-    if (written != sizeof(test_cmd)) {
-        PX4_WARN("Write failed: %zd/%zu bytes (errno: %d - %s)", written, sizeof(test_cmd), errno, strerror(errno));
-    } else {
-        PX4_INFO("Test command sent successfully");
-    }
-
-    PX4_INFO("=== Listening for RX data (10 seconds) ===");
-
-    uint8_t rx_buffer[256];
-    uint64_t start_time = hrt_absolute_time();
-    uint64_t timeout = 10000000; // 10 seconds in microseconds
-
-    while ((hrt_absolute_time() - start_time) < timeout) {
-        ssize_t bytes = read(debug_fd, rx_buffer, sizeof(rx_buffer));
-
-        if (bytes > 0) {
-            uint64_t timestamp = hrt_absolute_time();
-            printf("RX (%zd bytes) [%llu us]: ", bytes, timestamp);
-
-            for (ssize_t i = 0; i < bytes; i++) {
-                printf("%02X ", rx_buffer[i]);
-
-                // Print ASCII if printable
-                if (i == bytes - 1) {
-                    printf(" | ");
-                    for (ssize_t j = 0; j < bytes; j++) {
-                        char c = rx_buffer[j];
-                        printf("%c", (c >= 32 && c <= 126) ? c : '.');
-                    }
-                }
+    switch (_parser_state) {
+    case ParserState::UNINIT:
+    case ParserState::IDLE:
+        if (c == NLINK_HEADER) {
+			_calculated_checksum = 0; // Start fresh checksum calculation
+            _parser_state = ParserState::GOT_HEADER;
+            _frame_buffer[0] = c;
+            _packet_idx = 1;
+            _calculated_checksum += c; // Include header in checksum
+        } else {
+            // Show only occasionally to avoid spam
+            static uint32_t idle_count = 0;
+            if (++idle_count % 100 == 0) {
+                PX4_INFO("IDLE: discarded %lu bytes, last=0x%02X", (unsigned long)idle_count, c);
             }
-            printf("\n");
-
-            // Try to decode known frame types
-            decode_debug_frame(rx_buffer, bytes);
         }
+        break;
 
-        usleep(1000); // 1ms delay to prevent busy waiting
-    }
+    case ParserState::GOT_HEADER:
+        if (c == NLINK_NODE_FRAME3) {
+            _parser_state = ParserState::GOT_FUNCTION;
+            _frame_buffer[_packet_idx++] = c;
+            _calculated_checksum += c; // Include function mark in checksum
+        } else {
+            // Invalid function mark, reset
+            PX4_INFO("Invalid function mark 0x%02X (expected 0x%02X), resetting to IDLE", c, NLINK_NODE_FRAME3);
+            _parser_state = ParserState::IDLE;
+            _parse_errors++;
+            perf_count(_comms_errors);
+        }
+        break;
 
-    PX4_INFO("=== Debug session completed ===");
+    case ParserState::GOT_FUNCTION:
+        // Frame length low byte (little endian)
+        _frame_length = c;
+        _frame_buffer[_packet_idx++] = c;
+        _calculated_checksum += c;
+        _parser_state = ParserState::GOT_LENGTH_LOW;
+        break;
 
-    if (should_close && debug_fd >= 0) {
-        close(debug_fd);
-    }
-}
+    case ParserState::GOT_LENGTH_LOW:
+        {
+            // Frame length high byte (little endian)
+            _frame_length |= ((uint16_t)c << 8);
+            _frame_buffer[_packet_idx++] = c;
+            _calculated_checksum += c;
 
-void NoopLoopLinkTrack::decode_debug_frame(const uint8_t *data, size_t length)
-{
-    if (length < 4) return;
+            // Validate frame length to prevent buffer overflow
+            // _frame_length is total frame size, must be at least 5 bytes (header+function+length+checksum)
+            if (_frame_length < 5 || _frame_length > RX_BUFFER_SIZE) {
+                PX4_WARN("Invalid frame length: %u bytes (min=5, max=%zu)", (unsigned int)_frame_length, RX_BUFFER_SIZE);
+                _parser_state = ParserState::IDLE;
+                _parse_errors++;
+                _buffer_overruns++;
+                perf_count(_comms_errors);
+                break;
+            }
 
-    // Look for LinkTrack header
-    for (size_t i = 0; i <= length - 4; i++) {
-        if (data[i] == NLINK_HEADER && data[i + 1] == NLINK_NODE_FRAME3) {
-            printf("  -> Frame detected: Header=0x%02X, Function=0x%02X", data[i], data[i + 1]);
-
-            if (length >= i + sizeof(NodeFrame3Header)) {
-                const NodeFrame3Header *header = (const NodeFrame3Header *)(data + i);
-
-                printf(" (NODE_FRAME3 - Position Data)\n");
-                printf("     Frame Length: %d bytes\n", header->frame_length);
-                printf("     Role: 0x%02X (%s), ID: %d\n",
-                       header->role,
-                       header->role == NLINK_ROLE_TAG ? "TAG" : "ANCHOR",
-                       header->id);
-                printf("     Valid Quantity: %d\n", header->valid_quantity);
-
-                // Decode anchor data if present
-                size_t anchor_offset = i + sizeof(NodeFrame3Header);
-                for (int j = 0; j < header->valid_quantity && anchor_offset + sizeof(AnchorData) <= length; j++) {
-                    const AnchorData *anchor = (const AnchorData *)(data + anchor_offset);
-
-                    // Decode 3-byte distance (int24, little endian)
-                    uint32_t distance_mm = anchor->distance[0] |
-                                          (anchor->distance[1] << 8) |
-                                          (anchor->distance[2] << 16);
-                    float distance_m = distance_mm / 1000.0f;
-
-                    printf("     Anchor[%d]: ID=%d, Distance=%.3fm (%dmm), RSSI=-%ddBm\n",
-                           j, anchor->id, distance_m, distance_mm, anchor->signal_strength);
-
-                    anchor_offset += sizeof(AnchorData);
-                }
+            // Calculate payload size: total_frame - header(1) - function(1) - length(2) - checksum(1)
+            uint16_t payload_size = _frame_length - 5;
+            if (payload_size == 0) {
+                // Empty payload, go directly to checksum
+                PX4_INFO("Empty payload (total frame=%u), transitioning to GOT_CHECKSUM", (unsigned int)_frame_length);
+                _parser_state = ParserState::GOT_CHECKSUM;
             } else {
-                printf(" (NODE_FRAME3 - Incomplete)\n");
+                PX4_INFO("Expecting %u payload bytes (total frame=%u), transitioning to GOT_PAYLOAD",
+                         (unsigned int)payload_size, (unsigned int)_frame_length);
+                _parser_state = ParserState::GOT_PAYLOAD;
             }
-            return; // Found the frame, no need to continue searching
         }
+        break;
+
+    case ParserState::GOT_PAYLOAD:
+        {
+            _frame_buffer[_packet_idx++] = c;
+            _calculated_checksum += c;
+
+            // Calculate payload progress: current payload bytes received
+            uint16_t payload_received = _packet_idx - 4; // subtract header(1) + function(1) + length(2)
+            uint16_t payload_total = _frame_length - 5; // total frame - header(1) - function(1) - length(2) - checksum(1)
+
+            // Check if we've received all payload bytes
+            if (payload_received >= payload_total) {
+                PX4_INFO("All payload received (%u bytes), transitioning to GOT_CHECKSUM", (unsigned int)payload_received);
+                _parser_state = ParserState::GOT_CHECKSUM;
+            }
+
+            // Prevent buffer overflow
+            if (_packet_idx >= RX_BUFFER_SIZE) {
+                PX4_ERR("Buffer overflow during payload parsing at byte %zu", _packet_idx);
+                _parser_state = ParserState::IDLE;
+                _parse_errors++;
+                _buffer_overruns++;
+                perf_count(_comms_errors);
+            }
+        }
+        break;
+
+    case ParserState::GOT_CHECKSUM:
+        _frame_buffer[_packet_idx++] = c;
+
+        PX4_INFO("Received checksum: 0x%02X, calculated: 0x%02X", c, _calculated_checksum);
+
+        // Verify checksum
+        if (c == _calculated_checksum) {
+            // Frame complete and valid - verify total frame size matches expected
+            if (_packet_idx == _frame_length) {
+                _parser_state = ParserState::IDLE;
+                PX4_INFO("Frame parsed successfully: %zu bytes total (expected %u), checksum OK",
+                         _packet_idx, (unsigned int)_frame_length);
+
+                // Process the complete frame
+                parse_frame(_frame_buffer, _packet_idx);
+                return true; // Frame successfully received
+            } else {
+                PX4_WARN("Frame size mismatch: received %zu bytes, expected %u", _packet_idx, (unsigned int)_frame_length);
+                _parser_state = ParserState::IDLE;
+                _parse_errors++;
+                perf_count(_comms_errors);
+            }
+        } else {
+            PX4_WARN("Checksum mismatch: calc=0x%02X, recv=0x%02X", _calculated_checksum, c);
+            _parser_state = ParserState::IDLE;
+            _parse_errors++;
+            perf_count(_comms_errors);
+        }
+        break;
     }
+
+    return false; // Frame not yet complete
 }
 
 
