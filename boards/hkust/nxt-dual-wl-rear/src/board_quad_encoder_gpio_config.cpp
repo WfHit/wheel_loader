@@ -31,68 +31,43 @@
  *
  ****************************************************************************/
 
-/**
- * @file board_quad_encoder.h
- *
- * Common board interface for quadrature encoder operations
- */
-
-#pragma once
-
-#include <px4_arch/nuttx_qencoder.h>
-
 /****************************************************************************
- * Public Function Prototypes
+ * Included Files
  ****************************************************************************/
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <nuttx/config.h>
+#include "board_config.h"
+#include <drivers/quad_encoder_gpio/quad_encoder_gpio.hpp>
 
 /****************************************************************************
- * Name: board_quad_encoder_initialize
- *
- * Description:
- *   Initialize all board-specific quadrature encoders
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
+ * Public Data
  ****************************************************************************/
 
-__EXPORT int board_quad_encoder_initialize(void);
+#ifdef CONFIG_DRIVERS_QUAD_ENCODER_GPIO
 
-/****************************************************************************
- * Name: board_quad_encoder_get_config
- *
- * Description:
- *   Get board-specific encoder configuration for a specific encoder
- *
- * Input Parameters:
- *   encoder_id - Encoder ID (0-based)
- *   config     - Pointer to store configuration
- *
- * Returned Value:
- *   Zero (OK) on success; a negated errno value on failure.
- *
- ****************************************************************************/
+/* Board-specific GPIO encoder configurations for nxt-dual-wl-rear */
+const struct quad_encoder_gpio_config_s board_quad_encoder_gpio_configs[] =
+{
+  /* Motor Encoder - GPIO interrupt mode */
+  {
+    .gpio_a = QENCODER_A_GPIO_RAW,      /* PD5 */
+    .gpio_b = QENCODER_B_GPIO_RAW,      /* PD6 */
+    .resolution = 1024,                  /* 1024 CPR encoder */
+    .invert_direction = false,           /* Normal direction */
+    .use_index = false,                  /* No index signal for motor encoder */
+    .x4_mode = true,                     /* 4x counting mode for higher resolution */
+    .max_frequency = 10000,              /* 10 kHz maximum frequency */
+    .filter_samples = 3,                 /* 3-sample digital filter */
+  },
+};
 
-__EXPORT int board_quad_encoder_get_config(int encoder_id,
-                                          FAR struct nuttx_qe_config_s *config);
+/* Number of GPIO encoders on this board */
+const unsigned int board_quad_encoder_gpio_count = sizeof(board_quad_encoder_gpio_configs) / sizeof(board_quad_encoder_gpio_configs[0]);
 
-/****************************************************************************
- * Name: board_quad_encoder_get_count
- *
- * Description:
- *   Get the number of available encoders on this board
- *
- * Returned Value:
- *   Number of encoders available on this board
- *
- ****************************************************************************/
+#else
 
-__EXPORT int board_quad_encoder_get_count(void);
+/* Empty configuration when GPIO encoder support is disabled */
+const struct quad_encoder_gpio_config_s board_quad_encoder_gpio_configs[] = {};
+const unsigned int board_quad_encoder_gpio_count = 0;
 
-#ifdef __cplusplus
-}
 #endif

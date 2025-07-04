@@ -53,7 +53,6 @@ else()
 		timer_config.cpp
 		usb.c
 		mtd.cpp
-		board_quad_encoder_config.c
 		board_limit_sensor_config.cpp
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)
@@ -63,7 +62,6 @@ else()
 			arch_io_pins
 			arch_spi
 			arch_board_hw_info
-			arch_qencoder
 			drivers__led
 			nuttx_arch
 			nuttx_drivers

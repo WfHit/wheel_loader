@@ -1,6 +1,6 @@
-module_name: Quadrature Encoder Driver
+module_name: GPIO Quadrature Encoder Driver
 parameters:
-    - group: Quadrature Encoder
+    - group: Quadrature Encoder GPIO
       definitions:
           QE_UPDATE_RATE:
               description:
@@ -11,6 +11,21 @@ parameters:
               max: 1000
               default: 50
               unit: Hz
+          QE_FILTER_EN:
+              description:
+                  short: Enable signal filtering
+                  long: Enable digital filtering for noise reduction on encoder signals
+              type: bool
+              default: true
+          QE_MAX_ERR_RATE:
+              description:
+                  short: Maximum error rate threshold
+                  long: Maximum allowable error rate percentage before warnings are generated
+              type: float
+              min: 0.1
+              max: 50.0
+              default: 5.0
+              unit: "%"
           QE_PPR_0:
               description:
                   short: Pulses per revolution for wheel encoder

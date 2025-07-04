@@ -31,11 +31,14 @@
 #
 ############################################################################
 
-px4_add_library(arch_qencoder
-	nuttx_qencoder.c
-	quad_encoder.c
+px4_add_module(
+	MODULE drivers__quad_encoder_gpio
+	MAIN quad_encoder_gpio
+	STACK_MAIN 2048
+	SRCS
+		quad_encoder_gpio.cpp
+	DEPENDS
+		px4_work_queue
+	MODULE_CONFIG
+		module.yaml
 )
-
-target_compile_options(arch_qencoder PRIVATE ${MAX_CUSTOM_OPT_LEVEL})
-
-target_link_libraries(arch_qencoder PRIVATE drivers_board) # timer_io_channels

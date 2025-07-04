@@ -66,10 +66,6 @@
 #  include <parameters/flashparams/flashfs.h>
 #endif
 
-#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
-#  include <board_quad_encoder.h>
-#endif
-
 __BEGIN_DECLS
 extern void led_init(void);
 extern void led_on(int led);
@@ -211,14 +207,7 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 	px4_platform_configure();
 
 #ifdef CONFIG_BOARD_QUADRATURE_ENCODER
-	/* Initialize quadrature encoders */
-	int qe_ret = board_quad_encoder_initialize();
-	if (qe_ret < 0) {
-		syslog(LOG_ERR, "[boot] FAILED to init quadrature encoders: %d\n", qe_ret);
-		led_on(LED_RED);
-	} else {
-		syslog(LOG_INFO, "[boot] Quadrature encoders initialized successfully\n");
-	}
+	// Quadrature encoder initialization removed - using new implementation
 #endif
 
 	return OK;

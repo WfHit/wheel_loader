@@ -1,0 +1,14 @@
+menu "Quad Encoder GPIO"
+	menuconfig DRIVERS_QUAD_ENCODER_GPIO
+		bool "GPIO-based Quadrature Encoder Driver"
+		default n
+		depends on BOARD_HAS_QENCODER_GPIO
+		---help---
+			Enable support for GPIO interrupt-based quadrature encoder driver.
+
+			This driver uses GPIO interrupts to decode quadrature encoder signals
+			without relying on NuttX timer drivers. It provides direct hardware
+			access for STM32H7 and avoids syslog issues.
+
+			The driver supports multiple encoder instances and can be configured
+			per board using board-specific configuration files.
