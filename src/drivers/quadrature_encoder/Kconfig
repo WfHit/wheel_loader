@@ -1,0 +1,20 @@
+menu "Quadrature Encoder"
+	menuconfig DRIVERS_QUADRATURE_ENCODER
+		bool "Quadrature Encoder Driver"
+		default n
+		depends on BOARD_HAS_QUADRATURE_ENCODER
+		---help---
+			Enable support for GPIO interrupt-based quadrature encoder driver.
+
+			This high-performance driver reads quadrature encoders without
+			requiring hardware timer peripherals, making it suitable for
+			applications where timer resources are limited.
+
+			Features:
+			- Multi-instance support (up to 4 encoders)
+			- Digital filtering for noise immunity
+			- Real-time velocity calculation
+			- Comprehensive error detection
+			- Thread-safe operation
+
+endmenu
