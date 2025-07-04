@@ -70,29 +70,41 @@ private:
 	struct AnchorConfig {
 		uint8_t id;
 		float x, y, z;
-		bool active;
+		bool forbid; // true=forbidden/inactive, false=active
 	};
 
-	// Range measurement from Node_Frame3 - variable length protocol
+	// Range measurement from Node_Frame3 - matches protocol specification exactly
 	struct NodeFrame3Header {
-		uint8_t frame_header;    // 0x55
-		uint8_t function_mark;   // 0x06 for Node_Frame3
-		uint16_t frame_length;   // Total frame length excluding header and function_mark (2 bytes)
-		uint8_t role;           // 0x01=ANCHOR, 0x02=TAG
-		uint8_t id;             // Node ID
-		uint32_t local_time;    // Local timestamp
-		uint32_t system_time;   // System timestamp
-		uint8_t reserved[4];    // Reserved (4 bytes)
-		uint16_t voltage;       // Supply voltage * 1000
-		uint8_t valid_quantity; // Number of valid anchor measurements
+		uint8_t frame_header;    // 0x55 (Index 0)
+		uint8_t function_mark;   // 0x05 for Node_Frame3 (Index 1)
+		uint16_t frame_length;   // Frame length in bytes (Index 2-3, little endian)
+		uint8_t role;           // Local node role: 0x01=ANCHOR, 0x02=TAG (Index 4)
+		uint8_t id;             // Local node ID (Index 5)
+	} __attribute__((packed));
+
+	// Payload data that follows the header
+	struct NodeFrame3Payload {
+		uint32_t local_time;    // Time of local node, unit: ms (Index 6-9)
+		uint32_t system_time;   // Time of system, unit: ms (Index 10-13)
+		uint8_t reserved[4];    // Reserved (Index 14-17)
+		uint16_t voltage;       // Interface supply voltage of the local node, unit: V * 1000 (Index 18-19)
+		uint8_t valid_quantity; // Total valid nodes (Index 20)
 	} __attribute__((packed));
 
 	struct AnchorData {
-		uint8_t role;           // Should be 0x01 for ANCHOR
-		uint8_t id;             // Anchor ID
-		uint8_t distance[3];    // Distance in mm (3 bytes, little endian, int24)
-		uint8_t fp_rssi;        // First path power level, dB
-		uint8_t rx_rssi;        // Received power level, dB
+		uint8_t role;           // Role corresponding to this block: 0x01=ANCHOR (Block role)
+		uint8_t id;             // ID corresponding to this block (Block ID)
+		uint8_t distance[3];    // Distance from tag to corresponding anchor, unit: m * 1000 (3 bytes, little endian)
+		uint8_t fp_rssi;        // First path power level, unit: dB (fp_rssi * (-2))
+		uint8_t rx_rssi;        // Received power level, unit: dB (rx_rssi * (-2))
+	} __attribute__((packed));
+
+	// Complete frame structure (header + payload + data blocks + checksum)
+	struct CompleteFrame {
+		NodeFrame3Header header;
+		NodeFrame3Payload payload;
+		// Variable number of AnchorData blocks follows
+		// uint8_t checksum;  // At the end (sum of all previous bytes)
 	} __attribute__((packed));
 
 	// Parser state machine (similar to MAVLink)
@@ -112,7 +124,7 @@ private:
 	bool parse_char(uint8_t c);
 	bool parse_frame(const uint8_t *data, size_t length);
 	void process_ranges(uint8_t tag_id, uint8_t num_ranges, const AnchorData *ranges);
-	void publish_range(uint8_t anchor_id, float distance, float accuracy);
+	void publish_range(uint8_t anchor_id, float distance, float rssi, float fp_rssi);
 	bool configure_device();
 	bool load_anchors(const char *filename);
 
