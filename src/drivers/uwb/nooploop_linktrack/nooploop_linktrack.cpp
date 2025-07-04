@@ -433,8 +433,8 @@ bool NoopLoopLinkTrack::parse_frame(const uint8_t *data, size_t length)
 
             float distance_m = distance_mm / 1000.0f;
 
-            // Convert signal strength (positive value) to negative dBm
-            float rssi = -(float)anchor.signal_strength;
+            // Use rx_rssi as received power level (negative dBm)
+            float rssi = -(float)anchor.rx_rssi;
 
             PX4_INFO("Anchor %d: distance=%.3fm, rssi=%.1fdBm",
                       anchor.id, (double)distance_m, (double)rssi);
@@ -458,17 +458,11 @@ void NoopLoopLinkTrack::process_ranges(uint8_t tag_id, uint8_t num_ranges, const
 {
     for (int i = 0; i < num_ranges; i++) {
         const AnchorData &r = ranges[i];
-        if (r.role == NLINK_ROLE_ANCHOR) {
-            // Decode 3-byte distance field (int24, little endian) from mm to meters
-            uint32_t distance_mm = r.distance[0] |
-                                  (r.distance[1] << 8) |
-                                  (r.distance[2] << 16);
-
-            if (distance_mm > 100 && distance_mm < 100000) { // Valid range check in mm
-                float distance_m = distance_mm / 1000.0f; // Convert mm to meters
-                float rssi = -(float)r.signal_strength; // Convert to negative dBm
-                publish_range(r.id, distance_m, rssi);
-            }
+        uint32_t distance_mm = r.distance[0] | (r.distance[1] << 8) | (r.distance[2] << 16);
+        if (r.role == NLINK_ROLE_ANCHOR && distance_mm > 100 && distance_mm < 100000) {
+            float distance = distance_mm / 1000.0f; // Convert mm to meters
+            float rssi = -(float)r.rx_rssi; // Use rx_rssi as in parse_frame
+            publish_range(r.id, distance, rssi);
         }
     }
 }
@@ -503,6 +497,7 @@ bool NoopLoopLinkTrack::load_anchors(const char *filename)
     }
 
     fclose(file);
+<<<<<<< HEAD
     PX4_INFO("Loaded %d anchors from %s", _num_anchors, filename);
     return true;
 }
