@@ -55,17 +55,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define QE_DEBUG 1
-#define CONFIG_NUTTX_QENCODER_MAX_INSTANCES 8
-
-#if QE_DEBUG
-#  define qeinfo(format, ...)   syslog(LOG_INFO, format, ##__VA_ARGS__)
-#  define qeerr(format, ...)    syslog(LOG_ERR, format, ##__VA_ARGS__)
-#else
-#  define qeinfo(format, ...)
-#  define qeerr(format, ...)
-#endif
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
