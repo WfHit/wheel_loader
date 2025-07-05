@@ -11,7 +11,6 @@ This driver provides direct hardware access for reading quadrature encoders with
 1. **Cleaner Architecture**
    - Removed redundant "gpio" naming throughout the codebase
    - Better separation of concerns with dedicated `SignalFilter` class
-   - Cleaner namespace organization (`quadrature_encoder::`)
    - More modular design with clear responsibilities
 
 2. **Enhanced Code Quality**
@@ -39,8 +38,21 @@ This driver provides direct hardware access for reading quadrature encoders with
 - **Comprehensive error detection**: Invalid transitions, high error rates
 - **Thread-safe operation**: Using atomic operations
 - **Flexible configuration**: Per-instance parameters
+- **Automatic startup**: Configurable auto-start on boot
 
 ## Configuration
+
+### Auto-Start Configuration
+
+The driver supports automatic startup during system boot through the `QE_AUTO_START` parameter:
+
+- `QE_AUTO_START`: Bitmask for auto-starting instances (0-15, default: 0)
+  - Bit 0 (value 1): Auto-start instance 0
+  - Bit 1 (value 2): Auto-start instance 1
+  - Bit 2 (value 4): Auto-start instance 2
+  - Bit 3 (value 8): Auto-start instance 3
+
+For detailed auto-start configuration, see [AUTO_START.md](AUTO_START.md).
 
 ### Parameters
 
@@ -54,7 +66,7 @@ This driver provides direct hardware access for reading quadrature encoders with
 
 Board-specific configuration should define:
 ```cpp
-const struct EncoderConfig board_encoder_configs[] = {
+const struct EncoderConfig g_quadrature_encoder_config[] = {
     {
         .gpio_a = GPIO_PIN_A,
         .gpio_b = GPIO_PIN_B,
@@ -65,7 +77,7 @@ const struct EncoderConfig board_encoder_configs[] = {
     },
     // Additional instances...
 };
-const unsigned int board_encoder_count = 1;
+const unsigned int g_quadrature_encoder_count = 1;
 ```
 
 ## Usage

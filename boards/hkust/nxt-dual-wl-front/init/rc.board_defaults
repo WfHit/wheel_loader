@@ -38,3 +38,7 @@ param set-default WL_FRONT_WHEEL_EN 1
 param set-default WL_FRONT_WHEEL_KP 0.5
 param set-default WL_FRONT_WHEEL_KI 0.1
 param set-default WL_FRONT_WHEEL_KD 0.05
+
+# Quadrature encoder auto-start configuration
+# Enable auto-start for encoder instances 0 and 1 (front wheel and bucket)
+param set-default QE_AUTO_START 3  # Bits 0 and 1 set (instances 0 and 1)

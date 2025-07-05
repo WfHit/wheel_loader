@@ -45,8 +45,6 @@
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 
-#define MODULE_NAME "nooploop_linktrack"
-
 // =============================================================================
 // Constructor/Destructor
 // =============================================================================

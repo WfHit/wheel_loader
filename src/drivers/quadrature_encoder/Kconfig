@@ -2,7 +2,6 @@ menu "Quadrature Encoder"
 	menuconfig DRIVERS_QUADRATURE_ENCODER
 		bool "Quadrature Encoder Driver"
 		default n
-		depends on BOARD_HAS_QUADRATURE_ENCODER
 		---help---
 			Enable support for GPIO interrupt-based quadrature encoder driver.
 

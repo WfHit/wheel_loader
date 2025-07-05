@@ -40,17 +40,31 @@
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
+#include <px4_platform_common/module.h>
 #include <px4_platform_common/px4_config.h>
 #include <drivers/drv_hrt.h>
+#include <lib/mathlib/mathlib.h>
 
-using namespace quadrature_encoder;
+#include <nuttx/arch.h>
+#include <nuttx/irq.h>
+#include <nuttx/wqueue.h>
+#include <stm32_gpio.h>
+#include <chip.h>
+#include <hardware/stm32_exti.h>
 
 // External board configuration (defined in board-specific files)
-extern const struct EncoderConfig board_encoder_configs[];
-extern const unsigned int board_encoder_count;
+#ifdef BOARD_HAS_QUADRATURE_ENCODER_CONFIG
+extern const struct QuadratureEncoderConfig g_quadrature_encoder_config[];
+extern const unsigned int g_quadrature_encoder_count;
+#else
+#warning "BOARD_HAS_QUADRATURE_ENCODER_CONFIG is not defined - quadrature encoder will not work"
+#endif
 
 // Static instance storage
 QuadratureEncoder *QuadratureEncoder::_instances[MAX_INSTANCES] = {};
+
+// Static work queue for processing encoder events
+struct work_s QuadratureEncoder::_work_process_events;
 
 // Quadrature state transition table
 // Index: (old_state << 2) | new_state
@@ -63,68 +77,27 @@ const int8_t QuadratureEncoder::_state_table[16] = {
 };
 
 // ============================================================================
-// SignalFilter Implementation
-// ============================================================================
-
-SignalFilter::SignalFilter(uint8_t window_size) :
-	_window_size(math::min(window_size, MAX_WINDOW))
-{
-	reset();
-}
-
-bool SignalFilter::update(bool a_state, bool b_state)
-{
-	// Store new samples
-	_samples_a[_index] = a_state;
-	_samples_b[_index] = b_state;
-	_index = (_index + 1) % _window_size;
-
-	// Calculate majority vote
-	uint8_t a_count = 0, b_count = 0;
-	for (uint8_t i = 0; i < _window_size; i++) {
-		if (_samples_a[i]) a_count++;
-		if (_samples_b[i]) b_count++;
-	}
-
-	bool new_a = (a_count > _window_size / 2);
-	bool new_b = (b_count > _window_size / 2);
-
-	// Check stability
-	if (new_a == _output_a && new_b == _output_b) {
-		_stable_count = math::min(_stable_count + 1, uint8_t(255));
-	} else {
-		_stable_count = 0;
-		_output_a = new_a;
-		_output_b = new_b;
-	}
-
-	// Require minimum stability
-	return (_stable_count >= 2);
-}
-
-void SignalFilter::reset()
-{
-	_index = 0;
-	_stable_count = 0;
-	_output_a = false;
-	_output_b = false;
-
-	for (uint8_t i = 0; i < MAX_WINDOW; i++) {
-		_samples_a[i] = false;
-		_samples_b[i] = false;
-	}
-}
-
-// ============================================================================
 // QuadratureEncoder Implementation
 // ============================================================================
 
 QuadratureEncoder::QuadratureEncoder(uint8_t instance) :
 	ModuleParams(nullptr),
-	ScheduledWorkItem("quadrature_encoder", px4::wq_configurations::hp_default),
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	_instance(instance),
 	_filter(3)
 {
+	PX4_INFO("QuadratureEncoder constructor called for instance %u", (unsigned)instance);
+
+	// Initialize work queue structure
+	memset(&_work_process_events, 0, sizeof(_work_process_events));
+
+	// Initialize event structure
+	_pending_event.timestamp = 0;
+	_pending_event.gpio_state = 0;
+	_event_pending.store(false);
+
+	PX4_INFO("Initializing performance counters for instance %u", (unsigned)instance);
+
 	// Initialize performance counters
 	char perf_name[32];
 	snprintf(perf_name, sizeof(perf_name), "qenc_%u_cycle", _instance);
@@ -135,12 +108,17 @@ QuadratureEncoder::QuadratureEncoder(uint8_t instance) :
 
 	snprintf(perf_name, sizeof(perf_name), "qenc_%u_err", _instance);
 	_error_perf = perf_alloc(PC_COUNT, perf_name);
+
+	PX4_INFO("QuadratureEncoder constructor completed for instance %u", (unsigned)instance);
 }
 
 QuadratureEncoder::~QuadratureEncoder()
 {
 	// Stop operation
 	ScheduleClear();
+
+	// Cancel any pending work
+	work_cancel(HPWORK, &_work_process_events);
 
 	// Cleanup hardware
 	cleanup_hardware();
@@ -158,31 +136,59 @@ QuadratureEncoder::~QuadratureEncoder()
 
 bool QuadratureEncoder::init()
 {
+	PX4_INFO("QuadratureEncoder::init() - Starting initialization for instance %u", (unsigned)_instance);
+
+	// Check if board configuration exists
+#ifdef BOARD_HAS_QUADRATURE_ENCODER_CONFIG
+	PX4_INFO("BOARD_HAS_QUADRATURE_ENCODER_CONFIG is defined");
+	PX4_INFO("g_quadrature_encoder_count = %u", (unsigned)g_quadrature_encoder_count);
+
+	if (g_quadrature_encoder_count == 0) {
+		PX4_ERR("No board configuration available for quadrature encoder");
+		return false;
+	}
+#else
+	PX4_ERR("Board does not support quadrature encoder configuration - BOARD_HAS_QUADRATURE_ENCODER_CONFIG not defined");
+	return false;
+#endif
+
 	// Load board configuration
-	if (_instance >= board_encoder_count) {
-		PX4_ERR("Instance %u not supported (max %u)", _instance, board_encoder_count - 1);
+	if (_instance >= g_quadrature_encoder_count) {
+		PX4_ERR("Instance %u not supported (max %u)", (unsigned)_instance, (unsigned)(g_quadrature_encoder_count - 1));
 		return false;
 	}
 
-	_config = board_encoder_configs[_instance];
+	PX4_INFO("Loading configuration for instance %u", (unsigned)_instance);
+	_config = g_quadrature_encoder_config[_instance];
+
+	PX4_INFO("Configuration loaded - GPIO A: 0x%08lx, GPIO B: 0x%08lx",
+		(unsigned long)_config.gpio_a, (unsigned long)_config.gpio_b);
 
 	// Validate configuration
 	if (_config.gpio_a == 0 || _config.gpio_b == 0 ||
 	    _config.gpio_a == _config.gpio_b) {
-		PX4_ERR("Invalid GPIO configuration for instance %u", _instance);
+		PX4_ERR("Invalid GPIO configuration for instance %u - GPIO A: 0x%08lx, GPIO B: 0x%08lx",
+			(unsigned)_instance, (unsigned long)_config.gpio_a, (unsigned long)_config.gpio_b);
 		return false;
 	}
 
+	PX4_INFO("GPIO configuration valid for instance %u", (unsigned)_instance);
+
 	// Update parameters
+	PX4_INFO("Updating parameters for instance %u", (unsigned)_instance);
 	update_parameters();
 
 	// Initialize hardware
+	PX4_INFO("Initializing hardware for instance %u", (unsigned)_instance);
 	if (!initialize_hardware()) {
+		PX4_ERR("Hardware initialization failed for instance %u", (unsigned)_instance);
 		return false;
 	}
 
 	// Attach interrupts
+	PX4_INFO("Attaching interrupts for instance %u", (unsigned)_instance);
 	if (!attach_interrupts()) {
+		PX4_ERR("Interrupt attachment failed for instance %u", (unsigned)_instance);
 		cleanup_hardware();
 		return false;
 	}
@@ -203,36 +209,46 @@ bool QuadratureEncoder::init()
 	reset_position();
 
 	// Start periodic updates
-	uint32_t interval_us = 1_s / math::max(_param_update_rate.get(), 1);
+	uint32_t interval_us = 1_s / math::max(static_cast<int>(_param_update_rate.get()), 1);
 	ScheduleOnInterval(interval_us);
 
 	_initialized.store(true);
 
-	PX4_INFO("Encoder %u initialized on pins %u/%u",
-		_instance, _config.gpio_a, _config.gpio_b);
+	PX4_INFO("Encoder %u initialized on pins %lu/%lu",
+		(unsigned)_instance, (unsigned long)_config.gpio_a, (unsigned long)_config.gpio_b);
 
 	return true;
 }
 
 bool QuadratureEncoder::initialize_hardware()
 {
+	PX4_INFO("Configuring GPIO A (0x%08lx) as input with pull-up and interrupt", (unsigned long)_config.gpio_a);
+
 	// Configure GPIO A as input with pull-up and interrupt
 	if (stm32_configgpio(_config.gpio_a | GPIO_INPUT | GPIO_PULLUP | GPIO_EXTI) != 0) {
-		PX4_ERR("Failed to configure GPIO A (0x%08x)", _config.gpio_a);
+		PX4_ERR("Failed to configure GPIO A (0x%08lx)", (unsigned long)_config.gpio_a);
 		return false;
 	}
 
+	PX4_INFO("GPIO A configured successfully");
+	PX4_INFO("Configuring GPIO B (0x%08lx) as input with pull-up", (unsigned long)_config.gpio_b);
+
 	// Configure GPIO B as input with pull-up (no interrupt)
 	if (stm32_configgpio(_config.gpio_b | GPIO_INPUT | GPIO_PULLUP) != 0) {
-		PX4_ERR("Failed to configure GPIO B (0x%08x)", _config.gpio_b);
+		PX4_ERR("Failed to configure GPIO B (0x%08lx)", (unsigned long)_config.gpio_b);
 		stm32_configgpio(_config.gpio_a | GPIO_INPUT | GPIO_FLOAT);
 		return false;
 	}
 
+	PX4_INFO("GPIO B configured successfully");
+
 	// Read initial state
 	bool a_state = stm32_gpioread(_config.gpio_a);
 	bool b_state = stm32_gpioread(_config.gpio_b);
-	_state.quadrature_state.store((b_state << 1) | a_state);
+	_state.quadrature_state = (b_state << 1) | a_state;
+
+	PX4_INFO("Initial GPIO states - A: %d, B: %d, combined: %u",
+		(int)a_state, (int)b_state, (unsigned)_state.quadrature_state);
 
 	return true;
 }
@@ -253,20 +269,17 @@ void QuadratureEncoder::cleanup_hardware()
 
 bool QuadratureEncoder::attach_interrupts()
 {
-	int irq = stm32_gpioirq(_config.gpio_a);
+	PX4_INFO("Attaching interrupt handler to GPIO A (0x%08lx)", (unsigned long)_config.gpio_a);
 
-	if (irq < 0) {
-		PX4_ERR("Failed to get IRQ for GPIO A");
+	// Use stm32_gpiosetevent to set up GPIO interrupt
+	// rising=true, falling=true, event=true (both edges), function=interrupt_handler, arg=this
+	if (stm32_gpiosetevent(_config.gpio_a, true, true, true, interrupt_handler, this) != 0) {
+		PX4_ERR("Failed to attach interrupt handler to GPIO A");
 		return false;
 	}
 
-	if (irq_attach(irq, interrupt_handler, this) != 0) {
-		PX4_ERR("Failed to attach interrupt handler");
-		return false;
-	}
-
-	up_enable_irq(irq);
 	_interrupts_attached.store(true);
+	PX4_INFO("Interrupt handler attached successfully");
 
 	return true;
 }
@@ -277,12 +290,8 @@ void QuadratureEncoder::detach_interrupts()
 		return;
 	}
 
-	int irq = stm32_gpioirq(_config.gpio_a);
-
-	if (irq >= 0) {
-		up_disable_irq(irq);
-		irq_detach(irq);
-	}
+	// Disable GPIO interrupt by setting the handler to NULL
+	stm32_gpiosetevent(_config.gpio_a, false, false, false, NULL, NULL);
 
 	_interrupts_attached.store(false);
 }
@@ -291,24 +300,58 @@ int QuadratureEncoder::interrupt_handler(int irq, void *context, void *arg)
 {
 	auto *instance = static_cast<QuadratureEncoder *>(arg);
 
-	if (instance == nullptr || !instance->_initialized.load()) {
+	if (instance == nullptr) {
+		PX4_ERR("Interrupt handler: instance is null");
+		return 0;
+	}
+
+	if (!instance->_initialized.load()) {
+		PX4_DEBUG("Interrupt handler: instance %u not initialized", (unsigned)instance->_instance);
 		return 0;
 	}
 
 	perf_count(instance->_interrupt_perf);
 
-	// Read GPIO states
+	// Read GPIO states immediately
 	bool a_state = stm32_gpioread(instance->_config.gpio_a);
 	bool b_state = stm32_gpioread(instance->_config.gpio_b);
+	uint8_t gpio_state = (b_state << 1) | a_state;
 
-	// Process state change
-	instance->process_state_change(a_state, b_state);
+	// Store event data for work queue processing
+	instance->_pending_event.timestamp = hrt_absolute_time();
+	instance->_pending_event.gpio_state = gpio_state;
+
+	// Schedule work queue if not already pending
+	if (!instance->_event_pending.load()) {
+		instance->_event_pending.store(true);
+		work_queue(HPWORK, &_work_process_events,
+			(worker_t)&QuadratureEncoder::process_events_trampoline, instance, 0);
+	}
 
 	return 0;
 }
 
-void QuadratureEncoder::process_state_change(bool a_state, bool b_state)
+void QuadratureEncoder::process_events_trampoline(void *arg)
 {
+	auto *instance = static_cast<QuadratureEncoder *>(arg);
+	instance->process_events();
+}
+
+void QuadratureEncoder::process_events()
+{
+	// Clear the pending flag
+	_event_pending.store(false);
+
+	// Process the pending event
+	process_state_change(_pending_event.gpio_state, _pending_event.timestamp);
+}
+
+void QuadratureEncoder::process_state_change(uint8_t gpio_state, hrt_abstime timestamp)
+{
+	// Extract individual GPIO states
+	bool a_state = gpio_state & 0x01;
+	bool b_state = (gpio_state >> 1) & 0x01;
+
 	// Apply filtering if enabled
 	if (_config.enable_filtering) {
 		if (!_filter.update(a_state, b_state)) {
@@ -320,7 +363,7 @@ void QuadratureEncoder::process_state_change(bool a_state, bool b_state)
 
 	// Calculate new quadrature state
 	uint8_t new_state = (b_state << 1) | a_state;
-	uint8_t old_state = _state.quadrature_state.load();
+	uint8_t old_state = _state.quadrature_state;
 
 	// Look up transition in state table
 	uint8_t transition = (old_state << 2) | new_state;
@@ -328,7 +371,7 @@ void QuadratureEncoder::process_state_change(bool a_state, bool b_state)
 
 	if (delta == 2) {
 		// Invalid transition - error
-		_state.errors.fetch_add(1);
+		_state.errors++;
 		perf_count(_error_perf);
 	} else if (delta != 0) {
 		// Valid transition
@@ -336,13 +379,13 @@ void QuadratureEncoder::process_state_change(bool a_state, bool b_state)
 			delta = -delta;
 		}
 
-		_state.position.fetch_add(delta);
-		_state.transitions.fetch_add(1);
-		_state.last_update.store(hrt_absolute_time());
+		_state.position += delta;
+		_state.transitions++;
+		_state.last_update = timestamp;
 	}
 
 	// Update quadrature state
-	_state.quadrature_state.store(new_state);
+	_state.quadrature_state = new_state;
 }
 
 void QuadratureEncoder::Run()
@@ -370,13 +413,20 @@ void QuadratureEncoder::Run()
 
 void QuadratureEncoder::update_parameters()
 {
+	PX4_INFO("Updating parameters for instance %u", (unsigned)_instance);
+
 	// Update instance-specific parameters
 	_config.pulses_per_revolution = get_instance_ppr();
 	_config.invert_direction = get_instance_invert();
 	_config.enable_filtering = _param_filter_enabled.get();
 
+	PX4_INFO("Parameter values - PPR: %u, Invert: %s, Filtering: %s",
+		(unsigned)_config.pulses_per_revolution,
+		_config.invert_direction ? "true" : "false",
+		_config.enable_filtering ? "enabled" : "disabled");
+
 	// Update filter configuration
-	_filter = SignalFilter(_config.filter_window);
+	_filter = QuadratureSignalFilter(_config.filter_window);
 }
 
 int32_t QuadratureEncoder::get_instance_ppr() const
@@ -404,7 +454,7 @@ bool QuadratureEncoder::get_instance_invert() const
 void QuadratureEncoder::calculate_velocity()
 {
 	hrt_abstime now = hrt_absolute_time();
-	int32_t current_position = _state.position.load();
+	int32_t current_position = _state.position;
 
 	// Calculate time delta
 	float dt = (now - _state.velocity_timestamp) * 1e-6f;  // Convert to seconds
@@ -419,9 +469,9 @@ void QuadratureEncoder::calculate_velocity()
 
 		// Apply simple low-pass filter
 		float alpha = 0.1f;  // Filter coefficient
-		float filtered_velocity = alpha * velocity + (1.0f - alpha) * _state.velocity.load();
+		float filtered_velocity = alpha * velocity + (1.0f - alpha) * _state.velocity;
 
-		_state.velocity.store(filtered_velocity);
+		_state.velocity = filtered_velocity;
 	}
 
 	// Update tracking variables
@@ -430,7 +480,7 @@ void QuadratureEncoder::calculate_velocity()
 
 	// Update cumulative angle
 	float angle = current_position * (2.0f * M_PI_F) / _config.pulses_per_revolution;
-	_state.angle.store(angle);
+	_state.angle = angle;
 }
 
 void QuadratureEncoder::check_health()
@@ -444,8 +494,8 @@ void QuadratureEncoder::check_health()
 	_last_health_check = now;
 
 	// Calculate error rate
-	uint32_t transitions = _state.transitions.load();
-	uint32_t errors = _state.errors.load();
+	uint32_t transitions = _state.transitions;
+	uint32_t errors = _state.errors;
 
 	bool healthy = true;
 
@@ -453,18 +503,18 @@ void QuadratureEncoder::check_health()
 		float error_rate = (100.0f * errors) / transitions;
 
 		if (error_rate > _param_max_error_rate.get()) {
-			PX4_WARN("Encoder %u: High error rate %.1f%%", _instance, (double)error_rate);
+			PX4_WARN("Encoder %u: High error rate %.1f%%", (unsigned)_instance, (double)error_rate);
 			healthy = false;
 		}
 	}
 
 	// Check for recent updates
-	uint64_t last_update = _state.last_update.load();
+	uint64_t last_update = _state.last_update;
 	if (now - last_update > 5_s) {
 		healthy = false;  // No updates for 5 seconds
 	}
 
-	_state.healthy.store(healthy);
+	_state.healthy = healthy;
 }
 
 void QuadratureEncoder::publish_data()
@@ -472,50 +522,54 @@ void QuadratureEncoder::publish_data()
 	sensor_quad_encoder_s msg{};
 
 	msg.timestamp = hrt_absolute_time();
-	msg.device_id = _instance;
-	msg.counts = _state.position.load();
-	msg.angle_rad = _state.angle.load();
-	msg.angular_velocity_rad_s = _state.velocity.load();
-	msg.direction = _config.invert_direction ? -1 : 1;
-	msg.resolution = _config.pulses_per_revolution;
-	msg.errors = _state.errors.load();
+	msg.count = 1; // We have one encoder
+
+	// Fill encoder data for this instance
+	msg.position[_instance] = _state.position;
+	msg.velocity[_instance] = _state.velocity;
+	msg.angle_or_distance[_instance] = _state.angle;
+	msg.valid[_instance] = 1;
+	msg.encoder_type[_instance] = sensor_quad_encoder_s::TYPE_ROTARY;
+	msg.pulses_per_rev[_instance] = _config.pulses_per_revolution;
+	msg.invert_direction[_instance] = _config.invert_direction;
+	msg.gear_ratio[_instance] = 1.0f; // Default gear ratio
 
 	orb_publish(ORB_ID(sensor_quad_encoder), _encoder_pub, &msg);
 }
 
 void QuadratureEncoder::reset_position()
 {
-	_state.position.store(0);
-	_state.angle.store(0.0f);
-	_state.velocity.store(0.0f);
-	_state.errors.store(0);
-	_state.transitions.store(0);
+	_state.position = 0;
+	_state.angle = 0.0f;
+	_state.velocity = 0.0f;
+	_state.errors = 0;
+	_state.transitions = 0;
 	_state.velocity_position = 0;
 	_state.velocity_timestamp = hrt_absolute_time();
 	_filter.reset();
 
-	PX4_INFO("Encoder %u position reset", _instance);
+	PX4_INFO("Encoder %u position reset", (unsigned)_instance);
 }
 
 int QuadratureEncoder::print_status()
 {
-	PX4_INFO("Quadrature Encoder %u:", _instance);
-	PX4_INFO("  GPIO A: 0x%08x", _config.gpio_a);
-	PX4_INFO("  GPIO B: 0x%08x", _config.gpio_b);
-	PX4_INFO("  PPR: %u", _config.pulses_per_revolution);
+	PX4_INFO("Quadrature Encoder %u:", (unsigned)_instance);
+	PX4_INFO("  GPIO A: 0x%08lx", (unsigned long)_config.gpio_a);
+	PX4_INFO("  GPIO B: 0x%08lx", (unsigned long)_config.gpio_b);
+	PX4_INFO("  PPR: %lu", (unsigned long)_config.pulses_per_revolution);
 	PX4_INFO("  Inverted: %s", _config.invert_direction ? "yes" : "no");
 	PX4_INFO("  Filtering: %s", _config.enable_filtering ? "enabled" : "disabled");
 
-	PX4_INFO("  Position: %d counts", _state.position.load());
-	PX4_INFO("  Angle: %.2f rad", (double)_state.angle.load());
-	PX4_INFO("  Velocity: %.2f rad/s", (double)_state.velocity.load());
-	PX4_INFO("  Healthy: %s", _state.healthy.load() ? "yes" : "no");
+	PX4_INFO("  Position: %ld counts", static_cast<long>(_state.position));
+	PX4_INFO("  Angle: %.2f rad", (double)_state.angle);
+	PX4_INFO("  Velocity: %.2f rad/s", (double)_state.velocity);
+	PX4_INFO("  Healthy: %s", _state.healthy ? "yes" : "no");
 
-	uint32_t transitions = _state.transitions.load();
-	uint32_t errors = _state.errors.load();
+	uint32_t transitions = _state.transitions;
+	uint32_t errors = _state.errors;
 
-	PX4_INFO("  Transitions: %u", transitions);
-	PX4_INFO("  Errors: %u", errors);
+	PX4_INFO("  Transitions: %lu", (unsigned long)transitions);
+	PX4_INFO("  Errors: %lu", (unsigned long)errors);
 
 	if (transitions > 0) {
 		float error_rate = (100.0f * errors) / transitions;
@@ -535,6 +589,8 @@ int QuadratureEncoder::print_status()
 
 int QuadratureEncoder::task_spawn(int argc, char *argv[])
 {
+	PX4_INFO("QuadratureEncoder::task_spawn() called with %d arguments", argc);
+
 	int instance = 0;
 	int ch;
 
@@ -544,6 +600,7 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
 		switch (ch) {
 		case 'i':
 			instance = atoi(myoptarg);
+			PX4_INFO("Instance parameter set to: %d", instance);
 			break;
 		default:
 			print_usage("Unknown option");
@@ -552,7 +609,7 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
 	}
 
 	if (instance < 0 || instance >= MAX_INSTANCES) {
-		PX4_ERR("Invalid instance: %d", instance);
+		PX4_ERR("Invalid instance: %d (valid range: 0-%d)", instance, MAX_INSTANCES-1);
 		return -1;
 	}
 
@@ -560,6 +617,8 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
 		PX4_ERR("Instance %d already running", instance);
 		return -1;
 	}
+
+	PX4_INFO("Creating quadrature encoder instance %d", instance);
 
 	// Create and initialize instance
 	auto *encoder = new QuadratureEncoder(instance);
@@ -569,12 +628,16 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
 		return -1;
 	}
 
+	PX4_INFO("Encoder instance %d created, initializing...", instance);
+
 	if (!encoder->init()) {
+		PX4_ERR("Failed to initialize encoder instance %d", instance);
 		delete encoder;
 		return -1;
 	}
 
 	_instances[instance] = encoder;
+	PX4_INFO("Quadrature encoder instance %d started successfully", instance);
 
 	return 0;
 }
@@ -659,7 +722,16 @@ $ quadrature_encoder status
 	return 0;
 }
 
+// Board configuration is only available if BOARD_HAS_QUADRATURE_ENCODER_CONFIG is defined
+// This eliminates the need for weak symbols and provides cleaner conditional compilation
+
 extern "C" __EXPORT int quadrature_encoder_main(int argc, char *argv[])
 {
+	PX4_INFO("quadrature_encoder_main() called with %d arguments", argc);
+
+	for (int i = 0; i < argc; i++) {
+		PX4_INFO("  argv[%d]: %s", i, argv[i]);
+	}
+
 	return QuadratureEncoder::main(argc, argv);
 }

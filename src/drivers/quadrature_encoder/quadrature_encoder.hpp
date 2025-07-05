@@ -41,13 +41,16 @@
  * with comprehensive error detection, digital filtering, and real-time performance.
  */
 
-#include <atomic>
-#include <cstdint>
-
+#include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <px4_platform_common/px4_work_queue/WorkItem.hpp>
+#include <px4_platform_common/atomic.h>
+#include <drivers/quadrature_encoder/quadrature_encoder_types.hpp>
+#include "quadrature_encoder_state.hpp"
+#include "quadrature_signal_filter.hpp"
 
 #include <lib/parameters/param.h>
 #include <lib/perf/perf_counter.h>
@@ -60,79 +63,10 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/wqueue.h>
 #include <stm32_gpio.h>
 
 using namespace time_literals;
-
-namespace quadrature_encoder
-{
-
-/**
- * @brief Encoder configuration structure
- */
-struct EncoderConfig {
-	uint32_t gpio_a{0};                    ///< GPIO pin for phase A
-	uint32_t gpio_b{0};                    ///< GPIO pin for phase B
-	uint32_t pulses_per_revolution{1024};  ///< Encoder resolution (PPR)
-	bool invert_direction{false};          ///< Invert counting direction
-	bool enable_filtering{true};           ///< Enable digital filtering
-	uint8_t filter_window{3};              ///< Filter window size
-};
-
-/**
- * @brief Encoder state information
- */
-struct EncoderState {
-	std::atomic<int32_t> position{0};      ///< Current position (counts)
-	std::atomic<float> velocity{0.0f};     ///< Current velocity (rad/s)
-	std::atomic<float> angle{0.0f};        ///< Cumulative angle (rad)
-	std::atomic<bool> healthy{false};      ///< Health status
-
-	// Quadrature state tracking
-	std::atomic<uint8_t> quadrature_state{0};  ///< Current quadrature state (2-bit)
-	std::atomic<uint32_t> transitions{0};      ///< Total state transitions
-	std::atomic<uint32_t> errors{0};           ///< Total errors detected
-
-	// Timing
-	std::atomic<uint64_t> last_update{0};      ///< Last update timestamp
-	hrt_abstime velocity_timestamp{0};         ///< Timestamp for velocity calculation
-	int32_t velocity_position{0};              ///< Position for velocity calculation
-};
-
-/**
- * @brief Digital filter for noise reduction
- */
-class SignalFilter {
-public:
-	SignalFilter(uint8_t window_size = 3);
-
-	/**
-	 * @brief Update filter with new samples
-	 * @return True if output is stable
-	 */
-	bool update(bool a_state, bool b_state);
-
-	/**
-	 * @brief Get filtered outputs
-	 */
-	bool get_filtered_a() const { return _output_a; }
-	bool get_filtered_b() const { return _output_b; }
-
-	/**
-	 * @brief Reset filter state
-	 */
-	void reset();
-
-private:
-	static constexpr uint8_t MAX_WINDOW = 5;
-	uint8_t _window_size;
-	uint8_t _index{0};
-	bool _samples_a[MAX_WINDOW]{};
-	bool _samples_b[MAX_WINDOW]{};
-	bool _output_a{false};
-	bool _output_b{false};
-	uint8_t _stable_count{0};
-};
 
 /**
  * @brief Quadrature Encoder Driver
@@ -201,22 +135,22 @@ public:
 	/**
 	 * @brief Get encoder configuration
 	 */
-	const EncoderConfig& get_config() const { return _config; }
+	const QuadratureEncoderConfig& get_config() const { return _config; }
 
 	/**
 	 * @brief Check if encoder is healthy
 	 */
-	bool is_healthy() const { return _state.healthy.load(); }
+	bool is_healthy() const { return _state.healthy; }
 
 	/**
 	 * @brief Get current position
 	 */
-	int32_t get_position() const { return _state.position.load(); }
+	int32_t get_position() const { return _state.position; }
 
 	/**
 	 * @brief Get current velocity
 	 */
-	float get_velocity() const { return _state.velocity.load(); }
+	float get_velocity() const { return _state.velocity; }
 
 	/**
 	 * @brief Reset encoder position
@@ -255,9 +189,29 @@ private:
 	void update_parameters();
 
 	/**
-	 * @brief Process encoder state change
+	 * @brief Static interrupt handler
 	 */
-	void process_state_change(bool a_state, bool b_state);
+	static int interrupt_handler(int irq, void *context, void *arg);
+
+	/**
+	 * @brief Static work queue for processing encoder events
+	 */
+	static struct work_s _work_process_events;
+
+	/**
+	 * @brief Work queue trampoline for processing events
+	 */
+	static void process_events_trampoline(void *arg);
+
+	/**
+	 * @brief Process pending encoder events (called from work queue)
+	 */
+	void process_events();
+
+	/**
+	 * @brief Process encoder state change in work queue context
+	 */
+	void process_state_change(uint8_t gpio_state, hrt_abstime timestamp);
 
 	/**
 	 * @brief Calculate velocity from position changes
@@ -275,11 +229,6 @@ private:
 	void check_health();
 
 	/**
-	 * @brief Static interrupt handler
-	 */
-	static int interrupt_handler(int irq, void *context, void *arg);
-
-	/**
 	 * @brief Get PPR parameter value for instance
 	 */
 	int32_t get_instance_ppr() const;
@@ -293,13 +242,17 @@ private:
 	const uint8_t _instance;
 
 	// Configuration and state
-	EncoderConfig _config;
-	EncoderState _state;
-	SignalFilter _filter;
+	QuadratureEncoderConfig _config;
+	QuadratureEncoderState _state;
+	QuadratureSignalFilter _filter;
 
 	// Hardware state
-	std::atomic<bool> _initialized{false};
-	std::atomic<bool> _interrupts_attached{false};
+	px4::atomic<bool> _initialized{false};
+	px4::atomic<bool> _interrupts_attached{false};
+
+	// Interrupt event buffering (for work queue processing)
+	volatile QuadratureEvent _pending_event;
+	px4::atomic<bool> _event_pending{false};
 
 	// Publications
 	orb_advert_t _encoder_pub{nullptr};
@@ -341,5 +294,3 @@ private:
 	static constexpr float MAX_ERROR_RATE_DEFAULT = 5.0f;
 	hrt_abstime _last_health_check{0};
 };
-
-} // namespace quadrature_encoder

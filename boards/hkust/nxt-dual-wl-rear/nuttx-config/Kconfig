@@ -2,6 +2,7 @@
 # For a description of the syntax of this configuration file,
 # see misc/tools/kconfig-language.txt.
 #
+
 config BOARD_HAS_PROBES
 	bool "Board provides GPIO or other Hardware for signaling to timing analyze."
 	default y

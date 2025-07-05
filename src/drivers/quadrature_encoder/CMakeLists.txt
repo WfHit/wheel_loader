@@ -37,6 +37,7 @@ px4_add_module(
 	STACK_MAIN 2048
 	SRCS
 		quadrature_encoder.cpp
+		quadrature_signal_filter.cpp
 	DEPENDS
 		px4_work_queue
 		mathlib

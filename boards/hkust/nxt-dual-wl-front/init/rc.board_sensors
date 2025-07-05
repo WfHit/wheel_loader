@@ -23,19 +23,71 @@ then
 	echo "AS5600 magnetic encoder started for bucket position"
 fi
 
-# Start quadrature encoder driver for front wheel and bucket control
-if param compare QUADENC_ENABLE 1
+# Start quadrature encoder drivers for front wheel and bucket control
+if param greater QE_AUTO_START 0
 then
-	echo "Starting quadrature encoder drivers for front wheel and bucket"
+	echo "Starting quadrature encoder drivers based on QE_AUTO_START parameter"
 
-	# Quadrature encoder initialization removed - using new implementation
+	# Start instances based on QE_AUTO_START parameter value
+	# For front board, we typically use instances 0 (wheel) and 1 (bucket)
+	# QE_AUTO_START=3 means both instances 0 and 1
+
+	if param compare QE_AUTO_START 1; then
+		echo "Starting quadrature encoder instance 0 (front wheel)"
+		quadrature_encoder start -i 0 &
+	elif param compare QE_AUTO_START 2; then
+		echo "Starting quadrature encoder instance 1 (bucket)"
+		quadrature_encoder start -i 1 &
+	elif param compare QE_AUTO_START 3; then
+		echo "Starting quadrature encoder instance 0 (front wheel)"
+		quadrature_encoder start -i 0 &
+		echo "Starting quadrature encoder instance 1 (bucket)"
+		quadrature_encoder start -i 1 &
+	else
+		# For other values, start based on bitmask
+		QE_START_VAL=$(param show QE_AUTO_START | awk '{print $2}')
+
+		# Check bit 0 (instance 0)
+		if [ $((QE_START_VAL & 1)) -eq 1 ]; then
+			echo "Starting quadrature encoder instance 0 (front wheel)"
+			quadrature_encoder start -i 0 &
+		fi
+
+		# Check bit 1 (instance 1)
+		if [ $((QE_START_VAL & 2)) -eq 2 ]; then
+			echo "Starting quadrature encoder instance 1 (bucket)"
+			quadrature_encoder start -i 1 &
+		fi
+
+		# Check bit 2 (instance 2)
+		if [ $((QE_START_VAL & 4)) -eq 4 ]; then
+			echo "Starting quadrature encoder instance 2"
+			quadrature_encoder start -i 2 &
+		fi
+
+		# Check bit 3 (instance 3)
+		if [ $((QE_START_VAL & 8)) -eq 8 ]; then
+			echo "Starting quadrature encoder instance 3"
+			quadrature_encoder start -i 3 &
+		fi
+	fi
+
+	# Wait for drivers to initialize
+	sleep 1
+
+	echo "Quadrature encoder auto-start complete"
+elif param compare QUADENC_ENABLE 1
+then
+	echo "Starting quadrature encoder drivers (legacy QUADENC_ENABLE mode)"
+	# Legacy mode for backward compatibility
+	echo "Consider migrating to QE_AUTO_START parameter"
 
 	# Wait for drivers to initialize
 	sleep 1
 
 	echo "Sensor initialization complete"
 else
-	echo "Quadrature encoder disabled (QUADENC_ENABLE=0)"
+	echo "Quadrature encoder auto-start disabled (QE_AUTO_START=0)"
 fi
 
 # Start limit sensor instances for hydraulic component monitoring

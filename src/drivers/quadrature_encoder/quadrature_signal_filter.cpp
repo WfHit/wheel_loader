@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (C) 2021 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,19 +31,59 @@
  *
  ****************************************************************************/
 
-#include <px4_arch/io_timer_hw_description.h>
+/**
+ * @file quadrature_signal_filter.cpp
+ * @brief Implementation of digital signal filter for quadrature encoder
+ */
 
-constexpr io_timers_t io_timers[MAX_IO_TIMERS] = {
-	initIOTimer(Timer::Timer1, DMA{DMA::Index1}),
-	// initIOTimer(Timer::Timer2),
-	// initIOTimer(Timer::Timer3),
-};
+#include "quadrature_signal_filter.hpp"
+#include <lib/mathlib/mathlib.h>
 
-constexpr timer_io_channels_t timer_io_channels[MAX_TIMER_IO_CHANNELS] = {
-	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel1}, {GPIO::PortE, GPIO::Pin9}),  // PWM0 - DRV8701 L_PWM
-	initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel2}, {GPIO::PortE, GPIO::Pin11}), // PWM1 - DRV8701 R_PWM
-	// PWM5-8 (PB10, PB11, PB0, PB1) removed from timer channels - now used as limit switch GPIO inputs
-};
+QuadratureSignalFilter::QuadratureSignalFilter(uint8_t window_size) :
+	_window_size(math::min(window_size, MAX_WINDOW))
+{
+	reset();
+}
 
-constexpr io_timers_channel_mapping_t io_timers_channel_mapping =
-	initIOTimerChannelMapping(io_timers, timer_io_channels);
+bool QuadratureSignalFilter::update(bool a_state, bool b_state)
+{
+	// Store new samples
+	_samples_a[_index] = a_state;
+	_samples_b[_index] = b_state;
+	_index = (_index + 1) % _window_size;
+
+	// Calculate majority vote
+	uint8_t a_count = 0, b_count = 0;
+	for (uint8_t i = 0; i < _window_size; i++) {
+		if (_samples_a[i]) a_count++;
+		if (_samples_b[i]) b_count++;
+	}
+
+	bool new_a = (a_count > _window_size / 2);
+	bool new_b = (b_count > _window_size / 2);
+
+	// Check stability
+	if (new_a == _output_a && new_b == _output_b) {
+		_stable_count = math::min(static_cast<int>(_stable_count + 1), 255);
+	} else {
+		_stable_count = 0;
+		_output_a = new_a;
+		_output_b = new_b;
+	}
+
+	// Require minimum stability
+	return (_stable_count >= 2);
+}
+
+void QuadratureSignalFilter::reset()
+{
+	_index = 0;
+	_stable_count = 0;
+	_output_a = false;
+	_output_b = false;
+
+	for (uint8_t i = 0; i < MAX_WINDOW; i++) {
+		_samples_a[i] = false;
+		_samples_b[i] = false;
+	}
+}

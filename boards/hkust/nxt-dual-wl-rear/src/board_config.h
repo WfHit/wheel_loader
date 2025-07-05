@@ -147,8 +147,7 @@
 #define HRT_TIMER_CHANNEL       1  /* use capture/compare channel 1 */
 
 /* GPIO Pin Usage for WL-Rear:
- * RC port pins (PC6/PC7) - Quad encoder from motor encoder (A/B phases)
- * TELEM1 port (/dev/ttyS1) - ST3125 robotic servo communication
+ * TELEM1 port pins (PD5/PD6) - Quad encoder from motor encoder (A/B phases)
  * UART7 RX pin (PE7) - DRV8701 H-bridge enable signal
  * I2C4 (PD12/PD13) - AS5600 magnetic encoder
  * UART1 (PA9/PA10) - Proxy client communication
@@ -199,9 +198,8 @@
 /* This board provides the board_on_reset interface */
 #define BOARD_HAS_ON_RESET 1
 
-/* Raw GPIO definitions for QEncoder driver (without flags) */
-#define QENCODER_A_GPIO_RAW                (GPIO_PORTD | GPIO_PIN5)  /* PC6 */
-#define QENCODER_B_GPIO_RAW                (GPIO_PORTD | GPIO_PIN6)  /* PC7 */
+/* DRV8701 H-bridge support */
+// #define BOARD_HAS_DRV8701_HBRIDGE          1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -213,20 +211,27 @@
 /* UART7 RX - Enable signal for DRV8701 H-bridge */
 #define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
+// #define BOARD_HAS_LIMIT_SWITCHES           1
+/* Limit Sensor Configuration for Rear Board */
+/* Only boom and steering sensors are configured on rear board */
+#define BOARD_NUM_LIMIT_SENSORS            4
+#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+
 /* PWM5-8 - Limit switch inputs for boom and steering operations */
 #define STEERING_RIGHT_LIMIT_SW_GPIO       /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
 #define STEERING_LEFT_LIMIT_SW_GPIO        /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
 #define BOOM_DOWN_LIMIT_SW_GPIO            /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
 #define BOOM_UP_LIMIT_SW_GPIO              /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
 
-/* DRV8701 H-bridge support */
-#define BOARD_HAS_DRV8701_HBRIDGE          1
-#define BOARD_HAS_LIMIT_SWITCHES           1
 
-/* Limit Sensor Configuration for Rear Board */
-/* Only boom and steering sensors are configured on rear board */
-#define BOARD_NUM_LIMIT_SENSORS            4
-#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+/* Quadrature Encoder Configuration for Rear Board */
+#define BOARD_NUM_QUADRATURE_ENCODERS      1
+#define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
+
+/* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
+/* TELEM1 port pins (PD5/PD6) repurposed for quadrature encoder */
+#define QENCODER_A_GPIO_RAW                /* PD5 */ (GPIO_PORTD|GPIO_PIN5)
+#define QENCODER_B_GPIO_RAW                /* PD6 */ (GPIO_PORTD|GPIO_PIN6)
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \

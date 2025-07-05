@@ -117,7 +117,7 @@
  * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
  * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
  */
-#define DIRECT_PWM_OUTPUT_CHANNELS   4
+#define DIRECT_PWM_OUTPUT_CHANNELS   2
 
 #define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 
@@ -158,17 +158,7 @@
  * PWM7-8 - Bucket dump limit switches
  */
 
-/* GPIO definitions for QEncoder driver */
-#define QENCODER1_A_GPIO                   /* PC6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN6)
-#define QENCODER1_B_GPIO                   /* PC7 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN7)
-#define QENCODER2_A_GPIO                   /* PD5 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTD|GPIO_PIN5)
-#define QENCODER2_B_GPIO                   /* PD6 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTD|GPIO_PIN6)
 
-/* Raw GPIO definitions for QEncoder driver (without flags) */
-#define QENCODER1_A_GPIO_RAW               (GPIO_PORTC | GPIO_PIN6)  /* PC6 */
-#define QENCODER1_B_GPIO_RAW               (GPIO_PORTC | GPIO_PIN7)  /* PC7 */
-#define QENCODER2_A_GPIO_RAW               (GPIO_PORTD | GPIO_PIN5)  /* PD5 */
-#define QENCODER2_B_GPIO_RAW               (GPIO_PORTD | GPIO_PIN6)  /* PD6 */
 
 // #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
 // #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
@@ -192,26 +182,22 @@
 /* This board provides the board_on_reset interface */
 #define BOARD_HAS_ON_RESET 1
 
-/* Quadrature Encoder Support */
-#define CONFIG_BOARD_QUADRATURE_ENCODER 1
-#define BOARD_HAS_QENCODER 1
-
 /* AS5600 I2C Configuration */
 /* I2C4 Interface for AS5600 Magnetic Rotary Encoder */
-#define AS5600_I2C_BUS                     4           /* I2C4 bus */
-#define AS5600_I2C_SCL_GPIO                /* PD12 */ (GPIO_I2C4_SCL)
-#define AS5600_I2C_SDA_GPIO                /* PD13 */ (GPIO_I2C4_SDA)
-#define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
+// #define AS5600_I2C_BUS                     4           /* I2C4 bus */
+// #define AS5600_I2C_SCL_GPIO                GPIO_I2C4_SCL_1
+// #define AS5600_I2C_SDA_GPIO                GPIO_I2C4_SDA_1
+// #define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
 
 /* UART1 Interface for Proxy Client */
-#define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
-#define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
-#define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
+// #define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
+// #define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
+// #define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
 
 /* Interface Support */
-#define BOARD_HAS_AS5600_I2C               1
-#define BOARD_AS5600_I2C_ENABLED           1
-#define BOARD_PROXY_CLIENT_UART_ENABLED    1
+// #define BOARD_HAS_AS5600_I2C               1
+// #define BOARD_AS5600_I2C_ENABLED           1
+// #define BOARD_PROXY_CLIENT_UART_ENABLED    1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE9) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -234,13 +220,25 @@
 #define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
 /* DRV8701 H-bridge support */
-#define BOARD_HAS_DRV8701_HBRIDGE          1
-#define BOARD_HAS_LIMIT_SWITCHES           1
+// #define BOARD_HAS_DRV8701_HBRIDGE          1
+// #define BOARD_HAS_LIMIT_SWITCHES           1
 
 /* Limit Sensor Configuration for Front Board */
 /* Only bucket load and dump sensors are configured on front board */
 #define BOARD_NUM_LIMIT_SENSORS            2
 #define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+
+/* Quadrature Encoder Configuration for Front Board */
+#define BOARD_NUM_QUADRATURE_ENCODERS      2
+#define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
+
+/* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
+/* RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases) */
+/* TELEM1 port pins (PD5/PD6) - Quad encoder 2 from motor encoder (A/B phases) */
+#define QENCODER1_A_GPIO_RAW               /* PC6 */ (GPIO_PORTC|GPIO_PIN6)
+#define QENCODER1_B_GPIO_RAW               /* PC7 */ (GPIO_PORTC|GPIO_PIN7)
+#define QENCODER2_A_GPIO_RAW               /* PD5 */ (GPIO_PORTD|GPIO_PIN5)
+#define QENCODER2_B_GPIO_RAW               /* PD6 */ (GPIO_PORTD|GPIO_PIN6)
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \
@@ -248,14 +246,6 @@
 		GPIO_SPL_ADDR_SET, \
 		GPIO_PC0, \
 		GPIO_PC1, \
-		QENCODER1_A_GPIO, \
-		QENCODER1_B_GPIO, \
-		QENCODER2_A_GPIO, \
-		QENCODER2_B_GPIO, \
-		AS5600_I2C_SCL_GPIO, \
-		AS5600_I2C_SDA_GPIO, \
-		PROXY_CLIENT_UART_TX_GPIO, \
-		PROXY_CLIENT_UART_RX_GPIO, \
 		DRV8701_DIR1_GPIO, \
 		DRV8701_DIR2_GPIO, \
 		DRV8701_ENABLE_GPIO, \

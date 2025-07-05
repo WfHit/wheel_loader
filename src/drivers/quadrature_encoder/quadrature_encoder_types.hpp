@@ -31,43 +31,30 @@
  *
  ****************************************************************************/
 
-/****************************************************************************
- * Included Files
- ****************************************************************************/
+#pragma once
 
-#include <nuttx/config.h>
-#include "board_config.h"
-#include <drivers/quad_encoder_gpio/quad_encoder_gpio.hpp>
+/**
+ * @file quadrature_encoder_types.hpp
+ * @brief Type definitions for quadrature encoder configuration
+ *
+ * This header contains only the type definitions needed for board configuration
+ * files, without any module dependencies.
+ */
 
-/****************************************************************************
- * Public Data
- ****************************************************************************/
+#include <stdint.h>
 
-#ifdef CONFIG_DRIVERS_QUAD_ENCODER_GPIO
-
-/* Board-specific GPIO encoder configurations for nxt-dual-wl-rear */
-const struct quad_encoder_gpio_config_s board_quad_encoder_gpio_configs[] =
-{
-  /* Motor Encoder - GPIO interrupt mode */
-  {
-    .gpio_a = QENCODER_A_GPIO_RAW,      /* PD5 */
-    .gpio_b = QENCODER_B_GPIO_RAW,      /* PD6 */
-    .resolution = 1024,                  /* 1024 CPR encoder */
-    .invert_direction = false,           /* Normal direction */
-    .use_index = false,                  /* No index signal for motor encoder */
-    .x4_mode = true,                     /* 4x counting mode for higher resolution */
-    .max_frequency = 10000,              /* 10 kHz maximum frequency */
-    .filter_samples = 3,                 /* 3-sample digital filter */
-  },
+/**
+ * Board-specific quadrature encoder configuration structure
+ */
+struct QuadratureEncoderConfig {
+	uint32_t gpio_a;                 ///< GPIO pin for channel A (with all flags)
+	uint32_t gpio_b;                 ///< GPIO pin for channel B (with all flags)
+	uint32_t pulses_per_revolution;  ///< Number of pulses per full revolution
+	bool invert_direction;           ///< Whether to invert the counting direction
+	bool enable_filtering;           ///< Enable digital filtering for noise immunity
+	uint8_t filter_window;           ///< Filter window size (2-8 samples)
 };
 
-/* Number of GPIO encoders on this board */
-const unsigned int board_quad_encoder_gpio_count = sizeof(board_quad_encoder_gpio_configs) / sizeof(board_quad_encoder_gpio_configs[0]);
-
-#else
-
-/* Empty configuration when GPIO encoder support is disabled */
-const struct quad_encoder_gpio_config_s board_quad_encoder_gpio_configs[] = {};
-const unsigned int board_quad_encoder_gpio_count = 0;
-
-#endif
+// Board-specific quadrature encoder configuration (provided by drivers_board)
+__EXPORT extern const QuadratureEncoderConfig g_quadrature_encoder_config[];
+__EXPORT extern const unsigned int g_quadrature_encoder_count;
