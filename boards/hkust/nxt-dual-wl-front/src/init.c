@@ -59,6 +59,7 @@
 #include <px4_platform_common/init.h>
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_dma_alloc.h>
+#include <px4_arch/quadrature_encoder.h>
 
 #include <mpu.h>
 
@@ -206,8 +207,14 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 	/* Configure the HW based on the manifest */
 	px4_platform_configure();
 
-#ifdef CONFIG_BOARD_QUADRATURE_ENCODER
-	// Quadrature encoder initialization removed - using new implementation
+#ifdef CONFIG_DRIVERS_QUADRATURE_ENCODER
+	// Initialize encoder hardware layer
+	if (quadrature_encoder_hal_init() != 0) {
+		syslog(LOG_ERR, "[boot] Encoder hardware initialization FAILED\n");
+		led_on(LED_RED);
+	} else {
+		syslog(LOG_INFO, "[boot] Encoder hardware initialized successfully\n");
+	}
 #endif
 
 	return OK;

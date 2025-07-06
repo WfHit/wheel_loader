@@ -47,7 +47,7 @@ QuadratureEncoder::~QuadratureEncoder()
 {
 	// Stop encoder if running
 	if (_running && _platform_encoder_id != 0xFF) {
-		encoder_hw_stop(_platform_encoder_id);
+		quadrature_encoder_hal_stop(_platform_encoder_id);
 	}
 
 	// Free performance counters
@@ -74,7 +74,7 @@ bool QuadratureEncoder::init()
 	_config.enable_index = false;  // Index channel not supported yet
 
 	// Get board-specific configuration
-	const encoder_hw_config_t *board_config = board_get_encoder_config(_encoder_id);
+	const quadrature_encoder_hal_config_t *board_config = board_get_encoder_config(_encoder_id);
 	if (!board_config) {
 		PX4_ERR("Failed to get board configuration for encoder %d", _encoder_id);
 		return false;
@@ -84,7 +84,7 @@ bool QuadratureEncoder::init()
 	_config = *board_config;
 
 	// Create platform encoder instance
-	int platform_id = encoder_hw_create_instance(&_config);
+	int platform_id = quadrature_encoder_hal_create_instance(&_config);
 	if (platform_id < 0) {
 		PX4_ERR("Failed to create platform encoder instance: %d", platform_id);
 		return false;
@@ -102,6 +102,12 @@ bool QuadratureEncoder::init()
 
 void QuadratureEncoder::Run()
 {
+	if (should_exit()) {
+		ScheduleClear();
+		exit_and_cleanup();
+		return;
+	}
+
 	if (!_initialized) {
 		return;
 	}
@@ -109,9 +115,15 @@ void QuadratureEncoder::Run()
 	perf_begin(_cycle_perf);
 	perf_count(_interval_perf);
 
-	// Get processed data asynchronously from the event processor thread
+	bool data_updated = false;
+	uint32_t updates_processed = 0;
+	const uint32_t max_updates_per_cycle = 10; // Limit to prevent blocking too long
+
+	// Process multiple updates in a loop to handle high-frequency events
 	encoder_processed_data_t processed_data;
-	if (encoder_hw_get_processed_data(_encoder_id, &processed_data)) {
+	while ((updates_processed < max_updates_per_cycle) &&
+	       quadrature_encoder_hal_get_processed_data(_platform_encoder_id, &processed_data)) {
+
 		// Update local state from processed data
 		_position_raw = processed_data.position_raw;
 		_position_rad = processed_data.position_rad;
@@ -127,7 +139,12 @@ void QuadratureEncoder::Run()
 		// Update timing
 		_last_update_time = processed_data.timestamp;
 
-		// Publish encoder data
+		data_updated = true;
+		updates_processed++;
+	}
+
+	// Publish encoder data only if we received updates
+	if (data_updated) {
 		publish_encoder_data();
 	}
 
@@ -197,8 +214,16 @@ int QuadratureEncoder::start_instance(uint8_t encoder_id)
 
 	// Start the event processor thread if this is the first encoder
 	if (_instance_count == 0) {
-		if (encoder_hw_start_event_processor() != 0) {
-			PX4_ERR("Failed to start event processor thread");
+		int ret = quadrature_encoder_hal_start_event_processor();
+		if (ret != 0) {
+			PX4_ERR("Failed to start event processor thread (error: %d)", ret);
+			if (ret == -1) {
+				PX4_ERR("Hardware not initialized - check quadrature_encoder_hal_init()");
+			} else if (ret == -2) {
+				PX4_ERR("Thread creation failed - check system resources");
+			} else if (ret == -3) {
+				PX4_ERR("Semaphore initialization failed");
+			}
 			return -1;
 		}
 	}
@@ -216,8 +241,8 @@ int QuadratureEncoder::start_instance(uint8_t encoder_id)
 		return -1;
 	}
 
-	// Start the encoder
-	if (encoder_hw_start(encoder->_platform_encoder_id) != 0) {
+	// Start the encoder hardware
+	if (quadrature_encoder_hal_start(encoder->_platform_encoder_id) != 0) {
 		PX4_ERR("Failed to start encoder %d", encoder_id);
 		delete encoder;
 		return -1;
@@ -251,7 +276,7 @@ int QuadratureEncoder::stop_instance(uint8_t encoder_id)
 
 	// Stop the event processor thread if this was the last encoder
 	if (_instance_count == 0) {
-		encoder_hw_stop_event_processor();
+		quadrature_encoder_hal_stop_event_processor();
 	}
 
 	PX4_INFO("Stopped encoder %d", encoder_id);
@@ -266,24 +291,56 @@ int QuadratureEncoder::custom_command(int argc, char *argv[])
 	}
 
 	if (!strcmp(argv[0], "start")) {
-		if (argc < 2) {
+		// Parse encoder ID with -i option or as direct argument
+		int encoder_id = 0;
+		bool encoder_id_set = false;
+
+		// Check for -i option
+		for (int i = 1; i < argc - 1; i++) {
+			if (!strcmp(argv[i], "-i")) {
+				encoder_id = atoi(argv[i + 1]);
+				encoder_id_set = true;
+				break;
+			}
+		}
+
+		// If no -i option, check if encoder ID is provided as direct argument
+		if (!encoder_id_set && argc >= 2) {
+			encoder_id = atoi(argv[1]);
+			encoder_id_set = true;
+		}
+
+		if (!encoder_id_set) {
 			return print_usage("missing encoder ID");
 		}
 
-		int encoder_id = atoi(argv[1]);
 		return start_instance(encoder_id);
 	}
 
-	if (!strcmp(argv[0], "startall")) {
-		return task_spawn(argc, argv);
-	}
-
 	if (!strcmp(argv[0], "stop")) {
-		if (argc < 2) {
+		// Parse encoder ID with -i option or as direct argument
+		int encoder_id = 0;
+		bool encoder_id_set = false;
+
+		// Check for -i option
+		for (int i = 1; i < argc - 1; i++) {
+			if (!strcmp(argv[i], "-i")) {
+				encoder_id = atoi(argv[i + 1]);
+				encoder_id_set = true;
+				break;
+			}
+		}
+
+		// If no -i option, check if encoder ID is provided as direct argument
+		if (!encoder_id_set && argc >= 2) {
+			encoder_id = atoi(argv[1]);
+			encoder_id_set = true;
+		}
+
+		if (!encoder_id_set) {
 			return print_usage("missing encoder ID");
 		}
 
-		int encoder_id = atoi(argv[1]);
 		return stop_instance(encoder_id);
 	}
 
@@ -319,22 +376,21 @@ resolution and channel swapping.
 
 ### Examples
 Start all available encoders:
-$ quadrature_encoder startall
+$ quadrature_encoder start
 
-Start encoder 0:
-$ quadrature_encoder start 0
+Start encoder 0 specifically:
+$ quadrature_encoder start -i 0
 
 Stop encoder 0:
-$ quadrature_encoder stop 0
+$ quadrature_encoder stop -i 0
 
 Show status:
 $ quadrature_encoder status
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("quadrature_encoder", "driver");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("startall", "Start all available encoders");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start encoder instance");
-	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 15, "Encoder ID", false);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start encoder instance(s)");
+	PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, 15, "Encoder ID (omit to start all)", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("stop", "Stop encoder instance");
 	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 15, "Encoder ID", false);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Show driver status");
@@ -344,39 +400,10 @@ $ quadrature_encoder status
 
 int QuadratureEncoder::task_spawn(int argc, char *argv[])
 {
-	PX4_INFO("Starting all available quadrature encoders");
-
-	// Get number of available encoders from board configuration
-	int num_encoders = board_get_max_encoders();
-
-	if (num_encoders == 0) {
-		PX4_ERR("No quadrature encoders available on this board");
-		return -1;
-	}
-
-	bool any_started = false;
-
-	// Start all available encoders
-	for (int i = 0; i < num_encoders; i++) {
-		if (start_instance(static_cast<uint8_t>(i)) == 0) {
-			any_started = true;
-		}
-	}
-
-	if (!any_started) {
-		PX4_ERR("Failed to start any quadrature encoders");
-		return -1;
-	}
-
-	PX4_INFO("Started %d quadrature encoder(s)", num_encoders);
-	return 0;
-}
-
-QuadratureEncoder *QuadratureEncoder::instantiate(int argc, char *argv[])
-{
 	// Parse encoder ID from arguments
 	int encoder_id = 0;
 	bool error_flag = false;
+	bool encoder_id_set = false;
 
 	int myoptind = 1;
 	int ch;
@@ -385,10 +412,8 @@ QuadratureEncoder *QuadratureEncoder::instantiate(int argc, char *argv[])
 	while ((ch = px4_getopt(argc, argv, "i:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'i':
-			if (px4_get_parameter_value(myoptarg, encoder_id) != 0) {
-				PX4_ERR("encoder ID parsing failed");
-				error_flag = true;
-			}
+			encoder_id = atoi(myoptarg);
+			encoder_id_set = true;
 			break;
 		case '?':
 			error_flag = true;
@@ -401,20 +426,45 @@ QuadratureEncoder *QuadratureEncoder::instantiate(int argc, char *argv[])
 	}
 
 	if (error_flag) {
-		return nullptr;
+		return print_usage("invalid arguments");
+	}
+
+	// If no encoder ID specified, start all available encoders
+	if (!encoder_id_set) {
+		PX4_INFO("Starting all available quadrature encoders");
+
+		// Get number of available encoders from board configuration
+		int num_encoders = board_get_max_encoders();
+
+		if (num_encoders == 0) {
+			PX4_ERR("No quadrature encoders available on this board");
+			return -1;
+		}
+
+		bool any_started = false;
+
+		// Start all available encoders
+		for (int i = 0; i < num_encoders; i++) {
+			if (start_instance(static_cast<uint8_t>(i)) == 0) {
+				any_started = true;
+			}
+		}
+
+		if (!any_started) {
+			PX4_ERR("Failed to start any quadrature encoders");
+			return -1;
+		}
+
+		PX4_INFO("Started %d quadrature encoder(s)", num_encoders);
+		return 0;
 	}
 
 	// Check if encoder ID is valid
 	if (encoder_id < 0 || encoder_id >= board_get_max_encoders()) {
 		PX4_ERR("Invalid encoder ID: %d (available: 0-%d)", encoder_id, board_get_max_encoders() - 1);
-		return nullptr;
+		return -1;
 	}
 
-	// Use the existing start_instance method which handles all the logic
-	if (start_instance(static_cast<uint8_t>(encoder_id)) != 0) {
-		return nullptr;
-	}
-
-	// Return the created encoder instance
-	return get_instance(static_cast<uint8_t>(encoder_id));
+	// Start specific encoder instance
+	return start_instance(static_cast<uint8_t>(encoder_id));
 }

@@ -229,15 +229,20 @@
 #define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
 
 /* Quadrature Encoder Configuration for Front Board */
-// #define BOARD_NUM_QUADRATURE_ENCODERS      2
+#define BOARD_NUM_QUADRATURE_ENCODERS      2
+#define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
 
 /* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
 /* RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases) */
 /* TELEM1 port pins (PD5/PD6) - Quad encoder 2 from motor encoder (A/B phases) */
-// #define QENCODER1_A_GPIO_RAW               /* PC6 */ (GPIO_PORTC|GPIO_PIN6)
-// #define QENCODER1_B_GPIO_RAW               /* PC7 */ (GPIO_PORTC|GPIO_PIN7)
-// #define QENCODER2_A_GPIO_RAW               /* PD5 */ (GPIO_PORTD|GPIO_PIN5)
-// #define QENCODER2_B_GPIO_RAW               /* PD6 */ (GPIO_PORTD|GPIO_PIN6)
+#define QENCODER1_A_GPIO_RAW               /* PC6 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTC|GPIO_PIN6)
+#define QENCODER1_B_GPIO_RAW               /* PC7 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTC|GPIO_PIN7)
+#define QENCODER2_A_GPIO_RAW               /* PD5 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN5)
+#define QENCODER2_B_GPIO_RAW               /* PD6 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN6)
+
+/* Quadrature Encoder Configuration */
+#define QENCODER_DEFAULT_PPR               1024        /* Default pulses per revolution */
+#define QENCODER_DEFAULT_MODE              0           /* 0=Relative, 1=Absolute */
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \

@@ -5,8 +5,8 @@
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <px4_platform_common/encoder_hw.h>
-#include <px4_platform_common/board_encoder_interface.h>
+#include <px4_arch/quadrature_encoder.h>
+#include <px4_arch/board_encoder_interface.h>
 
 // Library includes
 #include <lib/perf/perf_counter.h>
@@ -17,9 +17,6 @@
 
 // Using declarations
 using namespace time_literals;
-
-// Module name
-#define MODULE_NAME "quadrature_encoder"
 
 /**
  * @brief GPIO-based quadrature encoder driver
@@ -61,9 +58,6 @@ public:
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
-
-	/** @see ModuleBase */
-	static QuadratureEncoder *instantiate(int argc, char *argv[]);
 
 	/**
 	 * @brief Custom command handler
@@ -112,7 +106,7 @@ private:
 	// Instance identification
 	uint8_t _encoder_id;
 	uint8_t _platform_encoder_id;
-	encoder_hw_config_t _config;
+	quadrature_encoder_hal_config_t _config;
 	bool _initialized;
 	bool _running;
 

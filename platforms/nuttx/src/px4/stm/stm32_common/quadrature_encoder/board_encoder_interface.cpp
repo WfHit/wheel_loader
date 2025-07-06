@@ -1,14 +1,14 @@
-#include <px4_platform_common/encoder_hw.h>
-#include <px4_platform_common/board_encoder_interface.h>
+#include <px4_arch/quadrature_encoder.h>
+#include <px4_arch/board_encoder_interface.h>
 #include <px4_platform_common/px4_config.h>
 #include "board_config.h"
 
 // Forward declarations for board-specific encoder arrays
-extern const encoder_hw_config_t g_board_encoder_configs[];
+extern const quadrature_encoder_config_t g_board_encoder_configs[];
 extern const char *g_board_encoder_names[];
 
 // Board encoder configuration functions (common implementation)
-const encoder_hw_config_t *board_get_encoder_config(uint8_t encoder_id)
+const quadrature_encoder_hal_config_t *board_get_encoder_config(uint8_t encoder_id)
 {
 	if (encoder_id >= board_get_max_encoders()) {
 		return nullptr;
