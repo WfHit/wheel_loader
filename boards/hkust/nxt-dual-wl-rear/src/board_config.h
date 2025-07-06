@@ -225,13 +225,17 @@
 
 
 /* Quadrature Encoder Configuration for Rear Board */
-// #define BOARD_NUM_QUADRATURE_ENCODERS      1
-// #define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
+#define BOARD_NUM_QUADRATURE_ENCODERS      1
+#define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
 
 /* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
 /* TELEM1 port pins (PD5/PD6) repurposed for quadrature encoder */
-// #define QENCODER_A_GPIO_RAW                /* PD5 */ (GPIO_PORTD|GPIO_PIN5)
-// #define QENCODER_B_GPIO_RAW                /* PD6 */ (GPIO_PORTD|GPIO_PIN6)
+#define QENCODER_A_GPIO                    /* PD5 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN5)
+#define QENCODER_B_GPIO                    /* PD6 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN6)
+
+/* Quadrature Encoder Configuration */
+#define QENCODER_DEFAULT_PPR               1024        /* Default pulses per revolution */
+#define QENCODER_DEFAULT_MODE              0           /* 0=Relative, 1=Absolute */
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \

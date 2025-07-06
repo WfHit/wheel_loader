@@ -1,0 +1,84 @@
+module_name: GPIO Quadrature Encoder Driver
+parameters:
+    - group: Quadrature Encoder
+      definitions:
+          QENC_ENABLE:
+              description:
+                  short: Enable quadrature encoder
+                  long: Enable the GPIO-based quadrature encoder driver
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+          QENC_PPR:
+              description:
+                  short: Pulses per revolution
+                  long: Number of encoder pulses per complete revolution
+              type: int32
+              min: 100
+              max: 10000
+              default: 1024
+              increment: 1
+          QENC_MODE:
+              description:
+                  short: Operating mode
+                  long: Encoder operating mode selection
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+              values:
+                  0: Relative mode
+                  1: Absolute mode
+          QENC_SWAP_CH:
+              description:
+                  short: Swap A/B channels
+                  long: Swap encoder channels A and B for direction correction
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+          QENC_POS_OFF:
+              description:
+                  short: Position offset
+                  long: Angular position offset in radians
+              type: float
+              min: -3.14159
+              max: 3.14159
+              default: 0.0
+              decimal: 5
+              increment: 0.01
+              unit: rad
+          QENC_RATE:
+              description:
+                  short: Update rate
+                  long: Encoder data update frequency
+              type: int32
+              min: 10
+              max: 1000
+              default: 100
+              increment: 1
+              unit: Hz
+          QENC_VEL_FILT:
+              description:
+                  short: Velocity filter
+                  long: Velocity filtering time constant
+              type: float
+              min: 0.01
+              max: 1.0
+              default: 0.1
+              decimal: 3
+              increment: 0.01
+              unit: s
+          QENC_DEBUG:
+              description:
+                  short: Debug level
+                  long: Debug output level for encoder driver
+              type: int32
+              min: 0
+              max: 2
+              default: 0
+              values:
+                  0: Disabled
+                  1: Basic info
+                  2: Detailed debug

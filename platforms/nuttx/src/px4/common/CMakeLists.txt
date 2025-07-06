@@ -37,9 +37,11 @@ if(NOT PX4_BOARD MATCHES "io-v2")
 	set(KERNEL_SRCS
 		board_crashdump.c
 		board_dma_alloc.c
+		board_encoder_interface.cpp
 		board_fat_dma_alloc.c
 		console_buffer.cpp
 		cpuload.cpp
+		encoder_hw.cpp
 		gpio.c
 		print_load.cpp
 		tasks.cpp

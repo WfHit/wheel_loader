@@ -230,7 +230,6 @@
 
 /* Quadrature Encoder Configuration for Front Board */
 // #define BOARD_NUM_QUADRATURE_ENCODERS      2
-// #define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
 
 /* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
 /* RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases) */

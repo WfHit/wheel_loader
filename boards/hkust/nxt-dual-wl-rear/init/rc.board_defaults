@@ -48,6 +48,6 @@ param set-default WL_REAR_WHEEL_KP 0.5
 param set-default WL_REAR_WHEEL_KI 0.1
 param set-default WL_REAR_WHEEL_KD 0.05
 
-# Quadrature encoder auto-start configuration
-# Enable auto-start for encoder instance 0 (rear wheel)
-param set-default QE_AUTO_START 0  # Bit 0 set (instance 0)
+# Quadrature encoder configuration
+param set-default QENC_ENABLE 1    # Enable quadrature encoder
+param set-default QENC_PPR 1024     # Pulses per revolution
