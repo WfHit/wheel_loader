@@ -16,7 +16,7 @@
 ### Build Files
 - `CMakeLists.txt` - Standard CMake naming
 - `Kconfig` - Module configuration for menuconfig
-- **DO NOT** create `module.yaml`
+- **DO NOT** create `xxx_param.c`
 
 ## uORB Message Guidelines
 

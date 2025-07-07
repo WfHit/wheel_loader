@@ -5,8 +5,8 @@
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <px4_arch/quadrature_encoder.h>
-#include <px4_arch/board_encoder_interface.h>
+#include <px4_arch/quad_encoder.h>
+#include <px4_arch/board_encoder.h>
 
 // Library includes
 #include <lib/perf/perf_counter.h>
@@ -15,8 +15,17 @@
 #include <uORB/Publication.hpp>
 #include <uORB/topics/sensor_quad_encoder.h>
 
+// Standard includes
+#include <stdint.h>
+
 // Using declarations
 using namespace time_literals;
+
+// Encoder operating modes (moved to app level)
+enum encoder_mode_t {
+	ENCODER_MODE_RELATIVE = 0,      // Relative positioning mode
+	ENCODER_MODE_ABSOLUTE = 1       // Absolute positioning mode
+};
 
 /**
  * @brief GPIO-based quadrature encoder driver
@@ -99,31 +108,43 @@ protected:
 	void Run() override;
 
 private:
+	// Private methods
+	void publish_encoder_data();
+	void update_params();
+	void process_raw_encoder_data(const encoder_raw_data_t &raw_data);
+
+	// Parameter helper methods
+	void init_instance_parameters();
+	int32_t get_param_int(param_t param_handle, int32_t default_value = 0);
+	float get_param_float(param_t param_handle, float default_value = 0.0f);
+
 	// Static instance management
 	static QuadratureEncoder *_instances[ENCODER_MAX_INSTANCES];
 	static uint8_t _instance_count;
 
 	// Instance identification
 	uint8_t _encoder_id;
-	uint8_t _platform_encoder_id;
-	quadrature_encoder_hal_config_t _config;
 	bool _initialized;
 	bool _running;
 
+	// Configuration
+	encoder_mode_t _mode;
+
+	// Instance-specific parameters (constructed dynamically)
+	param_t _param_pulses_per_revolution_handle;
+	param_t _param_mode_handle;
+	param_t _param_vel_filter_handle;
+	param_t _param_rate_handle;
+
 	// Current state (updated from processed data)
 	int64_t _position_raw;
-	int64_t _position_offset;
 	float _position_rad;
-	float _position_deg;
 	float _velocity_rad_s;
-	float _velocity_rpm;
 	bool _direction_forward;
-	bool _index_detected_this_revolution;
 
 	// Counters and timing
 	uint64_t _pulse_count;
-	uint32_t _direction_changes;
-	uint32_t _error_count;
+	uint32_t _reset_count;
 	uint64_t _last_update_time;
 
 	// uORB publishing
@@ -133,20 +154,4 @@ private:
 	perf_counter_t _cycle_perf;
 	perf_counter_t _interval_perf;
 	perf_counter_t _error_perf;
-
-	// Parameters
-	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::QENC_ENABLE>) _param_enable,
-		(ParamInt<px4::params::QENC_PPR>) _param_pulses_per_revolution,
-		(ParamInt<px4::params::QENC_MODE>) _param_mode,
-		(ParamInt<px4::params::QENC_SWAP_CH>) _param_swap_channels,
-		(ParamFloat<px4::params::QENC_POS_OFF>) _param_position_offset,
-		(ParamFloat<px4::params::QENC_VEL_FILT>) _param_vel_filter,
-		(ParamInt<px4::params::QENC_RATE>) _param_rate,
-		(ParamInt<px4::params::QENC_DEBUG>) _param_debug
-	)
-
-	// Methods
-	void publish_encoder_data();
-	void update_params();
 };

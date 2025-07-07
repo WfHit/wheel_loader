@@ -1,28 +1,20 @@
 module_name: GPIO Quadrature Encoder Driver
 parameters:
-    - group: Quadrature Encoder
+    - group: Quadrature Encoder 0
       definitions:
-          QENC_ENABLE:
+          QENC0_PPR:
               description:
-                  short: Enable quadrature encoder
-                  long: Enable the GPIO-based quadrature encoder driver
-              type: int32
-              min: 0
-              max: 1
-              default: 0
-          QENC_PPR:
-              description:
-                  short: Pulses per revolution
-                  long: Number of encoder pulses per complete revolution
+                  short: Encoder 0 pulses per revolution
+                  long: Number of encoder pulses per complete revolution for encoder 0
               type: int32
               min: 100
               max: 10000
               default: 1024
               increment: 1
-          QENC_MODE:
+          QENC0_MODE:
               description:
-                  short: Operating mode
-                  long: Encoder operating mode selection
+                  short: Encoder 0 operating mode
+                  long: Encoder 0 operating mode selection
               type: int32
               min: 0
               max: 1
@@ -30,55 +22,65 @@ parameters:
               values:
                   0: Relative mode
                   1: Absolute mode
-          QENC_SWAP_CH:
+          QENC0_RATE:
               description:
-                  short: Swap A/B channels
-                  long: Swap encoder channels A and B for direction correction
-              type: int32
-              min: 0
-              max: 1
-              default: 0
-          QENC_POS_OFF:
-              description:
-                  short: Position offset
-                  long: Angular position offset in radians
-              type: float
-              min: -3.14159
-              max: 3.14159
-              default: 0.0
-              decimal: 5
-              increment: 0.01
-              unit: rad
-          QENC_RATE:
-              description:
-                  short: Update rate
-                  long: Encoder data update frequency
+                  short: Encoder 0 update rate
+                  long: Encoder 0 data update frequency
               type: int32
               min: 10
               max: 1000
-              default: 100
+              default: 50
               increment: 1
               unit: Hz
-          QENC_VEL_FILT:
+          QENC0_VEL_FILT:
               description:
-                  short: Velocity filter
-                  long: Velocity filtering time constant
+                  short: Encoder 0 velocity filter
+                  long: Encoder 0 velocity filtering coefficient (low-pass)
               type: float
               min: 0.01
               max: 1.0
               default: 0.1
               decimal: 3
               increment: 0.01
-              unit: s
-          QENC_DEBUG:
+    - group: Quadrature Encoder 1
+      definitions:
+          QENC1_PPR:
               description:
-                  short: Debug level
-                  long: Debug output level for encoder driver
+                  short: Encoder 1 pulses per revolution
+                  long: Number of encoder pulses per complete revolution for encoder 1
+              type: int32
+              min: 100
+              max: 10000
+              default: 1024
+              increment: 1
+          QENC1_MODE:
+              description:
+                  short: Encoder 1 operating mode
+                  long: Encoder 1 operating mode selection
               type: int32
               min: 0
-              max: 2
+              max: 1
               default: 0
               values:
-                  0: Disabled
-                  1: Basic info
-                  2: Detailed debug
+                  0: Relative mode
+                  1: Absolute mode
+          QENC1_RATE:
+              description:
+                  short: Encoder 1 update rate
+                  long: Encoder 1 data update frequency
+              type: int32
+              min: 10
+              max: 1000
+              default: 50
+              increment: 1
+              unit: Hz
+          QENC1_VEL_FILT:
+              description:
+                  short: Encoder 1 velocity filter
+                  long: Encoder 1 velocity filtering coefficient (low-pass)
+              type: float
+              min: 0.01
+              max: 1.0
+              default: 0.1
+              decimal: 3
+              increment: 0.01

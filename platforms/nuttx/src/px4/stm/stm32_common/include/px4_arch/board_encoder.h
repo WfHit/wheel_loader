@@ -1,6 +1,6 @@
 #pragma once
 
-#include <px4_arch/quadrature_encoder_hal.h>
+#include <px4_arch/quad_encoder.h>
 
 /**
  * @brief Board encoder interface
@@ -14,9 +14,9 @@
  * @brief Board-specific encoder configuration data
  *
  * These arrays must be provided by each board that supports encoders.
- * The arrays are sized using BOARD_NUM_QUADRATURE_ENCODERS from board_config.h
+ * The arrays are sized using BOARD_NUM_QUAD_ENCODERS from board_config.h
  */
-__EXPORT extern const quadrature_encoder_hal_config_t g_board_encoder_configs[];
+__EXPORT extern const quad_encoder_config_t g_board_encoder_configs[];
 __EXPORT extern const char *g_board_encoder_names[];
 
 /**
@@ -32,7 +32,7 @@ __EXPORT extern const char *g_board_encoder_names[];
  * @param encoder_id Encoder instance ID
  * @return Pointer to encoder configuration, or NULL if invalid
  */
-const quadrature_encoder_hal_config_t *board_get_encoder_config(uint8_t encoder_id);
+const quad_encoder_config_t *board_get_encoder_config(uint8_t encoder_id);
 
 /**
  * @brief Get maximum number of encoders supported by board
