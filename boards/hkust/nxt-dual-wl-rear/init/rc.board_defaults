@@ -49,5 +49,5 @@ param set-default WL_REAR_WHEEL_KI 0.1
 param set-default WL_REAR_WHEEL_KD 0.05
 
 # Quadrature encoder configuration
-param set-default QENC_ENABLE 1    # Enable quadrature encoder
-param set-default QENC_PPR 1024     # Pulses per revolution
+param set-default QENC0_EN 1    # Enable quadrature encoder
+param set-default QENC0_PPR 1024     # Pulses per revolution

@@ -23,8 +23,5 @@ hbridge start
 echo "Initializing rear wheel motor control"
 
 # Start quadrature encoder for rear wheel motor
-if param compare QENC_ENABLE 1
-then
-	echo "Starting quadrature encoder for rear wheel"
-	quadrature_encoder start 0
-fi
+echo "Starting quadrature encoder for rear wheel"
+quadrature_encoder start

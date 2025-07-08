@@ -32,12 +32,12 @@
 ############################################################################
 
 # STM32 Quadrature Encoder library
-add_library(arch_quadrature_encoder
-	quadrature_encoder.cpp
-	board_encoder_interface.cpp
+add_library(arch_quad_encoder
+	quad_encoder.cpp
+	board_encoder.cpp
 )
 
-target_link_libraries(arch_quadrature_encoder
+target_link_libraries(arch_quad_encoder
 	PRIVATE
 		arch_board_hw_info
 		nuttx_arch # for chip access
@@ -45,7 +45,7 @@ target_link_libraries(arch_quadrature_encoder
 		px4_work_queue
 )
 
-target_include_directories(arch_quadrature_encoder
+target_include_directories(arch_quad_encoder
 	PRIVATE
 		${CMAKE_CURRENT_SOURCE_DIR}/../include
 )

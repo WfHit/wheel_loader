@@ -32,7 +32,7 @@
 ############################################################################
 
 add_subdirectory(../stm32_common/io_pins io_pins)
-add_subdirectory(../stm32_common/quadrature_encoder quadrature_encoder)
+add_subdirectory(../stm32_common/quad_encoder quad_encoder)
 add_subdirectory(../stm32_common/spi spi)
 add_subdirectory(../stm32_common/hrt hrt)
 add_subdirectory(../stm32_common/board_critmon board_critmon)

@@ -8,6 +8,7 @@ px4_add_module(
 	DEPENDS
 		px4_work_queue
 		px4_platform
+		arch_quad_encoder
 	MODULE_CONFIG
 		module.yaml
 )

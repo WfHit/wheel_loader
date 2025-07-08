@@ -18,7 +18,7 @@ const quad_encoder_config_t *board_get_encoder_config(uint8_t encoder_id)
 
 uint8_t board_get_max_encoders(void)
 {
-	return BOARD_NUM_QUAD_ENCODERS;
+	return BOARD_NUM_QUADRATURE_ENCODERS;
 }
 
 const char *board_get_encoder_name(uint8_t encoder_id)

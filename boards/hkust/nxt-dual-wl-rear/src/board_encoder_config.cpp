@@ -1,6 +1,7 @@
 #include <px4_arch/quad_encoder.h>
 #include <px4_arch/board_encoder.h>
 #include <board_config.h>
+#include <px4_platform_common/log.h>
 
 // Board encoder configurations
 const quad_encoder_config_t g_board_encoder_configs[BOARD_NUM_QUADRATURE_ENCODERS] = {

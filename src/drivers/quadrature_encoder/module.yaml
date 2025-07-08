@@ -1,7 +1,30 @@
 module_name: GPIO Quadrature Encoder Driver
 parameters:
+    - group: Quadrature Encoder General
+      definitions:
+          QENC_RATE:
+              description:
+                  short: Global encoder update rate
+                  long: Global data update frequency for all encoders
+              type: int32
+              min: 10
+              max: 1000
+              default: 50
+              increment: 1
+              unit: Hz
     - group: Quadrature Encoder 0
       definitions:
+          QENC0_EN:
+              description:
+                  short: Enable encoder 0
+                  long: Enable or disable encoder channel 0
+              type: int32
+              min: 0
+              max: 1
+              default: 1
+              values:
+                  0: Disabled
+                  1: Enabled
           QENC0_PPR:
               description:
                   short: Encoder 0 pulses per revolution
@@ -22,16 +45,6 @@ parameters:
               values:
                   0: Relative mode
                   1: Absolute mode
-          QENC0_RATE:
-              description:
-                  short: Encoder 0 update rate
-                  long: Encoder 0 data update frequency
-              type: int32
-              min: 10
-              max: 1000
-              default: 50
-              increment: 1
-              unit: Hz
           QENC0_VEL_FILT:
               description:
                   short: Encoder 0 velocity filter
@@ -44,6 +57,17 @@ parameters:
               increment: 0.01
     - group: Quadrature Encoder 1
       definitions:
+          QENC1_EN:
+              description:
+                  short: Enable encoder 1
+                  long: Enable or disable encoder channel 1
+              type: int32
+              min: 0
+              max: 1
+              default: 1
+              values:
+                  0: Disabled
+                  1: Enabled
           QENC1_PPR:
               description:
                   short: Encoder 1 pulses per revolution
@@ -64,16 +88,6 @@ parameters:
               values:
                   0: Relative mode
                   1: Absolute mode
-          QENC1_RATE:
-              description:
-                  short: Encoder 1 update rate
-                  long: Encoder 1 data update frequency
-              type: int32
-              min: 10
-              max: 1000
-              default: 50
-              increment: 1
-              unit: Hz
           QENC1_VEL_FILT:
               description:
                   short: Encoder 1 velocity filter
