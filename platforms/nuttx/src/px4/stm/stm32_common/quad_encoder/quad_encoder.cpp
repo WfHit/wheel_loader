@@ -114,7 +114,6 @@ static int (*g_isr_wrappers[ENCODER_MAX_INSTANCES])(int, void *, void *) = {
 static void process_encoder_interrupt(uint8_t encoder_id)
 {
 	if (encoder_id >= ENCODER_MAX_INSTANCES) {
-		syslog(LOG_ERR, "process_encoder_interrupt: Invalid encoder_id %d\n", encoder_id);
 		return;
 	}
 
@@ -215,10 +214,7 @@ static int encoder_isr_wrapper_3(int irq, void *context, void *arg)
  */
 int quad_encoder_init(void)
 {
-	syslog(LOG_INFO, "quad_encoder_init: Starting initialization...\n");
-
 	if (g_quad_encoder_initialized) {
-		syslog(LOG_INFO, "quad_encoder_init: Already initialized\n");
 		return 0; // Already initialized
 	}
 
@@ -230,7 +226,6 @@ int quad_encoder_init(void)
 		// Get board configuration for this encoder
 		const quad_encoder_config_t *config = board_get_encoder_config(i);
 		if (config != nullptr) {
-			syslog(LOG_INFO, "quad_encoder_init: Configuring encoder %d\n", i);
 			encoder->config = *config;
 			encoder->gpio_a = config->gpio_a;
 			encoder->gpio_b = config->gpio_b;
@@ -248,14 +243,10 @@ int quad_encoder_init(void)
 			encoder->raw_data.direction_forward = true;
 			encoder->raw_data.counter_reset = false;
 			encoder->raw_data.reset_direction_forward = true;
-
-			syslog(LOG_INFO, "quad_encoder_init: Encoder %d configured with GPIO_A=0x%08lx, GPIO_B=0x%08lx, PPR=%d\n",
-				i, (unsigned long)config->gpio_a, (unsigned long)config->gpio_b, config->pulses_per_revolution);
 		}
 	}
 
 	g_quad_encoder_initialized = true;
-	syslog(LOG_INFO, "quad_encoder_init: Initialization completed successfully\n");
 	return 0;
 }
 
@@ -264,61 +255,49 @@ int quad_encoder_init(void)
  */
 int quad_encoder_start(uint8_t encoder_id)
 {
-	syslog(LOG_INFO, "quad_encoder_start: Starting encoder %d\n", encoder_id);
-
 	if (encoder_id >= ENCODER_MAX_INSTANCES) {
-		syslog(LOG_ERR, "quad_encoder_start: Invalid encoder_id %d (max: %d)\n", encoder_id, ENCODER_MAX_INSTANCES);
 		return -EINVAL;
 	}
 
 	if (!g_quad_encoder_initialized) {
-		syslog(LOG_ERR, "quad_encoder_start: System not initialized\n");
 		return -ENOTCONN;
 	}
 
 	encoder_state_t *encoder = &g_encoders[encoder_id];
 	if (!encoder->is_initialized) {
-		syslog(LOG_ERR, "quad_encoder_start: Encoder %d not initialized\n", encoder_id);
 		return -ENOTCONN;
 	}
 
 	if (encoder->is_active) {
-		syslog(LOG_WARNING, "quad_encoder_start: Encoder %d already running\n", encoder_id);
 		return 0; // Already active
 	}
 
 	// Configure GPIO pins as inputs with pull-up
-	syslog(LOG_INFO, "quad_encoder_start: Configuring GPIO pins for encoder %d\n", encoder_id);
 	stm32_configgpio(encoder->gpio_a | GPIO_PULLUP);
 	stm32_configgpio(encoder->gpio_b | GPIO_PULLUP);
 
 	// Read initial pin states
 	bool pin_a = stm32_gpioread(encoder->gpio_a);
 	bool pin_b = stm32_gpioread(encoder->gpio_b);
-	syslog(LOG_INFO, "quad_encoder_start: Initial pin states - A=%d, B=%d\n", pin_a, pin_b);
 
 	encoder->last_ab_state = (pin_b << 1) | pin_a;
 
 	// Set up interrupts on both edges for both pins
-	syslog(LOG_INFO, "quad_encoder_start: Setting up interrupts for encoder %d\n", encoder_id);
 	int ret = stm32_gpiosetevent(encoder->gpio_a, true, true, true,
 	                             g_isr_wrappers[encoder_id], nullptr);
 	if (ret < 0) {
-		syslog(LOG_ERR, "quad_encoder_start: Failed to set interrupt for GPIO_A (ret=%d)\n", ret);
 		return ret;
 	}
 
 	ret = stm32_gpiosetevent(encoder->gpio_b, true, true, true,
 	                        g_isr_wrappers[encoder_id], nullptr);
 	if (ret < 0) {
-		syslog(LOG_ERR, "quad_encoder_start: Failed to set interrupt for GPIO_B (ret=%d)\n", ret);
 		// Clean up A pin interrupt
 		stm32_gpiosetevent(encoder->gpio_a, false, false, false, nullptr, nullptr);
 		return ret;
 	}
 
 	encoder->is_active = true;
-	syslog(LOG_INFO, "quad_encoder_start: Encoder %d started successfully\n", encoder_id);
 	return 0;
 }
 
@@ -327,16 +306,12 @@ int quad_encoder_start(uint8_t encoder_id)
  */
 int quad_encoder_stop(uint8_t encoder_id)
 {
-	syslog(LOG_INFO, "quad_encoder_stop: Stopping encoder %d\n", encoder_id);
-
 	if (encoder_id >= ENCODER_MAX_INSTANCES) {
-		syslog(LOG_ERR, "quad_encoder_stop: Invalid encoder_id %d\n", encoder_id);
 		return -EINVAL;
 	}
 
 	encoder_state_t *encoder = &g_encoders[encoder_id];
 	if (!encoder->is_active) {
-		syslog(LOG_INFO, "quad_encoder_stop: Encoder %d already stopped\n", encoder_id);
 		return 0; // Already stopped
 	}
 
@@ -345,7 +320,6 @@ int quad_encoder_stop(uint8_t encoder_id)
 	stm32_gpiosetevent(encoder->gpio_b, false, false, false, nullptr, nullptr);
 
 	encoder->is_active = false;
-	syslog(LOG_INFO, "quad_encoder_stop: Encoder %d stopped successfully\n", encoder_id);
 	return 0;
 }
 
@@ -355,7 +329,6 @@ int quad_encoder_stop(uint8_t encoder_id)
 bool quad_encoder_get_raw_data(uint8_t encoder_id, encoder_raw_data_t *raw_data)
 {
 	if (encoder_id >= ENCODER_MAX_INSTANCES || raw_data == nullptr) {
-		syslog(LOG_ERR, "quad_encoder_get_raw_data: Invalid parameters (encoder_id=%d, raw_data=%p)\n", encoder_id, raw_data);
 		return false;
 	}
 

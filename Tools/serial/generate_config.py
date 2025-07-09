@@ -169,12 +169,12 @@ serial_ports = {
     "SRV1": {
         "label": "SERVO 1",
         "index": 601,
-        "default_baudrate": 1000000,
+        "default_baudrate": 115200,
         },
     "SRV2": {
         "label": "SERVO 2",
         "index": 602,
-        "default_baudrate": 1000000,
+        "default_baudrate": 115200,
         },
 
     }

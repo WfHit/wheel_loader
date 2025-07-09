@@ -48,16 +48,11 @@ QuadratureEncoder::~QuadratureEncoder()
 
 bool QuadratureEncoder::init()
 {
-	PX4_INFO("QuadratureEncoder::init() starting...");
-
 	// Load initial parameters
 	parameters_update();
-	PX4_INFO("Parameters updated");
 
 	// Get number of available encoders from board configuration
-	PX4_INFO("Calling board_get_max_encoders()...");
 	_num_encoders = board_get_max_encoders();
-	PX4_INFO("Board reports %d available encoders", _num_encoders);
 
 	if (_num_encoders == 0) {
 		PX4_ERR("No quadrature encoders available on this board");
@@ -72,10 +67,8 @@ bool QuadratureEncoder::init()
 	// Configure each available encoder
 	bool any_configured = false;
 	for (int i = 0; i < _num_encoders; i++) {
-		PX4_INFO("Attempting to configure encoder %d", i);
 		if (configure_encoder(i)) {
 			any_configured = true;
-			PX4_INFO("Successfully configured encoder %d", i);
 		} else {
 			PX4_WARN("Failed to configure encoder %d", i);
 		}
@@ -86,11 +79,8 @@ bool QuadratureEncoder::init()
 		return false;
 	}
 
-	PX4_INFO("Successfully configured %d encoder(s)", any_configured ? 1 : 0);
-
 	// Start periodic updates
 	int32_t rate = _param_rate.get();
-	PX4_INFO("Setting update rate to %ld Hz", (long)rate);
 	if (rate > 0) {
 		ScheduleOnInterval(1000000 / (uint32_t)rate, 1000);
 	} else {
@@ -98,19 +88,15 @@ bool QuadratureEncoder::init()
 	}
 
 	_is_running = true;
-	PX4_INFO("Module _is_running set to true");
 
 	PX4_INFO("QuadratureEncoder initialized with %d channels", _num_encoders);
-	PX4_INFO("QuadratureEncoder::init() completed successfully");
 	return true;
 }
 
 bool QuadratureEncoder::configure_encoder(int encoder_id)
 {
-	PX4_INFO("configure_encoder: Starting configuration for encoder %d", encoder_id);
-
 	if (encoder_id >= sensor_quad_encoder_s::MAX_ENCODERS) {
-		PX4_ERR("configure_encoder: Invalid encoder_id %d (max: %d)", encoder_id, sensor_quad_encoder_s::MAX_ENCODERS);
+		PX4_ERR("Invalid encoder_id %d (max: %d)", encoder_id, sensor_quad_encoder_s::MAX_ENCODERS);
 		return false;
 	}
 
@@ -118,13 +104,10 @@ bool QuadratureEncoder::configure_encoder(int encoder_id)
 
 	// Initialize parameters for this encoder
 	init_encoder_parameters(encoder_id);
-	PX4_INFO("configure_encoder: Parameters initialized for encoder %d", encoder_id);
 
 	// Check if encoder is enabled
 	int enabled = get_param_int(enc.param_enabled, 1);
-	PX4_INFO("configure_encoder: Encoder %d enabled parameter = %d", encoder_id, enabled);
 	if (enabled == 0) {
-		PX4_INFO("Encoder %d disabled by parameter", encoder_id);
 		return false;
 	}
 
@@ -141,9 +124,7 @@ bool QuadratureEncoder::configure_encoder(int encoder_id)
 	enc.last_update_time = 0;
 
 	// Start the encoder hardware
-	PX4_INFO("configure_encoder: Starting hardware for encoder %d", encoder_id);
 	int ret = quad_encoder_start(encoder_id);
-	PX4_INFO("configure_encoder: quad_encoder_start(%d) returned %d", encoder_id, ret);
 	if (ret != 0) {
 		PX4_ERR("Failed to start encoder %d hardware (error: %d)", encoder_id, ret);
 		return false;
@@ -153,7 +134,6 @@ bool QuadratureEncoder::configure_encoder(int encoder_id)
 	enc.enabled = true;
 
 	PX4_INFO("Configured encoder %d (%s)", encoder_id, board_get_encoder_name(encoder_id));
-	PX4_INFO("configure_encoder: Successfully completed for encoder %d", encoder_id);
 	return true;
 }
 
@@ -328,11 +308,6 @@ void QuadratureEncoder::parameters_update()
 			bool enabled = get_param_int(_encoders[i].param_enabled, 1) != 0;
 			if (enabled != _encoders[i].enabled) {
 				_encoders[i].enabled = enabled;
-				if (enabled) {
-					PX4_INFO("Encoder %d enabled", i);
-				} else {
-					PX4_INFO("Encoder %d disabled", i);
-				}
 			}
 
 			// Update mode
@@ -425,8 +400,6 @@ $ quadrature_encoder stop
 
 int QuadratureEncoder::task_spawn(int argc, char *argv[])
 {
-	PX4_INFO("QuadratureEncoder::task_spawn: Starting...");
-
 	QuadratureEncoder *instance = new QuadratureEncoder();
 
 	if (!instance) {
@@ -434,20 +407,14 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
 		return -1;
 	}
 
-	PX4_INFO("QuadratureEncoder::task_spawn: Instance created, storing object...");
 	_object.store(instance);
 	_task_id = task_id_is_work_queue;
-	PX4_INFO("QuadratureEncoder::task_spawn: _task_id set to %d (task_id_is_work_queue)", _task_id);
 
-	PX4_INFO("QuadratureEncoder::task_spawn: Calling init()...");
 	if (instance->init()) {
-		PX4_INFO("QuadratureEncoder::task_spawn: init() successful, scheduling now...");
 		instance->ScheduleNow();
-		PX4_INFO("QuadratureEncoder::task_spawn: Successfully spawned and scheduled");
 		return 0;
 	}
 
-	PX4_ERR("QuadratureEncoder::task_spawn: init() failed, cleaning up...");
 	delete instance;
 	_object.store(nullptr);
 	_task_id = -1;
