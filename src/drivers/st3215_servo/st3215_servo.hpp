@@ -80,17 +80,24 @@ public:
 	void run_diagnostics();
 	void test_raw_communication();
 
+	// Add SMS_STS style utility functions
+	bool wheel_mode(uint8_t servo_id);
+	bool write_speed(uint8_t servo_id, float speed_rad_s, uint8_t acc = 0);
+	bool unlock_eprom(uint8_t servo_id);
+	bool lock_eprom(uint8_t servo_id);
+	int read_moving(uint8_t servo_id);
+	int read_mode(uint8_t servo_id);
+
 private:
 	void Run() override;
 
-	// Serial communication using device::SerialPort like UWB SR150
+	// Serial communication (simplified like test_serial)
 	bool configure_port();
 	bool send_packet(const uint8_t *data, uint8_t length);
-	int collect_packet(uint32_t timeout_ms = 10);
-	bool parse_packet();
+	bool receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t timeout_ms);
 	uint8_t calculate_checksum(const uint8_t *data, uint8_t length);
 
-	// Basic servo operations
+	// Servo operations (simplified)
 	bool ping_servo(uint8_t servo_id);
 	bool write_position(uint8_t servo_id, float position_rad, float speed_rad_s);
 	bool read_status(uint8_t servo_id);
@@ -103,36 +110,12 @@ private:
 	void process_commands();
 	void publish_feedback();
 
-	// Serial port using file descriptor (like UWB SR150)
+	// Add test methods (like test_serial)
+	void test_communication_patterns();
+
+	// Serial port (simplified like test_serial)
 	int _uart{-1};
 	char _port_name[32];
-	fd_set _uart_set;
-	struct timeval _uart_timeout{};
-
-	// Packet parsing state machine (similar to UWB SR150)
-	enum class ParseState {
-		WAIT_HEADER1,
-		WAIT_HEADER2,
-		WAIT_ID,
-		WAIT_LENGTH,
-		WAIT_ERROR,
-		WAIT_DATA,
-		WAIT_CHECKSUM
-	};
-
-	ParseState _parse_state{ParseState::WAIT_HEADER1};
-	uint8_t _rx_buffer[256];           // Circular buffer for incoming data
-	uint8_t _rx_packet[256];           // Complete packet buffer
-	uint16_t _rx_buffer_head{0};       // Head pointer for circular buffer
-	uint16_t _rx_buffer_tail{0};       // Tail pointer for circular buffer
-	uint8_t _rx_packet_length{0};      // Length of received packet
-	uint8_t _expected_data_length{0};  // Expected data length in current packet
-	uint8_t _rx_data_count{0};         // Current data byte count
-
-	// Command response handling
-	bool _waiting_for_response{false};
-	uint8_t _expected_response_id{0};
-	uint8_t _expected_response_cmd{0};
 
 	// uORB topics
 	uORB::Subscription _servo_command_sub{ORB_ID(robotic_servo_command)};
@@ -152,6 +135,7 @@ private:
 	bool _servo_enabled{false};        // Torque enable state
 	bool _connection_ok{false};        // Communication status
 	hrt_abstime _last_update_time{0};  // Last successful update time
+	int _consecutive_errors{0};        // Count of consecutive communication errors
 
 	// ST3215 Protocol constants
 	static constexpr uint8_t ST3215_HEADER = 0xFF;
@@ -162,25 +146,49 @@ private:
 	static constexpr uint8_t ST3215_CMD_READ = 0x02;
 	static constexpr uint8_t ST3215_CMD_WRITE = 0x03;
 
-	// Essential register addresses
-	static constexpr uint8_t ST3215_REG_ID = 0x03;
-	static constexpr uint8_t ST3215_REG_TORQUE_ENABLE = 0x18;
-	static constexpr uint8_t ST3215_REG_GOAL_POSITION_L = 0x1E;
-	static constexpr uint8_t ST3215_REG_GOAL_POSITION_H = 0x1F;
-	static constexpr uint8_t ST3215_REG_MOVING_SPEED_L = 0x20;
-	static constexpr uint8_t ST3215_REG_MOVING_SPEED_H = 0x21;
-	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_L = 0x24;
-	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_H = 0x25;
-	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_L = 0x26;
-	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_H = 0x27;
-	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_L = 0x28;
-	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_H = 0x29;
-	static constexpr uint8_t ST3215_REG_PRESENT_VOLTAGE = 0x2A;
-	static constexpr uint8_t ST3215_REG_PRESENT_TEMP = 0x2B;
+	// Register addresses (based on SMS_STS reference)
+	// EPROM (read only)
+	static constexpr uint8_t ST3215_REG_MODEL_L = 3;
+	static constexpr uint8_t ST3215_REG_MODEL_H = 4;
 
-	// Timing constants
+	// EPROM (read & write)
+	static constexpr uint8_t ST3215_REG_ID = 5;
+	static constexpr uint8_t ST3215_REG_BAUD_RATE = 6;
+	static constexpr uint8_t ST3215_REG_MIN_ANGLE_LIMIT_L = 9;
+	static constexpr uint8_t ST3215_REG_MIN_ANGLE_LIMIT_H = 10;
+	static constexpr uint8_t ST3215_REG_MAX_ANGLE_LIMIT_L = 11;
+	static constexpr uint8_t ST3215_REG_MAX_ANGLE_LIMIT_H = 12;
+	static constexpr uint8_t ST3215_REG_MODE = 33;
+
+	// SRAM (read & write)
+	static constexpr uint8_t ST3215_REG_TORQUE_ENABLE = 40;
+	static constexpr uint8_t ST3215_REG_ACC = 41;
+	static constexpr uint8_t ST3215_REG_GOAL_POSITION_L = 42;
+	static constexpr uint8_t ST3215_REG_GOAL_POSITION_H = 43;
+	static constexpr uint8_t ST3215_REG_GOAL_TIME_L = 44;
+	static constexpr uint8_t ST3215_REG_GOAL_TIME_H = 45;
+	static constexpr uint8_t ST3215_REG_GOAL_SPEED_L = 46;
+	static constexpr uint8_t ST3215_REG_GOAL_SPEED_H = 47;
+	static constexpr uint8_t ST3215_REG_TORQUE_LIMIT_L = 48;
+	static constexpr uint8_t ST3215_REG_TORQUE_LIMIT_H = 49;
+	static constexpr uint8_t ST3215_REG_LOCK = 55;
+
+	// SRAM (read only)
+	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_L = 56;
+	static constexpr uint8_t ST3215_REG_PRESENT_POSITION_H = 57;
+	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_L = 58;
+	static constexpr uint8_t ST3215_REG_PRESENT_SPEED_H = 59;
+	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_L = 60;
+	static constexpr uint8_t ST3215_REG_PRESENT_LOAD_H = 61;
+	static constexpr uint8_t ST3215_REG_PRESENT_VOLTAGE = 62;
+	static constexpr uint8_t ST3215_REG_PRESENT_TEMP = 63;
+	static constexpr uint8_t ST3215_REG_MOVING = 66;
+	static constexpr uint8_t ST3215_REG_PRESENT_CURRENT_L = 69;
+	static constexpr uint8_t ST3215_REG_PRESENT_CURRENT_H = 70;
+
+	// Timing constants (updated for new design)
 	static constexpr unsigned SCHEDULE_INTERVAL = 20_ms;
-	static constexpr uint32_t PACKET_TIMEOUT_MS = 50;
+	static constexpr uint32_t PACKET_TIMEOUT_MS = 10;  // Changed to 10ms as requested
 
 	// Module parameters
 	DEFINE_PARAMETERS(
