@@ -51,3 +51,6 @@ param set-default WL_REAR_WHEEL_KD 0.05
 # Quadrature encoder configuration
 param set-default QENC0_EN 1    # Enable quadrature encoder
 param set-default QENC0_PPR 1024     # Pulses per revolution
+
+# Test Serial Driver Configuration
+param set-default TEST_CFG_DEV 701  # Use TST1 port (index 701)

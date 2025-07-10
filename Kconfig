@@ -194,6 +194,9 @@ menu "Serial ports"
 
     config BOARD_SERIAL_UWB4
         string "UWB4 tty port"
+
+    config BOARD_SERIAL_TST1
+        string "TST1 tty port"
 endmenu
 
 menu "File paths"

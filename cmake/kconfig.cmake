@@ -347,6 +347,9 @@ if(EXISTS ${BOARD_DEFCONFIG})
 	if(SERIAL_SRV2)
 		list(APPEND board_serial_ports SRV2:${SERIAL_SRV2})
 	endif()
+	if(SERIAL_TST1)
+		list(APPEND board_serial_ports TST1:${SERIAL_TST1})
+	endif()
 
 	# ROMFS
 	if(ROMFSROOT)

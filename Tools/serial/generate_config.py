@@ -177,6 +177,13 @@ serial_ports = {
         "default_baudrate": 115200,
         },
 
+    # Test Ports
+    "TST1": {
+        "label": "TEST 1",
+        "index": 701,
+        "default_baudrate": 115200,
+        },
+
     }
 
 parser = argparse.ArgumentParser(description='Generate Serial params & startup script')
