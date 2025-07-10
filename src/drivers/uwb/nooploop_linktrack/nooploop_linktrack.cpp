@@ -180,14 +180,6 @@ void NoopLoopLinkTrack::Run()
         tcflush(_fd, TCIOFLUSH);
 
         PX4_INFO("Serial port %s configured at %ld baud", _port, (long)baud_param);
-
-        // Setup device configuration
-        if (!configure_device()) {
-            PX4_ERR("Device configuration failed");
-            close(_fd);
-            _fd = -1;
-            return;
-        }
     }
 
     if (!_param_enable.get()) {
@@ -217,45 +209,6 @@ void NoopLoopLinkTrack::Run()
 // =============================================================================
 // Device Configuration Functions
 // =============================================================================
-
-bool NoopLoopLinkTrack::configure_device()
-{
-    if (_fd < 0) {
-        PX4_ERR("Cannot configure device: serial port not open");
-        return false;
-    }
-
-    // Configure LP_MODE2 - Set Tag Mode with ID
-    uint8_t cmd[] = {NLINK_HEADER, 0x08, 0x10, 0x02, (uint8_t)_param_tag_id.get(), 0x01, 0x00};
-    uint8_t sum = 0;
-    for (int i = 1; i < 6; i++) sum += cmd[i];
-    cmd[6] = sum; // Checksum
-
-    ssize_t written = write(_fd, cmd, sizeof(cmd));
-    if (written != sizeof(cmd)) {
-        PX4_ERR("Write failed: %zd/%zu bytes (errno: %d)", written, sizeof(cmd), errno);
-        perf_count(_comms_errors);
-        return false;
-    }
-    usleep(100000);
-
-    // Enable Node_Frame3 output
-    uint8_t out[] = {NLINK_HEADER, 0x06, 0x13, NLINK_NODE_FRAME3, 0x01};
-    sum = 0;
-    for (int i = 1; i < 4; i++) sum += out[i];
-    out[4] = sum; // Checksum
-
-    written = write(_fd, out, sizeof(out));
-    if (written != sizeof(out)) {
-        PX4_ERR("Write failed: %zd/%zu bytes (errno: %d)", written, sizeof(out), errno);
-        perf_count(_comms_errors);
-        return false;
-    }
-    usleep(100000);
-
-    PX4_INFO("Device configuration completed successfully");
-    return true;
-}
 
 bool NoopLoopLinkTrack::load_anchors(const char *filename)
 {

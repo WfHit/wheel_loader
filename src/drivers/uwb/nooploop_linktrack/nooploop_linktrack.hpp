@@ -125,7 +125,6 @@ private:
 	bool parse_frame(const uint8_t *data, size_t length);
 	void process_ranges(uint8_t tag_id, uint8_t num_ranges, const AnchorData *ranges);
 	void publish_range(uint8_t anchor_id, float distance, float rssi, float fp_rssi);
-	bool configure_device();
 	bool load_anchors(const char *filename);
 
 	// Serial port (similar to UWB SR150)
