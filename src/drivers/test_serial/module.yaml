@@ -1,0 +1,39 @@
+module_name: Test Serial Driver
+serial_config:
+    - command: test_serial start -d ${SERIAL_DEV}
+      port_config_param:
+          name: TEST_CFG_DEV
+          group: Serial
+          default: TST1
+          description:
+              short: Serial test port configuration
+              long: |
+                  Configure on which serial port to run Test Serial Driver.
+
+                  Set this to one of the available serial ports for testing
+                  serial communication functionality.
+          type: enum
+          values:
+              0: Disabled
+              6: UART 6
+              101: TELEM 1
+              102: TELEM 2
+              103: TELEM 3
+              104: TELEM/SERIAL 4
+              201: GPS 1
+              202: GPS 2
+              203: GPS 3
+              300: Radio Controller
+              301: Wifi Port
+              401: EXT2
+              501: UWB 1
+              502: UWB 2
+              503: UWB 3
+              504: UWB 4
+              601: SERVO 1
+              602: SERVO 2
+              701: Serial Test Port 1
+              702: Serial Test Port 2
+              703: Serial Test Port 3
+              704: Loopback Test Port
+          reboot_required: true

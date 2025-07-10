@@ -19,6 +19,9 @@ param set-default EKF2_UWB_EN 1
 param set-default EKF2_UWB_NOISE 0.1
 param set-default EKF2_UWB_GATE 5.0
 
+# Test Serial Driver Configuration
+param set-default TEST_CFG_DEV 701  # Use TST1 port (index 701)
+
 if ver hwbasecmp 009 010 011
 then
 	# Skynode: use the "custom participant", IP=10.41.10.1 config for uxrce_dds_client
