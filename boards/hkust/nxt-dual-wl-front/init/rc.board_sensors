@@ -19,7 +19,7 @@ spl06 -X -a 0x77 start
 # Start magnetic encoder for bucket position feedback
 if param compare SENS_EN_AS5600 1
 then
-	as5600 -I -b 1 start
+	as5600 -X start
 	echo "AS5600 magnetic encoder started for bucket position"
 fi
 

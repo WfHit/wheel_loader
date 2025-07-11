@@ -110,6 +110,11 @@ private:
 	void process_commands();
 	void publish_feedback();
 
+	// Test mode control methods
+	void enter_test_mode();
+	void exit_test_mode();
+	bool is_test_mode_active() const;
+
 	// Add test methods (like test_serial)
 	void test_communication_patterns();
 
@@ -136,6 +141,8 @@ private:
 	bool _connection_ok{false};        // Communication status
 	hrt_abstime _last_update_time{0};  // Last successful update time
 	int _consecutive_errors{0};        // Count of consecutive communication errors
+	bool _test_mode_active{false};     // Flag to temporarily stop status reading during test commands
+	hrt_abstime _test_mode_start{0};   // Time when test mode was activated
 
 	// ST3215 Protocol constants
 	static constexpr uint8_t ST3215_HEADER = 0xFF;

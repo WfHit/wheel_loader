@@ -201,7 +201,7 @@ fi
 # AS5600 magnetic encoder I2C
 if param compare -s SENS_EN_AS5600 1
 then
-	as5600 start
+	as5600 -X start
 fi
 
 # SPL06 sensor external I2C

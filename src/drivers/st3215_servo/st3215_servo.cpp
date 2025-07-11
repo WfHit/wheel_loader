@@ -96,7 +96,7 @@ bool ST3215Servo::configure_port()
 	}
 
 	// Open serial port
-	PX4_INFO("Opening serial port %s...", _port_name);
+	PX4_DEBUG("Opening serial port %s...", _port_name);
 	_uart = ::open(_port_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
 	if (_uart < 0) {
@@ -104,7 +104,7 @@ bool ST3215Servo::configure_port()
 		return false;
 	}
 
-	PX4_INFO("Serial port opened successfully (fd=%d)", _uart);
+	PX4_DEBUG("Serial port opened successfully (fd=%d)", _uart);
 
 	// Configure port settings (similar to test_serial)
 	struct termios uart_config;
@@ -122,7 +122,7 @@ bool ST3215Servo::configure_port()
 		baudrate = 115200;  // Default changed to 115200
 	}
 
-	PX4_INFO("Configuring baudrate: %ld", (long)baudrate);
+	PX4_DEBUG("Configuring baudrate: %ld", (long)baudrate);
 
 	speed_t speed;
 	switch (baudrate) {
@@ -210,19 +210,17 @@ void ST3215Servo::Run()
 	// Process incoming servo commands
 	process_commands();
 
-	// Read servo status periodically (every 50ms)
+	// Read servo status periodically (every 50ms) - but skip if in test mode
 	static hrt_abstime last_status_read = 0;
-	if (hrt_elapsed_time(&last_status_read) > 50_ms && _uart >= 0) {
+	if (hrt_elapsed_time(&last_status_read) > 50_ms && _uart >= 0 && !is_test_mode_active()) {
 		last_status_read = hrt_absolute_time();
 
 		uint8_t servo_id = _param_servo_id.get();
-		PX4_DEBUG("Attempting to read status from servo %d", servo_id);
 
 		if (servo_id > 0 && read_status(servo_id)) {
 			_connection_ok = true;
 			_last_update_time = hrt_absolute_time();
 			_consecutive_errors = 0;
-			PX4_DEBUG("Status read successful, publishing feedback");
 			publish_feedback();
 		} else {
 			_consecutive_errors++;
@@ -257,12 +255,8 @@ bool ST3215Servo::send_packet(const uint8_t *data, uint8_t length)
 		return false;
 	}
 
-	// Log packet being sent
-	PX4_INFO("TX[%d]: ", length);
-	for (int i = 0; i < length; i++) {
-		printf("%02X ", data[i]);
-	}
-	printf("\n");
+	// Log packet being sent (debug only)
+	PX4_DEBUG("TX[%d bytes]", length);
 
 	// Clear input buffer before sending to avoid stale data
 	tcflush(_uart, TCIFLUSH);
@@ -276,7 +270,6 @@ bool ST3215Servo::send_packet(const uint8_t *data, uint8_t length)
 
 	// Wait for transmission to complete
 	tcdrain(_uart);
-	PX4_DEBUG("Packet sent successfully, %d bytes", (int)bytes_written);
 	return true;
 }
 
@@ -287,7 +280,6 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 		return false;
 	}
 
-	PX4_DEBUG("Waiting for response, timeout=%lu ms", timeout_ms);
 	hrt_abstime start_time = hrt_absolute_time();
 	size_t bytes_received = 0;
 
@@ -303,7 +295,6 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 
 		ssize_t bytes_read = ::read(_uart, buffer + bytes_received, buffer_size - bytes_received);
 		if (bytes_read > 0) {
-			PX4_DEBUG("Read %d bytes", (int)bytes_read);
 			bytes_received += bytes_read;
 		} else if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			PX4_ERR("Read error: %s", strerror(errno));
@@ -328,7 +319,6 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 
 	// Parse packet length from header
 	uint8_t packet_length = buffer[3];
-	PX4_DEBUG("Valid header found: ID=0x%02X, Length=%d", buffer[2], packet_length);
 
 	// Calculate total expected packet size
 	// Format: Header(2) + ID(1) + Length(1) + Data(Length) = 4 + Length
@@ -349,7 +339,6 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 
 		ssize_t bytes_read = ::read(_uart, buffer + bytes_received, buffer_size - bytes_received);
 		if (bytes_read > 0) {
-			PX4_DEBUG("Read additional %d bytes", (int)bytes_read);
 			bytes_received += bytes_read;
 		} else if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			PX4_ERR("Read error: %s", strerror(errno));
@@ -358,14 +347,8 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 		usleep(500);
 	}
 
-	// Log received packet
-	if (bytes_received > 0) {
-		PX4_INFO("RX[%zu]: ", bytes_received);
-		for (size_t i = 0; i < bytes_received; i++) {
-			printf("%02X ", buffer[i]);
-		}
-		printf("\n");
-	}
+	// Log received packet (debug only)
+	PX4_DEBUG("RX[%zu bytes]", bytes_received);
 
 	// Check if we got complete packet
 	if (bytes_received < total_expected) {
@@ -379,10 +362,7 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 	uint8_t calculated_checksum = calculate_checksum(&buffer[2], packet_length + 1);
 	uint8_t received_checksum = buffer[total_expected - 1];
 
-	PX4_DEBUG("Checksum check: calc=0x%02X, recv=0x%02X", calculated_checksum, received_checksum);
-
 	if (calculated_checksum == received_checksum) {
-		PX4_DEBUG("Packet received successfully");
 		return true;
 	} else {
 		PX4_ERR("Checksum mismatch: calc=0x%02X, recv=0x%02X", calculated_checksum, received_checksum);
@@ -392,7 +372,7 @@ bool ST3215Servo::receive_packet(uint8_t *buffer, size_t buffer_size, uint32_t t
 
 bool ST3215Servo::ping_servo(uint8_t servo_id)
 {
-	PX4_INFO("Pinging servo ID %d...", servo_id);
+	PX4_DEBUG("Pinging servo ID %d...", servo_id);
 
 	uint8_t packet[6] = {
 		ST3215_HEADER,      // 0xFF
@@ -404,8 +384,6 @@ bool ST3215Servo::ping_servo(uint8_t servo_id)
 	};
 	packet[5] = calculate_checksum(&packet[2], 3);
 
-	PX4_DEBUG("Calculated checksum: 0x%02X", packet[5]);
-
 	if (!send_packet(packet, 6)) {
 		PX4_ERR("Failed to send ping packet");
 		return false;
@@ -416,7 +394,7 @@ bool ST3215Servo::ping_servo(uint8_t servo_id)
 	if (receive_packet(response, sizeof(response), PACKET_TIMEOUT_MS)) {
 		// Check if response is from correct servo and command
 		if (response[2] == servo_id) {
-			PX4_INFO("Ping response received from servo %d", servo_id);
+			PX4_DEBUG("Ping response received from servo %d", servo_id);
 			return true;
 		} else {
 			PX4_ERR("Ping response from wrong servo ID: expected %d, got %d", servo_id, response[2]);
@@ -444,8 +422,6 @@ bool ST3215Servo::read_register(uint8_t servo_id, uint8_t reg_addr, uint8_t *dat
 	};
 	packet[7] = calculate_checksum(&packet[2], 5);
 
-	PX4_DEBUG("Read command checksum: 0x%02X", packet[7]);
-
 	if (!send_packet(packet, 8)) {
 		PX4_ERR("Failed to send read command");
 		return false;
@@ -456,17 +432,11 @@ bool ST3215Servo::read_register(uint8_t servo_id, uint8_t reg_addr, uint8_t *dat
 	if (receive_packet(response, sizeof(response), PACKET_TIMEOUT_MS)) {
 		// Check if response is from correct servo
 		if (response[2] == servo_id && response[3] >= (length + 2)) {
-			PX4_DEBUG("Read response: servo_id=%d, length=%d, error=0x%02X",
-				response[2], response[3], response[4]);
 
 			// Copy data from response packet (skip header, ID, length, error)
 			memcpy(data, &response[5], length);
 
-			PX4_DEBUG("Read data: ");
-			for (int i = 0; i < length; i++) {
-				printf("0x%02X ", data[i]);
-			}
-			printf("\n");
+			PX4_DEBUG("Read data successful");
 
 			return true;
 		} else {
@@ -504,12 +474,7 @@ bool ST3215Servo::write_register(uint8_t servo_id, uint8_t reg_addr, const uint8
 	// Calculate and add checksum
 	packet[6 + length] = calculate_checksum(&packet[2], 4 + length);
 
-	PX4_DEBUG("Write command checksum: 0x%02X", packet[6 + length]);
-	PX4_DEBUG("Write data: ");
-	for (int i = 0; i < length; i++) {
-		printf("0x%02X ", data[i]);
-	}
-	printf("\n");
+	PX4_DEBUG("Write command prepared");
 
 	bool result = send_packet(packet, 7 + length);
 	if (!result) {
@@ -530,14 +495,14 @@ uint8_t ST3215Servo::calculate_checksum(const uint8_t *data, uint8_t length)
 
 bool ST3215Servo::write_position(uint8_t servo_id, float position_rad, float speed_rad_s)
 {
-	// Convert radians to servo position units 
+	// Convert radians to servo position units
 	float position_deg = position_rad * 180.0f / M_PI_F;
-	
+
 	// Convert to servo units (0-4095 maps to 0-360 degrees)
 	// Handle negative positions like SMS_STS WritePosEx
 	int16_t position_value = (int16_t)(position_deg * 4095.0f / 360.0f);
 	uint16_t position_raw;
-	
+
 	if (position_value < 0) {
 		position_raw = (-position_value) | (1 << 15); // Set sign bit for negative
 	} else {
@@ -549,9 +514,6 @@ bool ST3215Servo::write_position(uint8_t servo_id, float position_rad, float spe
 	float speed_deg_s = fabsf(speed_rad_s) * 180.0f / M_PI_F;
 	speed_deg_s = math::constrain(speed_deg_s, 0.0f, 360.0f); // Max ~6.28 rad/s
 	uint16_t speed_raw = (uint16_t)(speed_deg_s * 1023.0f / 360.0f);
-
-	PX4_DEBUG("Setting position: %.1f deg -> raw=0x%04X, speed: %.1f deg/s -> raw=%d",
-		(double)position_deg, position_raw, (double)speed_deg_s, speed_raw);
 
 	// Write position and speed using the SMS_STS style (ACC + Position + Time + Speed)
 	uint8_t data[7] = {
@@ -574,8 +536,6 @@ bool ST3215Servo::write_position(uint8_t servo_id, float position_rad, float spe
 
 bool ST3215Servo::read_status(uint8_t servo_id)
 {
-	PX4_DEBUG("Reading status from servo %d", servo_id);
-
 	// Read each register individually like SMS_STS.cpp does
 	uint8_t pos_data[2], speed_data[2], load_data[2];
 	uint8_t voltage_data[1], temp_data[1];
@@ -617,9 +577,6 @@ bool ST3215Servo::read_status(uint8_t servo_id)
 	_current_voltage = voltage_data[0];
 	_current_temperature = temp_data[0];
 
-	PX4_DEBUG("Raw status data: pos=0x%04X, speed=0x%04X, load=0x%04X, volt=%d, temp=%d",
-		position_raw, speed_raw, load_raw, _current_voltage, _current_temperature);
-
 	// Convert position to radians (0-4095 maps to 0-360 degrees)
 	// SMS_STS ReadPos handles sign bit, but for position it's typically not used in normal operation
 	uint16_t pos_value = position_raw;
@@ -642,10 +599,6 @@ bool ST3215Servo::read_status(uint8_t servo_id)
 		load_value = -load_value;
 	}
 	_current_load = load_value;
-
-	PX4_DEBUG("Parsed status: pos=%.3f rad (%.1f deg), speed=%.3f rad/s (%.1f deg/s), load=%.1f%%",
-		(double)_current_position, (double)(position_deg),
-		(double)_current_speed, (double)speed_deg_s, (double)_current_load);
 
 	return true;
 }
@@ -677,7 +630,6 @@ void ST3215Servo::process_commands()
 		if (cmd.torque_enable != _servo_enabled) {
 			if (set_torque_enable(servo_id, cmd.torque_enable)) {
 				_servo_enabled = cmd.torque_enable;
-				PX4_DEBUG("Servo %d %s", servo_id, cmd.torque_enable ? "enabled" : "disabled");
 			}
 		}
 
@@ -779,8 +731,16 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			return -1;
 		}
 
+		// Enter test mode to suspend status reading
+		_object.load()->enter_test_mode();
+
 		uint8_t servo_id = _object.load()->_param_servo_id.get();
-		if (_object.load()->ping_servo(servo_id)) {
+		bool result = _object.load()->ping_servo(servo_id);
+
+		// Exit test mode
+		_object.load()->exit_test_mode();
+
+		if (result) {
 			PX4_INFO("Servo %d responded to ping", servo_id);
 		} else {
 			PX4_ERR("Servo %d did not respond to ping", servo_id);
@@ -794,7 +754,10 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			return -1;
 		}
 
+		// Enter test mode to suspend status reading during diagnostics
+		_object.load()->enter_test_mode();
 		_object.load()->run_diagnostics();
+		_object.load()->exit_test_mode();
 		return 0;
 	}
 
@@ -804,7 +767,10 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			return -1;
 		}
 
+		// Enter test mode to suspend status reading during raw test
+		_object.load()->enter_test_mode();
 		_object.load()->test_raw_communication();
+		_object.load()->exit_test_mode();
 		return 0;
 	}
 
@@ -835,7 +801,15 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 
 		PX4_INFO("Setting servo %d to position %.3f rad", servo_id, (double)position);
 
-		if (_object.load()->write_position(servo_id, position, 2.0f)) {
+		// Enter test mode to suspend status reading
+		_object.load()->enter_test_mode();
+
+		bool result = _object.load()->write_position(servo_id, position, 2.0f);
+
+		// Exit test mode
+		_object.load()->exit_test_mode();
+
+		if (result) {
 			PX4_INFO("Position command sent successfully");
 		} else {
 			PX4_ERR("Failed to send position command");
@@ -849,8 +823,16 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			return -1;
 		}
 
+		// Enter test mode to suspend status reading
+		_object.load()->enter_test_mode();
+
 		uint8_t servo_id = _object.load()->_param_servo_id.get();
-		if (_object.load()->wheel_mode(servo_id)) {
+		bool result = _object.load()->wheel_mode(servo_id);
+
+		// Exit test mode
+		_object.load()->exit_test_mode();
+
+		if (result) {
 			PX4_INFO("Servo %d set to wheel mode", servo_id);
 		} else {
 			PX4_ERR("Failed to set servo %d to wheel mode", servo_id);
@@ -873,7 +855,15 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 
 		PX4_INFO("Setting servo %d speed to %.3f rad/s", servo_id, (double)speed);
 
-		if (_object.load()->write_speed(servo_id, speed)) {
+		// Enter test mode to suspend status reading
+		_object.load()->enter_test_mode();
+
+		bool result = _object.load()->write_speed(servo_id, speed);
+
+		// Exit test mode
+		_object.load()->exit_test_mode();
+
+		if (result) {
 			PX4_INFO("Speed command sent successfully");
 		} else {
 			PX4_ERR("Failed to send speed command");
@@ -887,10 +877,16 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			return -1;
 		}
 
+		// Enter test mode to suspend status reading
+		_object.load()->enter_test_mode();
+
 		uint8_t servo_id = _object.load()->_param_servo_id.get();
 
 		int moving = _object.load()->read_moving(servo_id);
 		int mode = _object.load()->read_mode(servo_id);
+
+		// Exit test mode
+		_object.load()->exit_test_mode();
 
 		PX4_INFO("Servo %d info: moving=%d, mode=%d", servo_id, moving, mode);
 		return 0;
@@ -1134,11 +1130,7 @@ void ST3215Servo::test_raw_communication()
 	};
 	ping_packet[5] = calculate_checksum(&ping_packet[2], 3);
 
-	PX4_INFO("Sending PING packet:");
-	for (int i = 0; i < 6; i++) {
-		printf("%02X ", ping_packet[i]);
-	}
-	printf("\n");
+	PX4_DEBUG("Sending PING packet");
 
 	// Clear buffers
 	tcflush(_uart, TCIOFLUSH);
@@ -1165,12 +1157,7 @@ void ST3215Servo::test_raw_communication()
 		}
 
 		if (total_bytes > 0) {
-			PX4_INFO("Received %d bytes:", total_bytes);
-			for (int i = 0; i < total_bytes && i < 64; i++) {
-				printf("%02X ", response[i]);
-				if ((i + 1) % 16 == 0) printf("\n");
-			}
-			printf("\n");
+			PX4_INFO("Received %d bytes", total_bytes);
 		} else {
 			PX4_ERR("No response received");
 		}
@@ -1179,10 +1166,38 @@ void ST3215Servo::test_raw_communication()
 	PX4_INFO("=== End of raw test ===");
 }
 
+// Test mode control methods
+void ST3215Servo::enter_test_mode()
+{
+	_test_mode_active = true;
+	_test_mode_start = hrt_absolute_time();
+	PX4_DEBUG("ST3215: Entering test mode - status reading suspended");
+}
+
+void ST3215Servo::exit_test_mode()
+{
+	if (_test_mode_active) {
+		_test_mode_active = false;
+		hrt_abstime duration = hrt_elapsed_time(&_test_mode_start) / 1000; // ms
+		PX4_DEBUG("ST3215: Exiting test mode after %llu ms", (unsigned long long)duration);
+	}
+}
+
+bool ST3215Servo::is_test_mode_active() const
+{
+	// Auto-exit test mode after 5 seconds to prevent getting stuck
+	if (_test_mode_active && hrt_elapsed_time(&_test_mode_start) > 5_s) {
+		// Const cast is safe here since we're just clearing a safety flag
+		const_cast<ST3215Servo*>(this)->_test_mode_active = false;
+		PX4_WARN("ST3215: Auto-exiting test mode after timeout");
+		return false;
+	}
+	return _test_mode_active;
+}
+
 // SMS_STS style utility functions
 bool ST3215Servo::wheel_mode(uint8_t servo_id)
 {
-	PX4_INFO("Setting servo %d to wheel mode", servo_id);
 	return write_register(servo_id, ST3215_REG_MODE, (const uint8_t[]){1}, 1);
 }
 
@@ -1195,9 +1210,6 @@ bool ST3215Servo::write_speed(uint8_t servo_id, float speed_rad_s, uint8_t acc)
 	if (speed_deg_s < 0) {
 		speed_raw |= (1 << 15); // Set sign bit for negative speed
 	}
-
-	PX4_DEBUG("Setting speed: %.3f rad/s (%.1f deg/s) -> raw=0x%04X",
-		(double)speed_rad_s, (double)speed_deg_s, speed_raw);
 
 	// First write acceleration
 	if (!write_register(servo_id, ST3215_REG_ACC, &acc, 1)) {
@@ -1215,13 +1227,11 @@ bool ST3215Servo::write_speed(uint8_t servo_id, float speed_rad_s, uint8_t acc)
 
 bool ST3215Servo::unlock_eprom(uint8_t servo_id)
 {
-	PX4_INFO("Unlocking EPROM for servo %d", servo_id);
 	return write_register(servo_id, ST3215_REG_LOCK, (const uint8_t[]){0}, 1);
 }
 
 bool ST3215Servo::lock_eprom(uint8_t servo_id)
 {
-	PX4_INFO("Locking EPROM for servo %d", servo_id);
 	return write_register(servo_id, ST3215_REG_LOCK, (const uint8_t[]){1}, 1);
 }
 
