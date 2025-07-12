@@ -123,9 +123,13 @@
 
 
 /* Spare GPIO */
-#define GPIO_PA4                       	/* PA4 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTA|GPIO_PIN4)
-#define GPIO_PC0                       	/* PC0 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN0)
-#define GPIO_PC1                       	/* PC1 */  (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTC|GPIO_PIN1)
+#define GPIO_PA4                       	/* PA4 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN4)
+#define GPIO_PC0                       	/* PC0 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTC|GPIO_PIN0)
+#define GPIO_PC1                       	/* PC1 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTC|GPIO_PIN1)
+#define GPIO_PB2                       	/* PB2 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTB|GPIO_PIN2)
+#define GPIO_PB3                       	/* PB3 */  (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTB|GPIO_PIN3)
+#define GPIO_PB4                       	/* PB4 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTB|GPIO_PIN4)
+
 /* Tone alarm output */
 
 #define TONE_ALARM_TIMER        4 /* Timer 4 */
@@ -158,7 +162,25 @@
  * PWM7-8 - Bucket dump limit switches
  */
 
+/* AS5600 I2C Configuration */
+/* I2C4 Interface for AS5600 Magnetic Rotary Encoder */
+// #define AS5600_I2C_BUS                     4           /* I2C4 bus */
+// #define AS5600_I2C_SCL_GPIO                /* PD12 */ (GPIO_I2C4_SCL)
+// #define AS5600_I2C_SDA_GPIO                /* PD13 */ (GPIO_I2C4_SDA)
+// #define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
 
+/* UART1 Interface for Proxy Client */
+// #define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
+// #define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
+// #define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
+
+/* Interface Support */
+// #define BOARD_HAS_AS5600_I2C               1
+// #define BOARD_AS5600_I2C_ENABLED           1
+// #define BOARD_PROXY_CLIENT_UART_ENABLED    1
+
+/* ST3125 Servo Serial Port */
+// #define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
 
 // #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
 // #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
@@ -182,51 +204,30 @@
 /* This board provides the board_on_reset interface */
 #define BOARD_HAS_ON_RESET 1
 
-/* AS5600 I2C Configuration */
-/* I2C4 Interface for AS5600 Magnetic Rotary Encoder */
-// #define AS5600_I2C_BUS                     4           /* I2C4 bus */
-// #define AS5600_I2C_SCL_GPIO                GPIO_I2C4_SCL_1
-// #define AS5600_I2C_SDA_GPIO                GPIO_I2C4_SDA_1
-// #define AS5600_I2C_ADDR                    0x36        /* AS5600 default I2C address */
-
-/* UART1 Interface for Proxy Client */
-// #define PROXY_CLIENT_UART_PORT             "/dev/ttyS0" /* USART1 for proxy client */
-// #define PROXY_CLIENT_UART_TX_GPIO          /* PA9 */ (GPIO_USART1_TX)
-// #define PROXY_CLIENT_UART_RX_GPIO          /* PA10*/ (GPIO_USART1_RX)
-
-/* Interface Support */
-// #define BOARD_HAS_AS5600_I2C               1
-// #define BOARD_AS5600_I2C_ENABLED           1
-// #define BOARD_PROXY_CLIENT_UART_ENABLED    1
+/* DRV8701 H-bridge support */
+// #define BOARD_HAS_DRV8701_HBRIDGE          1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
-/* PWM1 (PE9) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
-#define DRV8701_DIR1_GPIO                  /* PE9  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN9)
-#define DRV8701_DIR2_GPIO                  /* PE14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN14)
-
-/* PWM2 (PE11) and PWM3 (PE13) - PWM signals for DRV8701 H-bridge (via timer channels) */
-#define DRV8701_PWM1_TIMER                 Timer::Timer1
-#define DRV8701_PWM1_CHANNEL               Timer::Channel2   /* PE11 */
-#define DRV8701_PWM2_TIMER                 Timer::Timer1
-#define DRV8701_PWM2_CHANNEL               Timer::Channel3   /* PE13 */
-
-/* PWM5-8 - Limit switch inputs for bucket operations */
-#define BUCKET_LOAD_LIMIT_SW1_GPIO         /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
-#define BUCKET_LOAD_LIMIT_SW2_GPIO         /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
-#define BUCKET_DUMP_LIMIT_SW1_GPIO         /* PB0  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
-#define BUCKET_DUMP_LIMIT_SW2_GPIO         /* PB1  */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
+/* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel3}, {GPIO::PortE, GPIO::Pin13}),
+// initIOTimerChannel(io_timers, {Timer::Timer1, Timer::Channel4}, {GPIO::PortE, GPIO::Pin14}),
+#define DRV8701_RIGHT_DIR_GPIO             /* PE13 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN13) // Right wheel direction
+#define DRV8701_LEFT_DIR_GPIO              /* PE14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN14) // Left wheel direction
 
 /* UART7 RX - Enable signal for DRV8701 H-bridge */
 #define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
-/* DRV8701 H-bridge support */
-// #define BOARD_HAS_DRV8701_HBRIDGE          1
 // #define BOARD_HAS_LIMIT_SWITCHES           1
-
 /* Limit Sensor Configuration for Front Board */
 /* Only bucket load and dump sensors are configured on front board */
 #define BOARD_NUM_LIMIT_SENSORS            2
 #define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+
+/* PWM5-8 - Limit switch inputs for bucket operations */
+#define BUCKET_LOAD_LIMIT_SW1_GPIO         /* PB10 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
+#define BUCKET_LOAD_LIMIT_SW2_GPIO         /* PB11 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
+#define BUCKET_DUMP_LIMIT_SW1_GPIO         /* PB0  */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
+#define BUCKET_DUMP_LIMIT_SW2_GPIO         /* PB1  */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
 
 /* Quadrature Encoder Configuration for Front Board */
 #define BOARD_NUM_QUADRATURE_ENCODERS      2
@@ -250,8 +251,12 @@
 		GPIO_SPL_ADDR_SET, \
 		GPIO_PC0, \
 		GPIO_PC1, \
-		DRV8701_DIR1_GPIO, \
-		DRV8701_DIR2_GPIO, \
+		GPIO_PB2, \
+		GPIO_PB3, \
+		GPIO_PB4, \
+		GPIO_PA4, \
+		DRV8701_RIGHT_DIR_GPIO, \
+		DRV8701_LEFT_DIR_GPIO, \
 		DRV8701_ENABLE_GPIO, \
 		BUCKET_LOAD_LIMIT_SW1_GPIO, \
 		BUCKET_LOAD_LIMIT_SW2_GPIO, \

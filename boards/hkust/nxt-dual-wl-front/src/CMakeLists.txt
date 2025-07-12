@@ -54,6 +54,7 @@ else()
 		usb.c
 		mtd.cpp
 		board_limit_sensor_config.cpp
+		board_encoder_config.cpp
 
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)
@@ -68,5 +69,4 @@ else()
 			nuttx_drivers
 			px4_layer
 	)
-
 endif()

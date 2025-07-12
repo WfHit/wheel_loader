@@ -4,7 +4,7 @@
 # Rear wheel and boom control board
 #------------------------------------------------------------------------------
 
-board_adc start
+# board_adc start
 
 # Internal SPI bus BMI088 accel/gyro
 bmi088 -s -b 1 -A -R 2 start
@@ -24,19 +24,14 @@ then
 fi
 
 # Start limit sensor instances for hydraulic component monitoring
-if param compare LS_SYS_ENABLE 1
+if param compare LIMIT_SENS_EN 1
 then
-	echo "Starting limit sensor instances"
+	echo "Auto-starting all limit sensor instances"
 	for instance in $(seq 0 7)
 	do
-		# Check if this instance is enabled
-		instance_enable_param="LS${instance}_ENABLE"
-		if param compare $instance_enable_param 1
-		then
-			echo "Starting limit sensor instance $instance"
-			limit_sensor start -i $instance
-		fi
+		echo "Starting limit sensor instance $instance"
+		limit_sensor start -i $instance
 	done
 else
-	echo "Limit sensor system disabled (LS_SYS_ENABLE=0)"
+	echo "Limit sensor system disabled (LIMIT_SENS_EN=0)"
 fi

@@ -109,6 +109,21 @@ bool HBridge::init()
 	px4_arch_configgpio(DRV8701_ENABLE_GPIO);
 	px4_arch_gpiowrite(DRV8701_ENABLE_GPIO, 0); // Keep disabled during init
 	PX4_INFO("H-Bridge enable GPIO configured (disabled during init)");
+
+	// test
+	// px4_arch_configgpio(GPIO_PA4);
+	// px4_arch_gpiowrite(GPIO_PA4, 1);
+	// px4_arch_configgpio(GPIO_PC0);
+	// px4_arch_gpiowrite(GPIO_PC0, 0);
+	// px4_arch_configgpio(GPIO_PC1);
+	// px4_arch_gpiowrite(GPIO_PC1, 1);
+	// px4_arch_configgpio(GPIO_PB2);
+	// px4_arch_gpiowrite(GPIO_PB2, 1);
+	// px4_arch_configgpio(GPIO_PB3);
+	// px4_arch_gpiowrite(GPIO_PB3, 0);
+	// px4_arch_configgpio(GPIO_PB4);
+	// px4_arch_gpiowrite(GPIO_PB4, 1);
+
 #endif
 
 	// Configure direction GPIOs

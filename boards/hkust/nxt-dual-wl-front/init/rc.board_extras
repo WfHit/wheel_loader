@@ -21,3 +21,7 @@ hbridge start
 
 # Initialize front wheel motor control
 echo "Initializing front wheel motor control"
+
+# Start quadrature encoder for front wheel motor
+echo "Starting quadrature encoder for front wheel"
+quadrature_encoder start
