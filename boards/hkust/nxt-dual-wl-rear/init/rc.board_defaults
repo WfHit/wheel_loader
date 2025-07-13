@@ -54,3 +54,14 @@ param set-default QENC0_PPR 1024     # Pulses per revolution
 
 # Test Serial Driver Configuration
 param set-default TEST_CFG_DEV 701  # Use TST1 port (index 701)
+
+# Limit Sensor System Configuration
+param set-default LIMIT_SENSOR_EN 1    # Enable limit sensor system
+param set-default LS0_ENABLE 1       # Boom Up Limit
+param set-default LS1_ENABLE 1       # Boom Down Limit
+param set-default LS2_ENABLE 1       # Steering Left Limit
+param set-default LS3_ENABLE 1       # Steering Right Limit
+param set-default LS4_ENABLE 0       # Not configured on rear board
+param set-default LS5_ENABLE 0       # Reserved (disabled)
+param set-default LS6_ENABLE 0       # Reserved (disabled)
+param set-default LS7_ENABLE 0       # Reserved (disabled)

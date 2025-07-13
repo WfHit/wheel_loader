@@ -24,7 +24,7 @@ then
 fi
 
 # Start limit sensor instances for hydraulic component monitoring
-if param compare LS_SYS_ENABLE 1
+if param compare LIMIT_SENSOR_EN 1
 then
 	echo "Starting limit sensor instances"
 	for instance in $(seq 0 7)
@@ -38,5 +38,5 @@ then
 		fi
 	done
 else
-	echo "Limit sensor system disabled (LS_SYS_ENABLE=0)"
+	echo "Limit sensor system disabled (LIMIT_SENSOR_EN=0)"
 fi

@@ -395,28 +395,76 @@ int LimitSensor::print_status()
 
 int LimitSensor::task_spawn(int argc, char *argv[])
 {
-#ifdef BOARD_HAS_LIMIT_SENSOR_CONFIG
-    // Start all configured instances
-    bool any_started = false;
-    for (int i = 0; i < BOARD_NUM_LIMIT_SENSORS; i++) {
-        LimitSensor *obj = new LimitSensor(i);
+    // Parse command line arguments for instance selection
+    int ch;
+    int myoptind = 1;
+    const char *myoptarg = nullptr;
+    int target_instance = -1; // -1 means start all enabled instances
 
-        if (obj == nullptr) {
-            PX4_ERR("alloc failed for instance %d", i);
-            continue;
+    while ((ch = px4_getopt(argc, argv, "i:", &myoptind, &myoptarg)) != EOF) {
+        switch (ch) {
+        case 'i':
+            target_instance = atoi(myoptarg);
+            if (target_instance < 0 || target_instance >= MAX_INSTANCES) {
+                PX4_ERR("Invalid instance %d, must be 0-%d", target_instance, MAX_INSTANCES - 1);
+                return PX4_ERROR;
+            }
+            break;
+
+        default:
+            return print_usage("unknown option");
         }
+    }
 
-        if (obj->init()) {
-            // For the first instance, store it as the primary object
-            if (!any_started) {
+#ifdef BOARD_HAS_LIMIT_SENSOR_CONFIG
+    bool any_started = false;
+
+    if (target_instance >= 0) {
+        // Start specific instance
+        if (target_instance < BOARD_NUM_LIMIT_SENSORS) {
+            LimitSensor *obj = new LimitSensor(target_instance);
+
+            if (obj == nullptr) {
+                PX4_ERR("alloc failed for instance %d", target_instance);
+                return PX4_ERROR;
+            }
+
+            if (obj->init()) {
                 _object.store(obj);
                 _task_id = task_id_is_work_queue;
+                any_started = true;
+                PX4_INFO("Started limit sensor instance %d", target_instance);
+            } else {
+                delete obj;
+                PX4_ERR("Failed to initialize instance %d", target_instance);
+                return PX4_ERROR;
             }
-            any_started = true;
-            PX4_INFO("Started limit sensor instance %d", i);
         } else {
-            delete obj;
-            PX4_ERR("Failed to start limit sensor instance %d", i);
+            PX4_ERR("Instance %d not configured on this board (max: %d)", target_instance, BOARD_NUM_LIMIT_SENSORS - 1);
+            return PX4_ERROR;
+        }
+    } else {
+        // Start all configured instances
+        for (int i = 0; i < BOARD_NUM_LIMIT_SENSORS; i++) {
+            LimitSensor *obj = new LimitSensor(i);
+
+            if (obj == nullptr) {
+                PX4_ERR("alloc failed for instance %d", i);
+                continue;
+            }
+
+            if (obj->init()) {
+                // For the first instance, store it as the primary object
+                if (!any_started) {
+                    _object.store(obj);
+                    _task_id = task_id_is_work_queue;
+                }
+                any_started = true;
+                PX4_INFO("Started limit sensor instance %d", i);
+            } else {
+                delete obj;
+                PX4_ERR("Failed to start limit sensor instance %d", i);
+            }
         }
     }
 
@@ -463,8 +511,11 @@ based on board configuration. Switch states are debounced and published at a
 configurable rate.
 
 ### Examples
-Start the limit sensor driver:
+Start all configured limit sensor instances:
 $ limit_sensor start
+
+Start a specific limit sensor instance:
+$ limit_sensor start -i 0
 
 Stop the limit sensor driver:
 $ limit_sensor stop
@@ -474,6 +525,8 @@ $ limit_sensor status
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("limit_sensor", "driver");
+    PRINT_MODULE_USAGE_COMMAND("start");
+    PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, 7, "Start specific instance (0-7), default: start all", true);
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;

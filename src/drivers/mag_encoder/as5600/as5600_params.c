@@ -9,7 +9,7 @@
  * @value 0 Disabled
  * @value 1 Enabled
  */
-PARAM_DEFINE_INT32(SENS_EN_AS5600, 0);
+PARAM_DEFINE_INT32(SENS_EN_AS5600, 1);
 
 /**
  * AS5600 I2C bus
@@ -25,7 +25,7 @@ PARAM_DEFINE_INT32(SENS_EN_AS5600, 0);
  * @value 3 I2C Bus 3
  * @value 4 I2C Bus 4
  */
-PARAM_DEFINE_INT32(AS5600_I2C_BUS, -1);
+PARAM_DEFINE_INT32(AS5600_I2C_BUS, 1);
 
 /**
  * AS5600 angle offset

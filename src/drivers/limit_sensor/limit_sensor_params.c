@@ -83,3 +83,102 @@ PARAM_DEFINE_INT32(LS_DEBOUNCE_US, 10000);
  */
 PARAM_DEFINE_INT32(LS_DIAG_ENABLE, 1);
 
+/**
+ * Limit sensor system enable
+ *
+ * Master enable switch for the limit sensor system.
+ * When disabled, no limit sensor instances will be started.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LIMIT_SENSOR_EN, 0);
+
+/**
+ * Limit sensor instance 0 enable
+ *
+ * Enable limit sensor instance 0.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS0_ENABLE, 0);
+
+/**
+ * Limit sensor instance 1 enable
+ *
+ * Enable limit sensor instance 1.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS1_ENABLE, 0);
+
+/**
+ * Limit sensor instance 2 enable
+ *
+ * Enable limit sensor instance 2.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS2_ENABLE, 0);
+
+/**
+ * Limit sensor instance 3 enable
+ *
+ * Enable limit sensor instance 3.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS3_ENABLE, 0);
+
+/**
+ * Limit sensor instance 4 enable
+ *
+ * Enable limit sensor instance 4.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS4_ENABLE, 0);
+
+/**
+ * Limit sensor instance 5 enable
+ *
+ * Enable limit sensor instance 5.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS5_ENABLE, 0);
+
+/**
+ * Limit sensor instance 6 enable
+ *
+ * Enable limit sensor instance 6.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS6_ENABLE, 0);
+
+/**
+ * Limit sensor instance 7 enable
+ *
+ * Enable limit sensor instance 7.
+ * Function depends on board configuration.
+ *
+ * @boolean
+ * @group Limit Sensors
+ */
+PARAM_DEFINE_INT32(LS7_ENABLE, 0);
+
