@@ -114,7 +114,7 @@ __BEGIN_DECLS
 #define WK2132_SIER_RFTOUT_IEN  0x01  /* RX FIFO Timeout IRQ Enable */
 
 /* Configuration */
-#define WK2132_CRYSTAL_FREQ     11059200  /* 11.0592 MHz crystal */
+#define WK2132_CRYSTAL_FREQ     14745600  /* 14.7456 MHz crystal */
 #define WK2132_MAX_PORTS        4         /* Maximum 4 UART ports */
 #define WK2132_FIFO_SIZE        256       /* FIFO size */
 

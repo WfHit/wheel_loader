@@ -40,14 +40,15 @@
 #include <nuttx/config.h>
 #include <sys/types.h>
 #include <syslog.h>
+#include <stdio.h>
+#include <errno.h>
 
 #include <px4_platform_common/px4_config.h>
-#include <px4_platform_common/log.h>
 #include "board_config.h"
 
 #ifdef BOARD_HAS_WK2132
 
-#include <px4_platform/wk2132.h>
+#include <px4_arch/wk2132.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -68,6 +69,7 @@
  *
  * This function should be called during board initialization to set up
  * the WK2132 I2C-to-UART bridge chip and register its ports as serial devices.
+ * The I2C address is automatically calculated based on J1 jumper configuration.
  *
  * @return OK on success, negative error code on failure
  */
@@ -75,8 +77,9 @@ int wk2132_board_init(void)
 {
     int ret;
 
-    PX4_INFO("WK2132: Initializing I2C-UART bridge on bus %d, addr 0x%02x",
-             BOARD_WK2132_I2C_BUS, BOARD_WK2132_I2C_ADDR);
+    syslog(LOG_INFO, "WK2132: Initializing I2C-UART bridge on bus %d", BOARD_WK2132_I2C_BUS);
+    syslog(LOG_INFO, "WK2132: J1 jumper config IA1=%d, IA0=%d -> I2C addr 0x%02x",
+           WK2132_J1_IA1, WK2132_J1_IA0, BOARD_WK2132_I2C_ADDR);
 
     /* Register WK2132 serial devices */
     ret = wk2132_register_devices(BOARD_WK2132_I2C_BUS,
@@ -86,12 +89,13 @@ int wk2132_board_init(void)
 
     if (ret < 0)
     {
-        PX4_ERR("WK2132: Failed to initialize (%d)", ret);
+        syslog(LOG_ERR, "WK2132: Failed to initialize (%d)", ret);
+        syslog(LOG_ERR, "WK2132: Check J1 jumper setting and I2C connections");
         return ret;
     }
 
-    PX4_INFO("WK2132: Successfully initialized %d ports starting at /dev/ttyS%d",
-             BOARD_WK2132_NUM_PORTS, BOARD_WK2132_BASE_TTY);
+    syslog(LOG_INFO, "WK2132: Successfully initialized %d ports starting at /dev/ttyS%d",
+           BOARD_WK2132_NUM_PORTS, BOARD_WK2132_BASE_TTY);
 
     return OK;
 }

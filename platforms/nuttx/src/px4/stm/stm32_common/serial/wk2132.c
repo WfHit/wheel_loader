@@ -51,6 +51,7 @@
 #include <errno.h>
 #include <debug.h>
 #include <termios.h>
+#include <stdio.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
@@ -66,11 +67,13 @@
 #include <stm32_i2c.h>
 #elif defined(CONFIG_ARCH_CHIP_STM32F7) || defined(CONFIG_ARCH_CHIP_STM32F4)
 #include <stm32_i2c.h>
+#elif defined(CONFIG_ARCH_CHIP_STM32F3) || defined(CONFIG_ARCH_CHIP_STM32F1)
+#include <stm32_i2c.h>
 #else
 #error "WK2132: Unsupported STM32 variant"
 #endif
 
-#include <px4_platform/wk2132.h>
+#include <px4_arch/wk2132.h>
 
 /****************************************************************************
  * Private Function Prototypes

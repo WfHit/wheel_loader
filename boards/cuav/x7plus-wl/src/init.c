@@ -63,7 +63,7 @@
 #include <mpu.h>
 
 #ifdef CONFIG_WK2132_SERIAL
-#include <px4_platform/wk2132.h>
+#include <px4_arch/wk2132.h>
 #endif
 
 __BEGIN_DECLS
