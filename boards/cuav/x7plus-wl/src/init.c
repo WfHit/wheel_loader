@@ -62,6 +62,10 @@
 
 #include <mpu.h>
 
+#ifdef CONFIG_WK2132_SERIAL
+#include <px4_platform/wk2132.h>
+#endif
+
 __BEGIN_DECLS
 extern void led_init(void);
 extern void led_on(int led);
@@ -219,6 +223,11 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 	/* Configure the HW based on the manifest */
 
 	px4_platform_configure();
+
+#ifdef CONFIG_WK2132_SERIAL
+	/* Initialize WK2132 I2C-to-UART bridge */
+	wk2132_board_init();
+#endif
 
 	return OK;
 }

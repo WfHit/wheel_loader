@@ -235,6 +235,16 @@
 		GPIO_BTN_SAFETY,                  \
 	}
 
+/* Quadrature Encoders */
+#define BOARD_NUM_QUADRATURE_ENCODERS 0
+
+/* WK2132 I2C-to-UART Bridge Configuration */
+#define BOARD_HAS_WK2132              1
+#define WK2132_I2C_BUS                1
+#define WK2132_I2C_ADDRESS            0x20
+#define WK2132_NUM_PORTS              2
+#define WK2132_CRYSTAL_FREQ           11059200
+
 __BEGIN_DECLS
 #ifndef __ASSEMBLY__
 

@@ -51,6 +51,8 @@ else()
 		spi.cpp
 		timer_config.cpp
 		usb.c
+		wk2132_board.c
+		wk2132_example.c
 	)
 	add_dependencies(drivers_board arch_board_hw_info)
 
@@ -63,5 +65,6 @@ else()
 			nuttx_arch
 			nuttx_drivers
 			px4_layer
+			wk2132_serial
 	)
 endif()
