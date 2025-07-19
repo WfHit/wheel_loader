@@ -45,11 +45,7 @@ param set-default QE_AUTO_START 3  # Bits 0 and 1 set (instances 0 and 1)
 
 # Limit Sensor System Configuration
 param set-default LIMIT_SENSOR_EN 1    # Enable limit sensor system
-param set-default LS0_ENABLE 1       # Bucket Load Limit (with redundancy)
-param set-default LS1_ENABLE 1       # Bucket Dump Limit (with redundancy)
-param set-default LS2_ENABLE 0       # Not configured on front board
-param set-default LS3_ENABLE 0       # Not configured on front board
-param set-default LS4_ENABLE 0       # Not configured on front board
-param set-default LS5_ENABLE 0       # Reserved (disabled)
-param set-default LS6_ENABLE 0       # Reserved (disabled)
-param set-default LS7_ENABLE 0       # Reserved (disabled)
+param set-default LS_0_ENABLE 1       # Bucket Load Limit (with redundancy)
+param set-default LS_1_ENABLE 1       # Bucket Dump Limit (with redundancy)
+param set-default LS_2_ENABLE 0       # Not configured on front board
+param set-default LS_3_ENABLE 0       # Not configured on front board

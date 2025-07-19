@@ -43,6 +43,7 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/module.h>
+#include <lib/mathlib/mathlib.h>
 #include <board_config.h>
 #include <drivers/drv_hrt.h>
 #include <lib/perf/perf_counter.h>
@@ -58,6 +59,7 @@ extern const limit_sensor_config_t g_limit_sensor_config[];
 // Static storage for multiple instances
 LimitSensor *LimitSensor::_instances[MAX_INSTANCES] = {};
 px4::atomic<uint8_t> LimitSensor::_num_instances{0};
+LimitSensor *LimitSensor::_manager_instance = nullptr;
 
 LimitSensor::LimitSensor(uint8_t instance) :
     ModuleParams(nullptr),
@@ -72,13 +74,11 @@ LimitSensor::LimitSensor(uint8_t instance) :
     _switch_1 = {};
     _switch_2 = {};
     _sensor_state = {};
-    _global_params = {};
-    _run_interval_us = 10000; // Default 10ms, will be updated from parameters
+    _run_interval_us = 5000; // Default 5ms (200Hz)
 
-    // Register this instance
-    if (_instance < MAX_INSTANCES && _instances[_instance] == nullptr) {
-        _instances[_instance] = this;
-        _num_instances.fetch_add(1);
+    // Set manager instance if this is the manager
+    if (_instance == MANAGER_INSTANCE) {
+        _manager_instance = this;
     }
 }
 
@@ -86,6 +86,12 @@ LimitSensor::~LimitSensor()
 {
     // Stop the work queue
     ScheduleClear();
+
+    // Manager instance cleanup
+    if (_instance == MANAGER_INSTANCE) {
+        stop_all_sensor_instances();
+        _manager_instance = nullptr;
+    }
 
     // Unadvertise publication
     if (_pub_handle != nullptr) {
@@ -116,18 +122,68 @@ const limit_sensor_config_t* LimitSensor::get_board_config(uint8_t instance)
 
 bool LimitSensor::init()
 {
+    // Manager instance doesn't need initialization
+    if (_instance == MANAGER_INSTANCE) {
+        return true;
+    }
+
     // Get board configuration for this instance
     _board_config = get_board_config(_instance);
-
     if (_board_config == nullptr) {
         PX4_ERR("No board configuration for instance %d", _instance);
         return false;
     }
 
     // Load runtime parameters
-    load_parameters();
-    load_global_parameters();
+    updateParams();
 
+    // Check if this instance is enabled
+    if (!is_instance_enabled()) {
+        PX4_INFO("Limit sensor instance %d is disabled via parameter", _instance);
+        return false;
+    }
+
+    // Configure switches
+    if (!configure_switches()) {
+        return false;
+    }
+
+    // Initialize uORB publication
+    if (!init_publication()) {
+        return false;
+    }
+
+    // Start work queue
+    ScheduleOnInterval(_run_interval_us);
+
+    PX4_INFO("LimitSensor %d initialized: %s", _instance, _board_config->name);
+    return true;
+}
+
+bool LimitSensor::is_instance_enabled() const
+{
+    switch (_instance) {
+    case 0: return _param_ls0_enable.get();
+    case 1: return _param_ls1_enable.get();
+    case 2: return _param_ls2_enable.get();
+    case 3: return _param_ls3_enable.get();
+    default: return false;
+    }
+}
+
+int LimitSensor::get_instance_function() const
+{
+    switch (_instance) {
+    case 0: return _param_ls0_function.get();
+    case 1: return _param_ls1_function.get();
+    case 2: return _param_ls2_function.get();
+    case 3: return _param_ls3_function.get();
+    default: return -1;
+    }
+}
+
+bool LimitSensor::configure_switches()
+{
     // Configure primary switch
     if (_board_config->gpio_pin_1 != 0) {
         if (!configure_switch(_switch_1, _board_config->gpio_pin_1, _board_config->inverted)) {
@@ -136,7 +192,7 @@ bool LimitSensor::init()
         }
     }
 
-    // Configure secondary switch if defined and redundancy is enabled
+    // Configure secondary switch if redundancy is enabled
     if (_board_config->gpio_pin_2 != 0 && _board_config->redundancy_enabled) {
         if (!configure_switch(_switch_2, _board_config->gpio_pin_2, _board_config->inverted)) {
             PX4_ERR("Failed to configure switch 2 for %s", _board_config->name);
@@ -144,7 +200,11 @@ bool LimitSensor::init()
         }
     }
 
-    // Initialize uORB publications
+    return true;
+}
+
+bool LimitSensor::init_publication()
+{
     limit_sensor_s msg{};
     msg.timestamp = hrt_absolute_time();
     msg.instance = _instance;
@@ -158,11 +218,6 @@ bool LimitSensor::init()
         return false;
     }
 
-    // Start work queue
-    ScheduleOnInterval(_run_interval_us);
-
-    PX4_INFO("LimitSensor %d initialized: %s", _instance, _board_config->name);
-
     return true;
 }
 
@@ -174,7 +229,7 @@ bool LimitSensor::configure_switch(SwitchState &switch_state, uint32_t pin, bool
     // Configure GPIO pin
 #if defined(__PX4_NUTTX)
     if (px4_arch_configgpio(pin) < 0) {
-        PX4_ERR("Failed to configure GPIO pin 0x%08" PRIx32, pin);
+        PX4_ERR("Failed to configure GPIO pin 0x%08lx", pin);
         return false;
     }
 #endif
@@ -276,9 +331,29 @@ void LimitSensor::update_combined_state()
     _sensor_state.last_combined_state = new_state;
 }
 
-void LimitSensor::check_redundancy_fault()
+void LimitSensor::stop_all_sensor_instances()
 {
-    // This is handled in update_combined_state()
+    for (int i = 0; i < MAX_INSTANCES; i++) {
+        if (_instances[i] != nullptr) {
+            PX4_INFO("Stopping limit sensor instance %d", i);
+            delete _instances[i];
+            _instances[i] = nullptr;
+        }
+    }
+    _num_instances.store(0);
+}
+
+const char* LimitSensor::get_function_name(LimitFunction func)
+{
+    switch (func) {
+    case BUCKET_LOAD: return "Bucket Load";
+    case BUCKET_DUMP: return "Bucket Dump";
+    case BOOM_UP: return "Boom Up";
+    case BOOM_DOWN: return "Boom Down";
+    case STEERING_LEFT: return "Steering Left";
+    case STEERING_RIGHT: return "Steering Right";
+    default: return "Unknown";
+    }
 }
 
 void LimitSensor::publish_state()
@@ -302,30 +377,32 @@ void LimitSensor::publish_state()
     orb_publish(ORB_ID(limit_sensor), _pub_handle, &msg);
 }
 
-void LimitSensor::load_parameters()
+void LimitSensor::updateParams()
 {
-    updateParams();
-}
+    // Call parent updateParams
+    ModuleParams::updateParams();
 
-void LimitSensor::load_global_parameters()
-{
-    // Load global parameters
-    _global_params.poll_rate_handle = param_find("LS_POLL_RATE");
-    _global_params.debounce_us_handle = param_find("LS_DEBOUNCE_US");
-    _global_params.diag_enable_handle = param_find("LS_DIAG_ENABLE");
+    // Apply poll rate parameter
+    int32_t poll_rate = _param_poll_rate.get();
+    if (poll_rate > 0 && poll_rate <= 1000) {
+        _run_interval_us = 1000000 / poll_rate;
 
-    if (_global_params.poll_rate_handle != PARAM_INVALID) {
-        param_get(_global_params.poll_rate_handle, &_global_params.poll_rate);
-        _run_interval_us = 1000000 / _global_params.poll_rate; // Convert Hz to microseconds
+        // Update schedule if already running
+        if (_board_config != nullptr) {
+            ScheduleOnInterval(_run_interval_us);
+        }
     }
 
-    if (_global_params.debounce_us_handle != PARAM_INVALID) {
-        param_get(_global_params.debounce_us_handle, &_global_params.debounce_us);
-        _debounce_time_us = _global_params.debounce_us;
+    // Apply debounce time parameter
+    int32_t debounce_us = _param_debounce_us.get();
+    if (debounce_us >= 1000 && debounce_us <= 100000) {
+        _debounce_time_us = debounce_us;
     }
 
-    if (_global_params.diag_enable_handle != PARAM_INVALID) {
-        param_get(_global_params.diag_enable_handle, &_global_params.diag_enable);
+    // Log parameter updates if diagnostics enabled
+    if (_param_diag_enable.get() && _instance != MANAGER_INSTANCE) {
+        PX4_INFO("LimitSensor %d params: poll_rate=%ld Hz, debounce=%ld us",
+                _instance, poll_rate, debounce_us);
     }
 }
 
@@ -336,14 +413,18 @@ void LimitSensor::Run()
         return;
     }
 
+    // Manager instance doesn't need to run
+    if (_instance == MANAGER_INSTANCE) {
+        return;
+    }
+
     perf_begin(_cycle_perf);
 
     // Check for parameter updates
     if (_parameter_update_sub.updated()) {
         parameter_update_s param_update;
         _parameter_update_sub.copy(&param_update);
-        load_parameters();
-        load_global_parameters();
+        updateParams();
     }
 
     perf_begin(_sample_perf);
@@ -363,9 +444,6 @@ void LimitSensor::Run()
         update_combined_state();
     }
 
-    // Check for faults
-    check_redundancy_fault();
-
     // Publish state
     publish_state();
 
@@ -375,27 +453,58 @@ void LimitSensor::Run()
 
 int LimitSensor::print_status()
 {
+    // Manager instance shows overview
+    if (_instance == MANAGER_INSTANCE) {
+        PX4_INFO("Limit Sensor Manager Status");
+        PX4_INFO("  Active instances: %d", _num_instances.load());
+
+        for (int i = 0; i < MAX_INSTANCES; i++) {
+            if (_instances[i] != nullptr) {
+                _instances[i]->print_status();
+            }
+        }
+        return 0;
+    }
+
+    // Regular instance status
     if (_board_config == nullptr) {
         PX4_INFO("Instance %d: Not configured", _instance);
         return 0;
     }
 
-    PX4_INFO("Instance %d: %s", _instance, _board_config->name);
-    PX4_INFO("  Poll rate: %" PRIu32 " Hz", _global_params.poll_rate);
-    PX4_INFO("  Debounce: %" PRIu32 " us", _global_params.debounce_us);
-    PX4_INFO("  Switch 1: %s", _switch_1.current_state ? "ACTIVE" : "INACTIVE");
-    if (_switch_2.configured) {
-        PX4_INFO("  Switch 2: %s", _switch_2.current_state ? "ACTIVE" : "INACTIVE");
+    PX4_INFO("");
+    PX4_INFO("Instance %d: %s [%s]", _instance, _board_config->name,
+            get_function_name(static_cast<LimitFunction>(_board_config->function)));
+    PX4_INFO("  Enabled: %s", is_instance_enabled() ? "YES" : "NO");
+    PX4_INFO("  Poll rate: %ld Hz", _param_poll_rate.get());
+    PX4_INFO("  Debounce: %ld us", _param_debounce_us.get());
+    PX4_INFO("  Diagnostics: %s", _param_diag_enable.get() ? "ENABLED" : "DISABLED");
+
+    if (_switch_1.configured) {
+        PX4_INFO("  Switch 1: %s (pin: 0x%08lx)",
+                _switch_1.current_state ? "ACTIVE" : "INACTIVE", _switch_1.pin);
     }
+
+    if (_switch_2.configured) {
+        PX4_INFO("  Switch 2: %s (pin: 0x%08lx)",
+                _switch_2.current_state ? "ACTIVE" : "INACTIVE", _switch_2.pin);
+        PX4_INFO("  Redundancy: %s",
+                _sensor_state.redundancy_fault ? "FAULT" : "OK");
+    }
+
     PX4_INFO("  Combined: %s", _sensor_state.combined_state ? "ACTIVE" : "INACTIVE");
     PX4_INFO("  Activations: %" PRIu32, _sensor_state.activation_count);
-    PX4_INFO("  Run interval: %" PRIu32 " us", _run_interval_us);
+
+    perf_print_counter(_cycle_perf);
+    perf_print_counter(_sample_perf);
+    perf_print_counter(_fault_perf);
+
     return 0;
 }
 
 int LimitSensor::task_spawn(int argc, char *argv[])
 {
-    // Parse command line arguments for instance selection
+    // Parse command line arguments
     int ch;
     int myoptind = 1;
     const char *myoptarg = nullptr;
@@ -416,59 +525,37 @@ int LimitSensor::task_spawn(int argc, char *argv[])
         }
     }
 
+    // Create manager instance if needed
+    if (_manager_instance == nullptr) {
+        LimitSensor *manager = new LimitSensor(MANAGER_INSTANCE);
+        if (manager == nullptr) {
+            PX4_ERR("Failed to allocate manager instance");
+            return PX4_ERROR;
+        }
+
+        // Store manager as the primary object
+        _object.store(manager);
+        _task_id = task_id_is_work_queue;
+
+        PX4_INFO("Limit sensor manager started");
+    }
+
 #ifdef BOARD_HAS_LIMIT_SENSOR_CONFIG
     bool any_started = false;
 
     if (target_instance >= 0) {
         // Start specific instance
-        if (target_instance < BOARD_NUM_LIMIT_SENSORS) {
-            LimitSensor *obj = new LimitSensor(target_instance);
-
-            if (obj == nullptr) {
-                PX4_ERR("alloc failed for instance %d", target_instance);
-                return PX4_ERROR;
-            }
-
-            if (obj->init()) {
-                _object.store(obj);
-                _task_id = task_id_is_work_queue;
-                any_started = true;
-                PX4_INFO("Started limit sensor instance %d", target_instance);
-            } else {
-                delete obj;
-                PX4_ERR("Failed to initialize instance %d", target_instance);
-                return PX4_ERROR;
-            }
-        } else {
-            PX4_ERR("Instance %d not configured on this board (max: %d)", target_instance, BOARD_NUM_LIMIT_SENSORS - 1);
-            return PX4_ERROR;
-        }
+        any_started = start_instance(target_instance);
     } else {
-        // Start all configured instances
-        for (int i = 0; i < BOARD_NUM_LIMIT_SENSORS; i++) {
-            LimitSensor *obj = new LimitSensor(i);
-
-            if (obj == nullptr) {
-                PX4_ERR("alloc failed for instance %d", i);
-                continue;
-            }
-
-            if (obj->init()) {
-                // For the first instance, store it as the primary object
-                if (!any_started) {
-                    _object.store(obj);
-                    _task_id = task_id_is_work_queue;
-                }
+        // Start all enabled instances
+        for (int i = 0; i < math::min(MAX_INSTANCES, BOARD_NUM_LIMIT_SENSORS); i++) {
+            if (start_instance(i)) {
                 any_started = true;
-                PX4_INFO("Started limit sensor instance %d", i);
-            } else {
-                delete obj;
-                PX4_ERR("Failed to start limit sensor instance %d", i);
             }
         }
     }
 
-    if (any_started) {
+    if (any_started || _manager_instance != nullptr) {
         return PX4_OK;
     } else {
         PX4_ERR("No limit sensor instances could be started");
@@ -480,14 +567,62 @@ int LimitSensor::task_spawn(int argc, char *argv[])
 #endif
 }
 
-LimitSensor *LimitSensor::instantiate(int argc, char *argv[])
+bool LimitSensor::start_instance(int instance)
 {
-    LimitSensor *obj = new LimitSensor(0);
-    return obj;
+    // Check if already running
+    if (_instances[instance] != nullptr) {
+        PX4_INFO("Instance %d already running", instance);
+        return true;
+    }
+
+    // Create new instance
+    LimitSensor *obj = new LimitSensor(instance);
+    if (obj == nullptr) {
+        PX4_ERR("Failed to allocate instance %d", instance);
+        return false;
+    }
+
+    // Initialize instance
+    if (obj->init()) {
+        _instances[instance] = obj;
+        _num_instances.fetch_add(1);
+        PX4_INFO("Started limit sensor instance %d", instance);
+        return true;
+    } else {
+        delete obj;
+        return false;
+    }
 }
 
 int LimitSensor::custom_command(int argc, char *argv[])
 {
+    const char *command = argv[1];
+
+    if (!strcmp(command, "stop_instance")) {
+        if (argc < 3) {
+            PX4_ERR("Missing instance number");
+            return PX4_ERROR;
+        }
+
+        int instance = atoi(argv[2]);
+        if (instance < 0 || instance >= MAX_INSTANCES) {
+            PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
+            return PX4_ERROR;
+        }
+
+        if (_instances[instance] != nullptr) {
+            PX4_INFO("Stopping limit sensor instance %d", instance);
+            delete _instances[instance];
+            _instances[instance] = nullptr;
+            _num_instances.fetch_sub(1);
+            PX4_INFO("Limit sensor instance %d stopped", instance);
+        } else {
+            PX4_INFO("Instance %d is not running", instance);
+        }
+
+        return PX4_OK;
+    }
+
     return print_usage("unknown command");
 }
 
@@ -506,9 +641,16 @@ The limit sensor driver monitors GPIO pins for limit switch states and publishes
 them via uORB. It supports both single and redundant switch configurations.
 
 ### Implementation
-The driver can run multiple instances, each monitoring different limit switches
-based on board configuration. Switch states are debounced and published at a
-configurable rate.
+The driver uses a manager instance pattern where a special manager instance
+handles the lifecycle of sensor instances. Each sensor instance monitors
+specific limit switches based on board configuration.
+
+Features:
+- Debounced switch inputs
+- Redundant switch support with fault detection
+- Configurable polling rate
+- Per-instance enable/disable control
+- Activation counting and timing
 
 ### Examples
 Start all configured limit sensor instances:
@@ -517,16 +659,19 @@ $ limit_sensor start
 Start a specific limit sensor instance:
 $ limit_sensor start -i 0
 
-Stop the limit sensor driver:
-$ limit_sensor stop
+Stop a specific limit sensor instance:
+$ limit_sensor stop_instance 0
 
-Show status:
+Show status of all instances:
 $ limit_sensor status
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("limit_sensor", "driver");
     PRINT_MODULE_USAGE_COMMAND("start");
-    PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, 7, "Start specific instance (0-7), default: start all", true);
+    PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, MAX_INSTANCES-1,
+                                 "Start specific instance (0-3), default: start all enabled", true);
+    PRINT_MODULE_USAGE_COMMAND_DESCR("stop_instance", "Stop a specific instance");
+    PRINT_MODULE_USAGE_ARG("instance", "Instance number to stop (0-3)", false);
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;

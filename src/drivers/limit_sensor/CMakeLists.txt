@@ -5,6 +5,8 @@ px4_add_module(
     SRCS
         LimitSensor.cpp
         LimitSensor.hpp
+    MODULE_CONFIG
+        module.yaml
     DEPENDS
         perf
         px4_work_queue

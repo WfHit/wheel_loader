@@ -21,7 +21,8 @@ class LimitSensor : public ModuleBase<LimitSensor>, public ModuleParams, public 
 {
 public:
     // Maximum number of instances (should match board configs)
-    static constexpr int MAX_INSTANCES = 8;
+    static constexpr int MAX_INSTANCES = 4;
+    static constexpr uint8_t MANAGER_INSTANCE = 255; // Special instance for manager
 
     enum LimitFunction : uint8_t {
         BUCKET_LOAD = 0,
@@ -52,14 +53,13 @@ public:
         return FUNCTION_DISABLED;
     }
 
-    static LimitSensor *instantiate(int argc, char *argv[]);
-
 private:
     void Run() override;
 
     // Static storage for multiple instances
     static LimitSensor *_instances[MAX_INSTANCES];
     static px4::atomic<uint8_t> _num_instances;
+    static LimitSensor *_manager_instance; // Special manager instance
 
     // Instance details
     const uint8_t _instance;
@@ -80,28 +80,32 @@ private:
     SwitchState _switch_2;
 
     // Combined sensor state
-    struct {
+    struct SensorState {
         bool combined_state{false};
         bool last_combined_state{false};
+        bool redundancy_fault{false};
         uint32_t activation_count{0};
         uint64_t last_activation_time{0};
-        bool redundancy_fault{false};
     } _sensor_state;
 
     // Publications
-    uORB::PublicationMulti<limit_sensor_s> _limit_sensor_pub{ORB_ID(limit_sensor)};
     orb_advert_t _pub_handle{nullptr};
 
     // Subscriptions
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
-    // Methods
+    // Helper methods
+    bool is_instance_enabled() const;
+    int get_instance_function() const;
+    bool configure_switches();
+    bool init_publication();
     bool configure_switch(SwitchState &switch_state, uint32_t pin, bool inverted);
     bool read_switch_state(SwitchState &switch_state);
     bool debounce_switch(SwitchState &switch_state);
     void update_combined_state();
-    void check_redundancy_fault();
     void publish_state();
+    void stop_all_sensor_instances();
+    static bool start_instance(int instance);
 
     // Get board configuration for this instance
     const limit_sensor_config_t* get_board_config(uint8_t instance);
@@ -119,17 +123,20 @@ private:
     // Polling rate (configurable via parameters)
     uint32_t _run_interval_us{5000}; // Default 200Hz, loaded from LS_POLL_RATE
 
-    // Global configuration parameters (runtime adjustable)
-    struct {
-        param_t poll_rate_handle;
-        param_t debounce_us_handle;
-        param_t diag_enable_handle;
+    // Parameters (using ModuleParams framework with YAML-generated parameters)
+    DEFINE_PARAMETERS(
+        (ParamInt<px4::params::LS_POLL_RATE>) _param_poll_rate,
+        (ParamInt<px4::params::LS_DEBOUNCE_US>) _param_debounce_us,
+        (ParamBool<px4::params::LS_DIAG_ENABLE>) _param_diag_enable,
+        (ParamBool<px4::params::LS_0_ENABLE>) _param_ls0_enable,
+        (ParamInt<px4::params::LS_0_FUNCTION>) _param_ls0_function,
+        (ParamBool<px4::params::LS_1_ENABLE>) _param_ls1_enable,
+        (ParamInt<px4::params::LS_1_FUNCTION>) _param_ls1_function,
+        (ParamBool<px4::params::LS_2_ENABLE>) _param_ls2_enable,
+        (ParamInt<px4::params::LS_2_FUNCTION>) _param_ls2_function,
+        (ParamBool<px4::params::LS_3_ENABLE>) _param_ls3_enable,
+        (ParamInt<px4::params::LS_3_FUNCTION>) _param_ls3_function
+    )
 
-        int32_t poll_rate;
-        int32_t debounce_us;
-        int32_t diag_enable;
-    } _global_params;
-
-    void load_parameters();
-    void load_global_parameters();
+    void updateParams() override;
 };
