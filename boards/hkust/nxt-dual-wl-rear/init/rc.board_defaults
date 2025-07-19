@@ -65,3 +65,14 @@ param set-default LS4_ENABLE 0       # Not configured on rear board
 param set-default LS5_ENABLE 0       # Reserved (disabled)
 param set-default LS6_ENABLE 0       # Reserved (disabled)
 param set-default LS7_ENABLE 0       # Reserved (disabled)
+
+# H-Bridge Configuration for Rear Board
+param set-default HBRIDGE_L_PWM 0      # Left wheel PWM channel
+param set-default HBRIDGE_R_PWM 1      # Right wheel PWM channel
+param set-default HBRIDGE_PWM_FREQ 25000.0  # PWM frequency 25kHz
+param set-default HBRIDGE_L_DREV 0     # Left wheel direction normal
+param set-default HBRIDGE_R_DREV 0     # Right wheel direction normal
+param set-default HBRIDGE_L_FLIM 255   # Left forward limit disabled
+param set-default HBRIDGE_L_RLIM 255   # Left reverse limit disabled
+param set-default HBRIDGE_R_FLIM 255   # Right forward limit disabled
+param set-default HBRIDGE_R_RLIM 255   # Right reverse limit disabled

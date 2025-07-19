@@ -47,6 +47,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/limit_sensor.h>
 
 using namespace time_literals;
 
@@ -68,9 +69,6 @@ public:
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
-
-	/** @see ModuleBase */
-	static HBridge *instantiate(int argc, char *argv[]);
 
 	/** @see ModuleBase */
 	static int custom_command(int argc, char *argv[]);
@@ -108,18 +106,24 @@ private:
 		float current_duty_cycle{0.0f}; // Current duty cycle
 		bool enabled{false};            // Channel enabled
 		bool initialized{false};        // Channel initialized
+		bool forward_limit_active{false}; // Forward direction limit sensor active
+		bool reverse_limit_active{false}; // Reverse direction limit sensor active
+		bool dir_reversed{false};      // Direction signal is reversed
 	};
 
 	// Methods
 	void parameters_update();
 	void process_commands();
+	void process_limit_sensors();
 	void publish_status();
 	bool configure_channel(int channel);
 	void set_channel_speed(int channel, float duty_cycle);
 	void update_channel_direction(int channel, bool forward);
+	bool check_limit_sensor_for_direction(int channel, bool forward);
 
 	// Parameter getters
 	int get_pwm_channel(int ch) const;
+	int get_limit_sensor_function(int ch, bool forward) const;
 
 	// Convenience methods for left/right channel access
 	void set_left_channel_speed(float duty_cycle) { set_channel_speed(LEFT_CHANNEL, duty_cycle); }
@@ -136,6 +140,7 @@ private:
 	// Subscriptions
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _command_sub{ORB_ID(hbridge_command)};
+	uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
 
 	// Performance counters
 	perf_counter_t _loop_perf;
@@ -152,6 +157,12 @@ private:
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::HBRIDGE_L_PWM>) _param_left_pwm,
 		(ParamInt<px4::params::HBRIDGE_R_PWM>) _param_right_pwm,
-		(ParamFloat<px4::params::HBRIDGE_PWM_FREQ>) _param_pwm_freq
+		(ParamFloat<px4::params::HBRIDGE_PWM_FREQ>) _param_pwm_freq,
+		(ParamInt<px4::params::HBRIDGE_L_DREV>) _param_left_dir_rev,
+		(ParamInt<px4::params::HBRIDGE_R_DREV>) _param_right_dir_rev,
+		(ParamInt<px4::params::HBRIDGE_L_FLIM>) _param_left_fwd_limit,
+		(ParamInt<px4::params::HBRIDGE_L_RLIM>) _param_left_rev_limit,
+		(ParamInt<px4::params::HBRIDGE_R_FLIM>) _param_right_fwd_limit,
+		(ParamInt<px4::params::HBRIDGE_R_RLIM>) _param_right_rev_limit
 	)
 };

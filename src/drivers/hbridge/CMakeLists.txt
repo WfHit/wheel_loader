@@ -38,6 +38,8 @@ px4_add_module(
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
 		hbridge.cpp
+	MODULE_CONFIG
+		module.yaml
 	DEPENDS
 		arch_io_pins
 	)

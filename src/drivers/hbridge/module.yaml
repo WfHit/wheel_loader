@@ -1,0 +1,104 @@
+module_name: hbridge
+
+parameters:
+  - group: HBridge
+    definitions:
+      HBRIDGE_L_PWM:
+        description:
+          short: Left wheel PWM channel
+          long: |
+            PWM channel for left wheel motor control.
+            PWM0 is typically used for left wheel on this board.
+        type: int32
+        min: 0
+        max: 15
+        default: 0
+
+      HBRIDGE_R_PWM:
+        description:
+          short: Right wheel PWM channel
+          long: |
+            PWM channel for right wheel motor control.
+            PWM1 is typically used for right wheel on this board.
+        type: int32
+        min: 0
+        max: 15
+        default: 1
+
+      HBRIDGE_PWM_FREQ:
+        description:
+          short: H-Bridge PWM frequency
+          long: |
+            PWM frequency for all H-Bridge channels.
+            Motor control uses high frequencies (10-100 kHz) for smooth operation.
+        type: float
+        unit: Hz
+        min: 10000
+        max: 100000
+        default: 25000.0
+
+      HBRIDGE_L_DREV:
+        description:
+          short: Left channel direction reverse
+          long: |
+            Reverse the direction signal for the left channel.
+            Set to 1 to invert the direction GPIO signal (0=forward becomes 1=forward).
+        type: int32
+        min: 0
+        max: 1
+        default: 0
+
+      HBRIDGE_R_DREV:
+        description:
+          short: Right channel direction reverse
+          long: |
+            Reverse the direction signal for the right channel.
+            Set to 1 to invert the direction GPIO signal (0=forward becomes 1=forward).
+        type: int32
+        min: 0
+        max: 1
+        default: 0
+
+      HBRIDGE_L_FLIM:
+        description:
+          short: Left channel forward limit sensor function
+          long: |
+            Limit sensor function ID that will stop the left channel when moving forward.
+            Set to 255 to disable limit checking for left forward direction.
+        type: int32
+        min: 0
+        max: 255
+        default: 255
+
+      HBRIDGE_L_RLIM:
+        description:
+          short: Left channel reverse limit sensor function
+          long: |
+            Limit sensor function ID that will stop the left channel when moving reverse.
+            Set to 255 to disable limit checking for left reverse direction.
+        type: int32
+        min: 0
+        max: 255
+        default: 255
+
+      HBRIDGE_R_FLIM:
+        description:
+          short: Right channel forward limit sensor function
+          long: |
+            Limit sensor function ID that will stop the right channel when moving forward.
+            Set to 255 to disable limit checking for right forward direction.
+        type: int32
+        min: 0
+        max: 255
+        default: 255
+
+      HBRIDGE_R_RLIM:
+        description:
+          short: Right channel reverse limit sensor function
+          long: |
+            Limit sensor function ID that will stop the right channel when moving reverse.
+            Set to 255 to disable limit checking for right reverse direction.
+        type: int32
+        min: 0
+        max: 255
+        default: 255

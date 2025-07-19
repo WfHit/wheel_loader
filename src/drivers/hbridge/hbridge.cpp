@@ -256,6 +256,9 @@ void HBridge::Run()
 	// Process commands
 	process_commands();
 
+	// Process limit sensors
+	process_limit_sensors();
+
 	// Publish status
 	publish_status();
 
@@ -291,6 +294,45 @@ void HBridge::process_commands()
 	perf_end(_command_perf);
 }
 
+void HBridge::process_limit_sensors()
+{
+	limit_sensor_s limit_msg;
+
+	// Process all pending limit sensor messages
+	while (_limit_sensor_sub.update(&limit_msg)) {
+		// Check if this limit sensor affects any channel
+		for (int ch = 0; ch < MAX_CHANNELS; ch++) {
+			// Check forward limit
+			int fwd_limit_function = get_limit_sensor_function(ch, true);
+			if (fwd_limit_function != 255 && limit_msg.function == fwd_limit_function) {
+				bool was_active = _channels[ch].forward_limit_active;
+				_channels[ch].forward_limit_active = limit_msg.state;
+
+				// If limit just became active and currently moving forward, stop the channel
+				if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle > 0.0f) {
+					set_channel_speed(ch, 0.0f);
+					const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
+					PX4_INFO("%s channel stopped due to forward limit sensor", channel_name);
+				}
+			}
+
+			// Check reverse limit
+			int rev_limit_function = get_limit_sensor_function(ch, false);
+			if (rev_limit_function != 255 && limit_msg.function == rev_limit_function) {
+				bool was_active = _channels[ch].reverse_limit_active;
+				_channels[ch].reverse_limit_active = limit_msg.state;
+
+				// If limit just became active and currently moving reverse, stop the channel
+				if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle < 0.0f) {
+					set_channel_speed(ch, 0.0f);
+					const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
+					PX4_INFO("%s channel stopped due to reverse limit sensor", channel_name);
+				}
+			}
+		}
+	}
+}
+
 void HBridge::set_channel_speed(int channel, float duty_cycle)
 {
 	if (channel >= MAX_CHANNELS || !_channels[channel].initialized) {
@@ -300,8 +342,17 @@ void HBridge::set_channel_speed(int channel, float duty_cycle)
 	// Clamp duty cycle
 	duty_cycle = math::constrain(duty_cycle, -1.0f, 1.0f);
 
-	// Update direction based on sign
+	// Check limit sensors before allowing movement
 	bool forward = duty_cycle >= 0.0f;
+	if (!check_limit_sensor_for_direction(channel, forward)) {
+		// Limit sensor is active for this direction, set duty to zero
+		duty_cycle = 0.0f;
+		const char* channel_name = (channel == LEFT_CHANNEL) ? "left" : "right";
+		const char* direction = forward ? "forward" : "reverse";
+		PX4_DEBUG("%s channel %s movement blocked by limit sensor", channel_name, direction);
+	}
+
+	// Update direction based on sign
 	update_channel_direction(channel, forward);
 
 	// Set PWM duty cycle (absolute value)
@@ -328,8 +379,32 @@ void HBridge::set_channel_speed(int channel, float duty_cycle)
 void HBridge::update_channel_direction(int channel, bool forward)
 {
 	if (channel < MAX_CHANNELS && _channels[channel].dir_gpio != 0) {
-		px4_arch_gpiowrite(_channels[channel].dir_gpio, forward ? 0 : 1);
+		// Calculate final direction signal using cached dir_reversed flag
+		bool gpio_state = forward;
+		if (_channels[channel].dir_reversed) {
+			gpio_state = !gpio_state;
+		}
+
+		px4_arch_gpiowrite(_channels[channel].dir_gpio, gpio_state ? 1 : 0);
 	}
+}
+
+bool HBridge::check_limit_sensor_for_direction(int channel, bool forward)
+{
+	if (channel >= MAX_CHANNELS) {
+		return true; // Allow movement for invalid channels
+	}
+
+	// Check if the limit sensor for this direction is active
+	if (forward && _channels[channel].forward_limit_active) {
+		return false; // Block forward movement
+	}
+
+	if (!forward && _channels[channel].reverse_limit_active) {
+		return false; // Block reverse movement
+	}
+
+	return true; // Allow movement
 }
 
 void HBridge::publish_status()
@@ -350,12 +425,22 @@ void HBridge::publish_status()
 	status.temperature = 0.0f; // TODO: Add temperature sensing
 	status.fault_detected = false; // TODO: Add fault detection
 
+	// Add limit sensor information
+	status.fault_detected = _channels[LEFT_CHANNEL].forward_limit_active ||
+				_channels[LEFT_CHANNEL].reverse_limit_active ||
+				_channels[RIGHT_CHANNEL].forward_limit_active ||
+				_channels[RIGHT_CHANNEL].reverse_limit_active;
+
 	orb_publish(ORB_ID(hbridge_status), _status_pub, &status);
 }
 
 void HBridge::parameters_update()
 {
 	updateParams();
+
+	// Update direction reverse settings for each channel
+	_channels[LEFT_CHANNEL].dir_reversed = (_param_left_dir_rev.get() != 0);
+	_channels[RIGHT_CHANNEL].dir_reversed = (_param_right_dir_rev.get() != 0);
 
 	// Update PWM frequency if changed
 	if (_pwm_initialized) {
@@ -382,6 +467,17 @@ int HBridge::get_pwm_channel(int ch) const
 	return (ch == LEFT_CHANNEL) ? _param_left_pwm.get() : _param_right_pwm.get();
 }
 
+int HBridge::get_limit_sensor_function(int ch, bool forward) const
+{
+	// Return the limit sensor function ID for the given channel and direction
+	if (ch == LEFT_CHANNEL) {
+		return forward ? _param_left_fwd_limit.get() : _param_left_rev_limit.get();
+	} else if (ch == RIGHT_CHANNEL) {
+		return forward ? _param_right_fwd_limit.get() : _param_right_rev_limit.get();
+	}
+	return 255; // Disabled
+}
+
 int HBridge::task_spawn(int argc, char *argv[])
 {
 	HBridge *instance = new HBridge();
@@ -403,11 +499,6 @@ int HBridge::task_spawn(int argc, char *argv[])
 	_object.store(nullptr);
 	_task_id = -1;
 	return -1;
-}
-
-HBridge *HBridge::instantiate(int argc, char *argv[])
-{
-	return new HBridge();
 }
 
 int HBridge::custom_command(int argc, char *argv[])
@@ -438,7 +529,14 @@ int HBridge::print_status()
 		PX4_INFO("  Duty Cycle: %.2f", (double)_channels[i].current_duty_cycle);
 		PX4_INFO("  Enabled: %s", _channels[i].enabled ? "Yes" : "No");
 		PX4_INFO("  Direction GPIO: 0x%08lx", (unsigned long)_channels[i].dir_gpio);
+		PX4_INFO("  Direction Reversed: %s", _channels[i].dir_reversed ? "Yes" : "No");
 		PX4_INFO("  Initialized: %s", _channels[i].initialized ? "Yes" : "No");
+		PX4_INFO("  Forward Limit: %s (Function: %d)",
+			 _channels[i].forward_limit_active ? "ACTIVE" : "OK",
+			 get_limit_sensor_function(i, true));
+		PX4_INFO("  Reverse Limit: %s (Function: %d)",
+			 _channels[i].reverse_limit_active ? "ACTIVE" : "OK",
+			 get_limit_sensor_function(i, false));
 	}
 
 	perf_print_counter(_loop_perf);
@@ -470,9 +568,17 @@ Configure each channel using the following parameters:
 - HBRIDGE_L_PWM: PWM channel for left channel (default: 0)
 - HBRIDGE_R_PWM: PWM channel for right channel (default: 1)
 - HBRIDGE_PWM_FREQ: PWM frequency in Hz (default: 25000 Hz)
+- HBRIDGE_L_DREV: Left channel direction reverse (default: 0=normal)
+- HBRIDGE_R_DREV: Right channel direction reverse (default: 0=normal)
+- HBRIDGE_L_FLIM: Left channel forward limit sensor function (default: 255=disabled)
+- HBRIDGE_L_RLIM: Left channel reverse limit sensor function (default: 255=disabled)
+- HBRIDGE_R_FLIM: Right channel forward limit sensor function (default: 255=disabled)
+- HBRIDGE_R_RLIM: Right channel reverse limit sensor function (default: 255=disabled)
 
 Motor control uses duty cycle (0.0 to 1.0) for speed control.
 Direction is controlled via separate GPIO pins.
+Direction reverse parameters allow inverting the direction signal if needed.
+Limit sensors will automatically stop movement when activated for the configured direction.
 
 ### Examples
 Start the driver:
