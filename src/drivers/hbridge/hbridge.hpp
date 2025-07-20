@@ -44,6 +44,7 @@
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionCallback.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
@@ -140,7 +141,7 @@ private:
 	// Subscriptions
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _command_sub{ORB_ID(hbridge_command)};
-	uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
+	uORB::SubscriptionMultiArray<limit_sensor_s, 4> _limit_sensor_sub{ORB_ID::limit_sensor};
 
 	// Performance counters
 	perf_counter_t _loop_perf;

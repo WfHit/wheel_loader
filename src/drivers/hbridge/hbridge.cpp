@@ -298,35 +298,38 @@ void HBridge::process_limit_sensors()
 {
 	limit_sensor_s limit_msg;
 
-	// Process all pending limit sensor messages
-	while (_limit_sensor_sub.update(&limit_msg)) {
-		// Check if this limit sensor affects any channel
-		for (int ch = 0; ch < MAX_CHANNELS; ch++) {
-			// Check forward limit
-			int fwd_limit_function = get_limit_sensor_function(ch, true);
-			if (fwd_limit_function != 255 && limit_msg.function == fwd_limit_function) {
-				bool was_active = _channels[ch].forward_limit_active;
-				_channels[ch].forward_limit_active = limit_msg.state;
+	// Process all limit sensor instances
+	for (uint8_t instance = 0; instance < _limit_sensor_sub.size(); instance++) {
+		// Process all pending limit sensor messages for this instance
+		while (_limit_sensor_sub[instance].update(&limit_msg)) {
+			// Check if this limit sensor affects any channel
+			for (int ch = 0; ch < MAX_CHANNELS; ch++) {
+				// Check forward limit
+				int fwd_limit_function = get_limit_sensor_function(ch, true);
+				if (fwd_limit_function != 255 && limit_msg.function == fwd_limit_function) {
+					bool was_active = _channels[ch].forward_limit_active;
+					_channels[ch].forward_limit_active = limit_msg.state;
 
-				// If limit just became active and currently moving forward, stop the channel
-				if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle > 0.0f) {
-					set_channel_speed(ch, 0.0f);
-					const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
-					PX4_INFO("%s channel stopped due to forward limit sensor", channel_name);
+					// If limit just became active and currently moving forward, stop the channel
+					if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle > 0.0f) {
+						set_channel_speed(ch, 0.0f);
+						const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
+						PX4_INFO("%s channel stopped due to forward limit sensor", channel_name);
+					}
 				}
-			}
 
-			// Check reverse limit
-			int rev_limit_function = get_limit_sensor_function(ch, false);
-			if (rev_limit_function != 255 && limit_msg.function == rev_limit_function) {
-				bool was_active = _channels[ch].reverse_limit_active;
-				_channels[ch].reverse_limit_active = limit_msg.state;
+				// Check reverse limit
+				int rev_limit_function = get_limit_sensor_function(ch, false);
+				if (rev_limit_function != 255 && limit_msg.function == rev_limit_function) {
+					bool was_active = _channels[ch].reverse_limit_active;
+					_channels[ch].reverse_limit_active = limit_msg.state;
 
-				// If limit just became active and currently moving reverse, stop the channel
-				if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle < 0.0f) {
-					set_channel_speed(ch, 0.0f);
-					const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
-					PX4_INFO("%s channel stopped due to reverse limit sensor", channel_name);
+					// If limit just became active and currently moving reverse, stop the channel
+					if (limit_msg.state && !was_active && _channels[ch].current_duty_cycle < 0.0f) {
+						set_channel_speed(ch, 0.0f);
+						const char* channel_name = (ch == LEFT_CHANNEL) ? "left" : "right";
+						PX4_INFO("%s channel stopped due to reverse limit sensor", channel_name);
+					}
 				}
 			}
 		}
