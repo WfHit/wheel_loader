@@ -49,8 +49,10 @@
 
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/robotic_servo_command.h>
 #include <uORB/topics/robotic_servo_feedback.h>
+#include <uORB/topics/limit_sensor.h>
 
 #include <poll.h>
 #include <termios.h>
@@ -69,16 +71,11 @@ public:
 	~ST3215Servo() override;
 
 	static int task_spawn(int argc, char *argv[]);
-	static ST3215Servo *instantiate(int argc, char *argv[]);
 	static int custom_command(int argc, char *argv[]);
 	static int print_usage(const char *reason = nullptr);
 
 	int print_status() override;
 	bool init();
-
-	// Add diagnostic methods
-	void run_diagnostics();
-	void test_raw_communication();
 
 	// Add SMS_STS style utility functions
 	bool wheel_mode(uint8_t servo_id);
@@ -107,16 +104,15 @@ private:
 	bool read_register(uint8_t servo_id, uint8_t reg_addr, uint8_t *data, uint8_t length);
 	bool write_register(uint8_t servo_id, uint8_t reg_addr, const uint8_t *data, uint8_t length);
 
-	void process_commands();
+	void process_message();
+	void process_command_line();
 	void publish_feedback();
 
-	// Test mode control methods
-	void enter_test_mode();
-	void exit_test_mode();
-	bool is_test_mode_active() const;
-
-	// Add test methods (like test_serial)
-	void test_communication_patterns();
+	// Safety functions
+	void process_limit_sensors();
+	bool check_servo_safety(float goal_position);
+	void emergency_stop();
+	int get_limit_sensor_function(bool left_rotation) const;
 
 	// Serial port (simplified like test_serial)
 	int _uart{-1};
@@ -125,6 +121,7 @@ private:
 	// uORB topics
 	uORB::Subscription _servo_command_sub{ORB_ID(robotic_servo_command)};
 	uORB::Publication<robotic_servo_feedback_s> _servo_feedback_pub{ORB_ID(robotic_servo_feedback)};
+	uORB::SubscriptionMultiArray<limit_sensor_s, 4> _limit_sensor_sub{ORB_ID::limit_sensor};
 
 	// Performance counters
 	perf_counter_t _loop_perf;
@@ -141,8 +138,27 @@ private:
 	bool _connection_ok{false};        // Communication status
 	hrt_abstime _last_update_time{0};  // Last successful update time
 	int _consecutive_errors{0};        // Count of consecutive communication errors
-	bool _test_mode_active{false};     // Flag to temporarily stop status reading during test commands
-	hrt_abstime _test_mode_start{0};   // Time when test mode was activated
+
+	// Safety state
+	bool _safety_stop_active{false};   // Emergency stop due to limit sensor
+	uint8_t _active_limit_function{255}; // Which limit function is active (255 = none)
+
+	// Command flags for process_command_line
+	bool _flag_ping{false};
+	bool _flag_wheel_mode{false};
+	bool _flag_write_speed{false};
+	bool _flag_unlock_eprom{false};
+	bool _flag_lock_eprom{false};
+	bool _flag_read_moving{false};
+	bool _flag_read_mode{false};
+	bool _flag_set_abs_position{false};
+	bool _flag_set_rel_position{false};
+
+	// Command parameters
+	float _cmd_speed{0.0f};
+	uint8_t _cmd_acceleration{0};
+	float _cmd_position{0.0f};
+	float _cmd_position_speed{0.0f};
 
 	// ST3215 Protocol constants
 	static constexpr uint8_t ST3215_HEADER = 0xFF;
@@ -203,6 +219,8 @@ private:
 		(ParamInt<px4::params::ST3215_BAUDRATE>) _param_baudrate,
 		(ParamFloat<px4::params::ST3215_MIN_POS>) _param_min_position,
 		(ParamFloat<px4::params::ST3215_MAX_POS>) _param_max_position,
-		(ParamFloat<px4::params::ST3215_MAX_SPD>) _param_max_speed
+		(ParamFloat<px4::params::ST3215_MAX_SPD>) _param_max_speed,
+		(ParamInt<px4::params::ST3215_LEFT_LMT>) _param_left_limit,
+		(ParamInt<px4::params::ST3215_RIGHT_LMT>) _param_right_limit
 	)
 };

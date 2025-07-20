@@ -37,6 +37,8 @@ param set-default ST3215_BAUDRATE 115200 # Baudrate for ST3215
 param set-default ST3215_MIN_POS -2.618  # Min position (rad)
 param set-default ST3215_MAX_POS 2.618   # Max position (rad)
 param set-default ST3215_MAX_SPD 2.0     # Max speed (rad/s)
+param set-default ST3215_LEFT_LMT 4      # Use steering left limit (function 4)
+param set-default ST3215_RIGHT_LMT 5     # Use steering right limit (function 5)
 
 # Rear wheel loader specific parameters
 # Enable boom control module

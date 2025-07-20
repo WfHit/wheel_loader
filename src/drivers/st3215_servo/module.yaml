@@ -72,3 +72,25 @@ parameters:
               default: 2.0
               decimal: 3
               unit: rad/s
+          ST3215_LEFT_LMT:
+              description:
+                  short: ST3215 left rotation limit sensor function
+                  long: |
+                      Limit sensor function ID that blocks left rotation (positive direction).
+                      Set to 255 to disable limit checking for left rotation.
+                      For NXT rear: use steering left limit function ID.
+              type: int32
+              min: 0
+              max: 255
+              default: 255
+          ST3215_RIGHT_LMT:
+              description:
+                  short: ST3215 right rotation limit sensor function
+                  long: |
+                      Limit sensor function ID that blocks right rotation (negative direction).
+                      Set to 255 to disable limit checking for right rotation.
+                      For NXT rear: use steering right limit function ID.
+              type: int32
+              min: 0
+              max: 255
+              default: 255
