@@ -85,6 +85,9 @@ public:
 	int read_moving(uint8_t servo_id);
 	int read_mode(uint8_t servo_id);
 
+	// Position calibration functions
+	bool calibrate_middle_position_sts(uint8_t servo_id); // STS standard method using torque enable = 128
+
 private:
 	void Run() override;
 
@@ -153,6 +156,7 @@ private:
 	bool _flag_read_mode{false};
 	bool _flag_set_abs_position{false};
 	bool _flag_set_rel_position{false};
+	bool _flag_calibrate_middle_sts{false};
 
 	// Command parameters
 	float _cmd_speed{0.0f};
@@ -181,6 +185,8 @@ private:
 	static constexpr uint8_t ST3215_REG_MIN_ANGLE_LIMIT_H = 10;
 	static constexpr uint8_t ST3215_REG_MAX_ANGLE_LIMIT_L = 11;
 	static constexpr uint8_t ST3215_REG_MAX_ANGLE_LIMIT_H = 12;
+	static constexpr uint8_t ST3215_REG_POSITION_CALIBRATION_L = 31;
+	static constexpr uint8_t ST3215_REG_POSITION_CALIBRATION_H = 32;
 	static constexpr uint8_t ST3215_REG_MODE = 33;
 
 	// SRAM (read & write)

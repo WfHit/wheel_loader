@@ -646,6 +646,7 @@ void ST3215Servo::process_command_line()
 		_flag_read_mode = false;
 		_flag_set_abs_position = false;
 		_flag_set_rel_position = false;
+		_flag_calibrate_middle_sts = false;
 		return;
 	}
 
@@ -740,6 +741,16 @@ void ST3215Servo::process_command_line()
 			PX4_INFO("Servo %d moved relative %.2f rad to position %.2f rad at %.2f rad/s", servo_id, (double)_cmd_position, (double)target_position, (double)_cmd_position_speed);
 		} else {
 			PX4_ERR("Failed to set servo %d relative position", servo_id);
+		}
+	}
+
+	// Execute calibrate_middle_sts command (STS standard method)
+	if (_flag_calibrate_middle_sts) {
+		_flag_calibrate_middle_sts = false;
+		if (calibrate_middle_position_sts(servo_id)) {
+			PX4_INFO("Servo %d STS middle position calibrated successfully", servo_id);
+		} else {
+			PX4_ERR("Failed to calibrate servo %d STS middle position", servo_id);
 		}
 	}
 }
@@ -956,6 +967,16 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 		return 0;
 	}
 
+	if (!strcmp(argv[0], "calibrate_middle_sts")) {
+		if (!_object.load()) {
+			PX4_ERR("driver not running");
+			return 1;
+		}
+		_object.load()->_flag_calibrate_middle_sts = true;
+		PX4_INFO("calibrate_middle_sts command queued (STS standard method)");
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -1034,8 +1055,7 @@ $ st3215_servo stop
 	PRINT_MODULE_USAGE_COMMAND("lock_eprom");
 	PRINT_MODULE_USAGE_COMMAND("read_moving");
 	PRINT_MODULE_USAGE_COMMAND("read_mode");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("set_abs_position", "Set absolute position <position_rad> [speed_rad_s]");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("set_rel_position", "Set relative position <delta_rad> [speed_rad_s]");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("calibrate_middle_sts", "Calibrate middle position using STS standard method (torque enable = 128)");
 	PRINT_MODULE_USAGE_COMMAND("safety_reset");
 
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
@@ -1099,6 +1119,27 @@ int ST3215Servo::read_mode(uint8_t servo_id)
 		return mode_data;
 	}
 	return -1;
+}
+
+bool ST3215Servo::calibrate_middle_position_sts(uint8_t servo_id)
+{
+	// STS standard method: Write 128 to torque enable register for middle position calibration
+	// This is the standard STS servo method mentioned: "STS舵机支持扭矩开关写128实现中位校准"
+	uint8_t calibration_value = 128;
+
+	PX4_INFO("Starting STS middle position calibration for servo %d", servo_id);
+
+	// Write 128 to torque enable register to trigger middle position calibration
+	if (!write_register(servo_id, ST3215_REG_TORQUE_ENABLE, &calibration_value, 1)) {
+		PX4_ERR("Failed to write calibration command to torque enable register");
+		return false;
+	}
+
+	// Wait a moment for the calibration to complete
+	usleep(100000); // 100ms delay to allow calibration to finish
+
+	PX4_INFO("STS middle position calibration completed for servo %d", servo_id);
+	return true;
 }
 
 void ST3215Servo::process_limit_sensors()
