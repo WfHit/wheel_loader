@@ -50,7 +50,7 @@ const limit_sensor_config_t g_limit_sensor_config[BOARD_NUM_LIMIT_SENSORS] = {
         .function = 2,  // BOOM_UP
         .gpio_pin_1 = BOOM_UP_LIMIT_SW_GPIO,        // PB10
         .gpio_pin_2 = 0,  // No second pin
-        .inverted = false,
+        .inverted = true,
         .redundancy_enabled = false,  // NO REDUNDANCY
         .name = "boom_up"
     },
@@ -60,7 +60,7 @@ const limit_sensor_config_t g_limit_sensor_config[BOARD_NUM_LIMIT_SENSORS] = {
         .function = 3,  // BOOM_DOWN
         .gpio_pin_1 = BOOM_DOWN_LIMIT_SW_GPIO,      // PB11
         .gpio_pin_2 = 0,  // No second pin
-        .inverted = false,
+        .inverted = true,
         .redundancy_enabled = false,  // NO REDUNDANCY
         .name = "boom_down"
     },
@@ -70,7 +70,7 @@ const limit_sensor_config_t g_limit_sensor_config[BOARD_NUM_LIMIT_SENSORS] = {
         .function = 4,  // STEERING_LEFT
         .gpio_pin_1 = STEERING_LEFT_LIMIT_SW_GPIO,  // PB0
         .gpio_pin_2 = 0,  // No second pin
-        .inverted = false,
+        .inverted = true,
         .redundancy_enabled = false,  // NO REDUNDANCY
         .name = "steering_left"
     },
@@ -80,7 +80,7 @@ const limit_sensor_config_t g_limit_sensor_config[BOARD_NUM_LIMIT_SENSORS] = {
         .function = 5,  // STEERING_RIGHT
         .gpio_pin_1 = STEERING_RIGHT_LIMIT_SW_GPIO, // PB1
         .gpio_pin_2 = 0,  // No second pin
-        .inverted = false,
+        .inverted = true,
         .redundancy_enabled = false,  // NO REDUNDANCY
         .name = "steering_right"
     }
