@@ -1055,6 +1055,8 @@ $ st3215_servo stop
 	PRINT_MODULE_USAGE_COMMAND("lock_eprom");
 	PRINT_MODULE_USAGE_COMMAND("read_moving");
 	PRINT_MODULE_USAGE_COMMAND("read_mode");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("set_abs_position", "Set absolute position <position_rad> [speed_rad_s]");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("set_rel_position", "Set relative position <delta_rad> [speed_rad_s]");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("calibrate_middle_sts", "Calibrate middle position using STS standard method (torque enable = 128)");
 	PRINT_MODULE_USAGE_COMMAND("safety_reset");
 
