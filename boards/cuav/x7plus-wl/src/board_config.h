@@ -245,11 +245,15 @@
 /* WK2132 J1 jumper configuration (IA1:IA0):
  * 0 = Open (pull-up to VCC), 1 = Close (connect to GND)
  *
+ * NOTE: Addresses are 7-bit I2C device addresses, compatible with NuttX I2C
+ * framework and DFRobot reference implementation. The base address has been
+ * corrected from 0x10 to 0x08 to match the expected 7-bit addressing scheme.
+ *
  * Possible configurations:
- * J1: IA1=0, IA0=0 (Open-Open)   -> I2C Address 0x10
- * J1: IA1=0, IA0=1 (Open-Close)  -> I2C Address 0x11
- * J1: IA1=1, IA0=0 (Close-Open)  -> I2C Address 0x12
- * J1: IA1=1, IA0=1 (Close-Close) -> I2C Address 0x13
+ * J1: IA1=0, IA0=0 (Open-Open)   -> I2C Address 0x08 (7-bit)
+ * J1: IA1=0, IA0=1 (Open-Close)  -> I2C Address 0x09 (7-bit)
+ * J1: IA1=1, IA0=0 (Close-Open)  -> I2C Address 0x0A (7-bit)
+ * J1: IA1=1, IA0=1 (Close-Close) -> I2C Address 0x0B (7-bit)
  *
  * Modify these defines to match your hardware J1 jumper setting:
  */
@@ -257,7 +261,7 @@
 #define WK2132_J1_IA0                 0     /* J1 pin 2 (IA0): 0=open, 1=close */
 
 /* WK2132 I2C address calculation based on J1 setting */
-#define WK2132_BASE_ADDR              0x10  /* Base I2C address */
+#define WK2132_BASE_ADDR              0x08  /* Base I2C address (7-bit) */
 #define WK2132_I2C_ADDRESS            (WK2132_BASE_ADDR | (WK2132_J1_IA1 << 1) | WK2132_J1_IA0)
 
 /* Compile-time validation */
