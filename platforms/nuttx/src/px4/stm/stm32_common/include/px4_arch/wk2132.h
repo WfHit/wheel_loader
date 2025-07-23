@@ -136,6 +136,16 @@ struct wk2132_dev_s
   bool                     enabled;  /* Port enabled flag */
 };
 
+/* Address format based on WK2132 I2C specification:
+ * Bit 7-6: A1,A0 - Device address (from IA1,IA0 jumpers)
+ * Bit 5-4: 1,0 - Fixed address prefix
+ * Bit 3-2: C1,C0 - Channel/UART selection (0-3 for UARTs 1-4)
+ * Bit 1-0: Register selection and R/W control
+ */
+#define WK2132_ADDR_PREFIX      0x10  /* Fixed bits [1][0] in positions 5,4 */
+#define WK2132_UART_SHIFT       2     /* Channel bits C1,C0 position */
+#define WK2132_REG_MASK         0x03  /* Register selection mask */
+
 /* Public Functions */
 
 /**
@@ -160,5 +170,57 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
  */
 int wk2132_register_devices(int i2c_bus, uint8_t i2c_addr,
                             int base_tty, int num_ports);
+
+/**
+ * Write to a WK2132 register using proper I2C addressing
+ *
+ * @param i2c         I2C master interface
+ * @param device_addr Base device I2C address (7-bit)
+ * @param uart_ch     UART channel (1-4)
+ * @param reg         Register address
+ * @param value       Value to write
+ * @return            OK on success, negative on failure
+ */
+int wk2132_reg_write(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                     uint8_t uart_ch, uint8_t reg, uint8_t value);
+
+/**
+ * Read from a WK2132 register using proper I2C addressing
+ *
+ * @param i2c         I2C master interface
+ * @param device_addr Base device I2C address (7-bit)
+ * @param uart_ch     UART channel (1-4)
+ * @param reg         Register address
+ * @param value       Pointer to store read value
+ * @return            OK on success, negative on failure
+ */
+int wk2132_reg_read(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                    uint8_t uart_ch, uint8_t reg, FAR uint8_t *value);
+
+/**
+ * Write data to WK2132 FIFO
+ *
+ * @param i2c         I2C master interface
+ * @param device_addr Base device I2C address (7-bit)
+ * @param uart_ch     UART channel (1-4)
+ * @param data        Data buffer to write
+ * @param len         Number of bytes to write
+ * @return            Number of bytes written, negative on failure
+ */
+int wk2132_fifo_write(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                      uint8_t uart_ch, FAR const uint8_t *data, size_t len);
+
+/**
+ * Read data from WK2132 FIFO
+ *
+ * @param i2c         I2C master interface
+ * @param device_addr Base device I2C address (7-bit)
+ * @param uart_ch     UART channel (1-4)
+ * @param data        Buffer to store read data
+ * @param len         Maximum number of bytes to read
+ * @return            Number of bytes read, negative on failure
+ */
+int wk2132_fifo_read(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                     uint8_t uart_ch, FAR uint8_t *data, size_t len);
 
 __END_DECLS

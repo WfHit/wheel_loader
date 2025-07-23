@@ -75,6 +75,8 @@
 
 #include <px4_arch/wk2132.h>
 
+#include <string.h>  /* For memcpy */
+
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
@@ -96,6 +98,8 @@ static int  wk2132_i2c_write(FAR struct wk2132_dev_s *priv, uint8_t reg,
                               uint8_t value);
 static int  wk2132_i2c_read(FAR struct wk2132_dev_s *priv, uint8_t reg,
                              FAR uint8_t *value);
+static uint8_t wk2132_build_address(uint8_t device_addr, uint8_t uart_ch,
+                                    uint8_t reg);
 static int  wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud);
 static void wk2132_poll_worker(FAR void *arg);
 
@@ -131,61 +135,49 @@ static int g_wk2132_device_count = 0;
  ****************************************************************************/
 
 /**
- * @brief Write a register via I2C
+ * @brief Build I2C address using WK2132 addressing scheme
+ * Address format: [A1][A0][1][0][C1][C0][reg_bits]
+ * - A1,A0: Device address bits (from IA1,IA0 jumpers)
+ * - 1,0: Fixed address prefix  
+ * - C1,C0: Channel selection (0-3 for UARTs 1-4)
+ * - reg_bits: Register selection bits
+ */
+static uint8_t wk2132_build_address(uint8_t device_addr, uint8_t uart_ch,
+                                    uint8_t reg)
+{
+  uint8_t address = 0;
+  
+  /* Extract device address bits A1,A0 from 7-bit device address */
+  address |= (device_addr & 0x03) << 6;  /* A1,A0 in bits 7,6 */
+  
+  /* Add fixed prefix bits [1][0] */
+  address |= WK2132_ADDR_PREFIX;         /* Fixed 0x10 in bits 5,4 */
+  
+  /* Add channel selection C1,C0 (uart_ch 1-4 becomes 0-3) */
+  address |= ((uart_ch - 1) & 0x03) << WK2132_UART_SHIFT;
+  
+  /* Add register bits (lower 2 bits of reg) */
+  address |= (reg & WK2132_REG_MASK);
+  
+  return address;
+}
+
+/**
+ * @brief Write a register via I2C (legacy private function)
  */
 static int wk2132_i2c_write(FAR struct wk2132_dev_s *priv, uint8_t reg,
                              uint8_t value)
 {
-  struct i2c_msg_s msg;
-  uint8_t buffer[2];
-  int ret;
-
-  /* Construct the register address with port selection */
-  buffer[0] = reg | ((priv->port - 1) << 4);
-  buffer[1] = value;
-
-  /* Setup I2C message */
-  msg.frequency = WK2132_I2C_FREQUENCY;
-  msg.addr      = priv->addr;
-  msg.flags     = 0;
-  msg.buffer    = buffer;
-  msg.length    = 2;
-
-  /* Perform the transfer */
-  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
-  return (ret >= 0) ? OK : ret;
+  return wk2132_reg_write(priv->i2c, priv->addr, priv->port, reg, value);
 }
 
 /**
- * @brief Read a register via I2C
+ * @brief Read a register via I2C (legacy private function)
  */
 static int wk2132_i2c_read(FAR struct wk2132_dev_s *priv, uint8_t reg,
                             FAR uint8_t *value)
 {
-  struct i2c_msg_s msgs[2];
-  uint8_t regaddr;
-  int ret;
-
-  /* Construct the register address with port selection */
-  regaddr = reg | ((priv->port - 1) << 4);
-
-  /* Setup I2C write message for register address */
-  msgs[0].frequency = WK2132_I2C_FREQUENCY;
-  msgs[0].addr      = priv->addr;
-  msgs[0].flags     = 0;
-  msgs[0].buffer    = &regaddr;
-  msgs[0].length    = 1;
-
-  /* Setup I2C read message for data */
-  msgs[1].frequency = WK2132_I2C_FREQUENCY;
-  msgs[1].addr      = priv->addr;
-  msgs[1].flags     = I2C_M_READ;
-  msgs[1].buffer    = value;
-  msgs[1].length    = 1;
-
-  /* Perform the transfer */
-  ret = I2C_TRANSFER(priv->i2c, msgs, 2);
-  return (ret >= 0) ? OK : ret;
+  return wk2132_reg_read(priv->i2c, priv->addr, priv->port, reg, value);
 }
 
 /**
@@ -873,4 +865,202 @@ cleanup:
     }
 
   return ret;
+}
+
+/****************************************************************************
+ * Public Register and FIFO Functions
+ ****************************************************************************/
+
+/**
+ * @brief Write to a WK2132 register using proper I2C addressing
+ */
+int wk2132_reg_write(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                     uint8_t uart_ch, uint8_t reg, uint8_t value)
+{
+  struct i2c_msg_s msg;
+  uint8_t buffer[2];
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Validate parameters */
+  if (!i2c || uart_ch < 1 || uart_ch > WK2132_MAX_PORTS)
+    {
+      return -EINVAL;
+    }
+
+  /* Build proper I2C address according to WK2132 specification */
+  i2c_addr = wk2132_build_address(device_addr, uart_ch, reg);
+  
+  /* Prepare write buffer */
+  buffer[0] = reg;      /* Register address */
+  buffer[1] = value;    /* Data to write */
+
+  /* Setup I2C message */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = 0;
+  msg.buffer    = buffer;
+  msg.length    = 2;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(i2c, &msg, 1);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Read from a WK2132 register using proper I2C addressing
+ */
+int wk2132_reg_read(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                    uint8_t uart_ch, uint8_t reg, FAR uint8_t *value)
+{
+  struct i2c_msg_s msgs[2];
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Validate parameters */
+  if (!i2c || !value || uart_ch < 1 || uart_ch > WK2132_MAX_PORTS)
+    {
+      return -EINVAL;
+    }
+
+  /* Build proper I2C address according to WK2132 specification */
+  i2c_addr = wk2132_build_address(device_addr, uart_ch, reg);
+
+  /* Setup I2C write message for register address */
+  msgs[0].frequency = WK2132_I2C_FREQUENCY;
+  msgs[0].addr      = i2c_addr;
+  msgs[0].flags     = 0;
+  msgs[0].buffer    = &reg;
+  msgs[0].length    = 1;
+
+  /* Setup I2C read message for data */
+  msgs[1].frequency = WK2132_I2C_FREQUENCY;
+  msgs[1].addr      = i2c_addr;
+  msgs[1].flags     = I2C_M_READ;
+  msgs[1].buffer    = value;
+  msgs[1].length    = 1;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(i2c, msgs, 2);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Write data to WK2132 FIFO
+ */
+int wk2132_fifo_write(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                      uint8_t uart_ch, FAR const uint8_t *data, size_t len)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  uint8_t *buffer;
+  size_t bytes_written = 0;
+  size_t chunk_size;
+  int ret;
+
+  /* Validate parameters */
+  if (!i2c || !data || len == 0 || uart_ch < 1 || uart_ch > WK2132_MAX_PORTS)
+    {
+      return -EINVAL;
+    }
+
+  /* Build I2C address for FIFO data register */
+  i2c_addr = wk2132_build_address(device_addr, uart_ch, WK2132_FDAT);
+
+  /* Allocate buffer for register address + data */
+  buffer = kmm_malloc(WK2132_FIFO_SIZE + 1);
+  if (!buffer)
+    {
+      return -ENOMEM;
+    }
+
+  /* Write data in chunks to respect FIFO size limits */
+  while (bytes_written < len)
+    {
+      /* Determine chunk size (FIFO capacity or remaining data) */
+      chunk_size = (len - bytes_written);
+      if (chunk_size > WK2132_FIFO_SIZE)
+        {
+          chunk_size = WK2132_FIFO_SIZE;
+        }
+
+      /* Prepare buffer: register address followed by data */
+      buffer[0] = WK2132_FDAT;
+      memcpy(&buffer[1], &data[bytes_written], chunk_size);
+
+      /* Setup I2C message */
+      msg.frequency = WK2132_I2C_FREQUENCY;
+      msg.addr      = i2c_addr;
+      msg.flags     = 0;
+      msg.buffer    = buffer;
+      msg.length    = chunk_size + 1;
+
+      /* Perform the transfer */
+      ret = I2C_TRANSFER(i2c, &msg, 1);
+      if (ret < 0)
+        {
+          break;
+        }
+
+      bytes_written += chunk_size;
+    }
+
+  kmm_free(buffer);
+  return (ret >= 0) ? bytes_written : ret;
+}
+
+/**
+ * @brief Read data from WK2132 FIFO
+ */
+int wk2132_fifo_read(FAR struct i2c_master_s *i2c, uint8_t device_addr,
+                     uint8_t uart_ch, FAR uint8_t *data, size_t len)
+{
+  struct i2c_msg_s msgs[2];
+  uint8_t i2c_addr;
+  uint8_t reg_addr;
+  uint8_t fifo_count;
+  size_t bytes_to_read;
+  int ret;
+
+  /* Validate parameters */
+  if (!i2c || !data || len == 0 || uart_ch < 1 || uart_ch > WK2132_MAX_PORTS)
+    {
+      return -EINVAL;
+    }
+
+  /* First, check how many bytes are available in RX FIFO */
+  ret = wk2132_reg_read(i2c, device_addr, uart_ch, WK2132_RFCNT, &fifo_count);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Determine how many bytes to actually read */
+  bytes_to_read = (fifo_count < len) ? fifo_count : len;
+  if (bytes_to_read == 0)
+    {
+      return 0; /* No data available */
+    }
+
+  /* Build I2C address for FIFO data register */
+  i2c_addr = wk2132_build_address(device_addr, uart_ch, WK2132_FDAT);
+  reg_addr = WK2132_FDAT;
+
+  /* Setup I2C write message for register address */
+  msgs[0].frequency = WK2132_I2C_FREQUENCY;
+  msgs[0].addr      = i2c_addr;
+  msgs[0].flags     = 0;
+  msgs[0].buffer    = &reg_addr;
+  msgs[0].length    = 1;
+
+  /* Setup I2C read message for data */
+  msgs[1].frequency = WK2132_I2C_FREQUENCY;
+  msgs[1].addr      = i2c_addr;
+  msgs[1].flags     = I2C_M_READ;
+  msgs[1].buffer    = data;
+  msgs[1].length    = bytes_to_read;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(i2c, msgs, 2);
+  return (ret >= 0) ? bytes_to_read : ret;
 }
