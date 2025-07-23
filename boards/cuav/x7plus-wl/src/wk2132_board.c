@@ -56,7 +56,7 @@
 
 /* Use configuration from board_config.h */
 #define BOARD_WK2132_I2C_BUS     WK2132_I2C_BUS
-#define BOARD_WK2132_I2C_ADDR    WK2132_I2C_ADDRESS
+#define BOARD_WK2132_I2C_BASE_ADDR    WK2132_BASE_ADDR
 #define BOARD_WK2132_BASE_TTY    10      /* Start at /dev/ttyS10 */
 #define BOARD_WK2132_NUM_PORTS   WK2132_NUM_PORTS
 
@@ -79,11 +79,11 @@ int wk2132_board_init(void)
 
     syslog(LOG_INFO, "WK2132: Initializing I2C-UART bridge on bus %d", BOARD_WK2132_I2C_BUS);
     syslog(LOG_INFO, "WK2132: J1 jumper config IA1=%d, IA0=%d -> I2C addr 0x%02x",
-           WK2132_J1_IA1, WK2132_J1_IA0, BOARD_WK2132_I2C_ADDR);
+           WK2132_J1_IA1, WK2132_J1_IA0, BOARD_WK2132_I2C_BASE_ADDR);
 
     /* Register WK2132 serial devices */
     ret = wk2132_register_devices(BOARD_WK2132_I2C_BUS,
-                                  BOARD_WK2132_I2C_ADDR,
+                                  BOARD_WK2132_I2C_BASE_ADDR,
                                   BOARD_WK2132_BASE_TTY,
                                   BOARD_WK2132_NUM_PORTS);
 

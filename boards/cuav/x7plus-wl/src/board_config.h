@@ -246,19 +246,19 @@
  * 0 = Open (pull-up to VCC), 1 = Close (connect to GND)
  *
  * Possible configurations:
- * J1: IA1=0, IA0=0 (Open-Open)   -> I2C Address 0x10
- * J1: IA1=0, IA0=1 (Open-Close)  -> I2C Address 0x11
- * J1: IA1=1, IA0=0 (Close-Open)  -> I2C Address 0x12
- * J1: IA1=1, IA0=1 (Close-Close) -> I2C Address 0x13
+ * J1: IA1=0, IA0=0 (Open-Open)   -> I2C Address 0x10 (Channel A), 0x11 (Channel B)
+ * J1: IA1=0, IA0=1 (Open-Close)  -> I2C Address 0x30 (Channel A), 0x31 (Channel B)
+ * J1: IA1=1, IA0=0 (Close-Open)  -> I2C Address 0x50 (Channel A), 0x51 (Channel B)
+ * J1: IA1=1, IA0=1 (Close-Close) -> I2C Address 0x70 (Channel A), 0x71 (Channel B)
  *
  * Modify these defines to match your hardware J1 jumper setting:
  */
-#define WK2132_J1_IA1                 0     /* J1 pin 1 (IA1): 0=open, 1=close */
-#define WK2132_J1_IA0                 0     /* J1 pin 2 (IA0): 0=open, 1=close */
+#define WK2132_J1_IA1                 1     /* J1 pin 1 (IA1): 0=open, 1=close */
+#define WK2132_J1_IA0                 1     /* J1 pin 2 (IA0): 0=open, 1=close */
 
 /* WK2132 I2C address calculation based on J1 setting */
-#define WK2132_BASE_ADDR              0x10  /* Base I2C address */
-#define WK2132_I2C_ADDRESS            (WK2132_BASE_ADDR | (WK2132_J1_IA1 << 1) | WK2132_J1_IA0)
+#define WK2132_ADDR_FIX               0x10  /* Fixed I2C address bits (b4-b3: 10) */
+#define WK2132_BASE_ADDR              (WK2132_ADDR_FIX | (WK2132_J1_IA1 << 6) | (WK2132_J1_IA0 << 5))
 
 /* Compile-time validation */
 #if (WK2132_J1_IA1 != 0 && WK2132_J1_IA1 != 1) || (WK2132_J1_IA0 != 0 && WK2132_J1_IA0 != 1)

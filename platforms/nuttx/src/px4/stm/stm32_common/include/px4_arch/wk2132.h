@@ -122,11 +122,25 @@ __BEGIN_DECLS
 #define WK2132_I2C_FREQUENCY    400000    /* 400 kHz */
 #define WK2132_DEFAULT_ADDR     0x10      /* Default I2C address */
 
+/* I2C Address bit definitions */
+#define WK2132_ADDR_REG_ACCESS  0x00      /* Register access (bit 0 = 0) */
+#define WK2132_ADDR_FIFO_ACCESS 0x01      /* FIFO access (bit 0 = 1) */
+
+/* Channel selection bits (bits 2-1) */
+#define WK2132_ADDR_CH1         0x00      /* Channel 1 (bits 2-1 = 00) */
+#define WK2132_ADDR_CH2         0x02      /* Channel 2 (bits 2-1 = 01) */
+#define WK2132_ADDR_CH3         0x04      /* Channel 3 (bits 2-1 = 10) */
+#define WK2132_ADDR_CH4         0x06      /* Channel 4 (bits 2-1 = 11) */
+
+/* Macro to construct I2C address */
+#define WK2132_MAKE_I2C_ADDR(base, channel, is_fifo) \
+    ((base) | (((channel) - 1) << 1) | ((is_fifo) ? WK2132_ADDR_FIFO_ACCESS : WK2132_ADDR_REG_ACCESS))
+
 /* Device instance data */
 struct wk2132_dev_s
 {
   FAR struct i2c_master_s *i2c;     /* I2C interface */
-  uint8_t                  addr;     /* I2C address */
+  uint8_t                  base_addr; /* I2C base address */
   uint8_t                  port;     /* UART port number (1-4) */
   uint32_t                 baud;     /* Configured baud rate */
   uint32_t                 parity;   /* Configured parity */
@@ -141,24 +155,24 @@ struct wk2132_dev_s
 /**
  * Initialize a WK2132 UART port
  *
- * @param i2c    I2C master interface
- * @param addr   I2C address of WK2132 chip
- * @param port   UART port number (1-4)
- * @return       UART device structure or NULL on failure
+ * @param i2c        I2C master interface
+ * @param base_addr  I2C base address of WK2132 chip
+ * @param port       UART port number (1-4)
+ * @return           UART device structure or NULL on failure
  */
 FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
-                                         uint8_t addr, uint8_t port);
+                                         uint8_t base_addr, uint8_t port);
 
 /**
  * Register WK2132 serial devices as /dev/ttyS* devices
  *
- * @param i2c_bus     I2C bus number
- * @param i2c_addr    I2C address of WK2132 chip
- * @param base_tty    Base TTY number (e.g., 6 for /dev/ttyS6)
- * @param num_ports   Number of ports to register (1-4)
- * @return            OK on success, negative on failure
+ * @param i2c_bus       I2C bus number
+ * @param i2c_base_addr I2C base address of WK2132 chip
+ * @param base_tty      Base TTY number (e.g., 6 for /dev/ttyS6)
+ * @param num_ports     Number of ports to register (1-4)
+ * @return              OK on success, negative on failure
  */
-int wk2132_register_devices(int i2c_bus, uint8_t i2c_addr,
+int wk2132_register_devices(int i2c_bus, uint8_t i2c_base_addr,
                             int base_tty, int num_ports);
 
 __END_DECLS

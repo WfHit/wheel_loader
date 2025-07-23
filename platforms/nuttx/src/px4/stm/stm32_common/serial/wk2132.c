@@ -39,6 +39,13 @@
  * This driver provides serial port functionality for the WK2132 I2C to
  * Quad UART bridge chip, exposing up to 4 additional UART ports as
  * standard /dev/ttyS* devices.
+ *
+ * FIFO Operations (Based on I2C Timing Diagrams 11.2.3 and 11.2.4):
+ * - FIFO write operations send data directly without register address prefix
+ * - FIFO read operations read data directly without register address prefix
+ * - Multi-byte FIFO operations are supported for improved efficiency
+ * - Buffer size limitations are respected using TFCNT/RFCNT registers
+ * - Maximum FIFO size is 256 bytes per channel
  */
 
 #include <nuttx/config.h>
@@ -92,14 +99,27 @@ static void wk2132_txint(FAR struct uart_dev_s *dev, bool enable);
 static bool wk2132_txready(FAR struct uart_dev_s *dev);
 static bool wk2132_txempty(FAR struct uart_dev_s *dev);
 
-static int  wk2132_i2c_write(FAR struct wk2132_dev_s *priv, uint8_t reg,
-                              uint8_t value);
-static int  wk2132_i2c_read(FAR struct wk2132_dev_s *priv, uint8_t reg,
-                             FAR uint8_t *value);
+static int  wk2132_i2c_write_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                     uint8_t value);
+static int  wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                    FAR uint8_t *value);
+static int  wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                  uint8_t value);
+static int  wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value);
+static int  wk2132_i2c_write_fifo_multi(FAR struct wk2132_dev_s *priv,
+                                         FAR const uint8_t *data, size_t length);
+static int  wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                 FAR uint8_t *value);
+static int  wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *value);
+static int  wk2132_i2c_read_fifo_multi(FAR struct wk2132_dev_s *priv,
+                                        FAR uint8_t *data, size_t length);
+
 static int  wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud);
 static void wk2132_poll_worker(FAR void *arg);
-
-/****************************************************************************
+static int  wk2132_bulk_receive(FAR struct uart_dev_s *dev, FAR uint8_t *buffer,
+                                 size_t buflen, FAR size_t *received);
+static int  wk2132_bulk_send(FAR struct uart_dev_s *dev, FAR const uint8_t *buffer,
+                              size_t buflen, FAR size_t *sent);/****************************************************************************
  * Private Data
  ****************************************************************************/
 
@@ -131,22 +151,35 @@ static int g_wk2132_device_count = 0;
  ****************************************************************************/
 
 /**
- * @brief Write a register via I2C
+ * @brief Write to a global register via I2C
+ *
+ * Use this function for global registers that are not channel-specific:
+ * - WK2132_GENA (Global Enable Register)
+ * - WK2132_GRST (Global Reset Register)
+ * - WK2132_GMUT (Global Master IRQ Enable)
+ * - WK2132_GIER (Global IRQ Enable Register)
+ * - WK2132_GIFR (Global IRQ Flag Register)
  */
-static int wk2132_i2c_write(FAR struct wk2132_dev_s *priv, uint8_t reg,
-                             uint8_t value)
+static int wk2132_i2c_write_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                    uint8_t value)
 {
   struct i2c_msg_s msg;
   uint8_t buffer[2];
+  uint8_t i2c_addr;
   int ret;
 
-  /* Construct the register address with port selection */
-  buffer[0] = reg | ((priv->port - 1) << 4);
+  /* Construct I2C address for global register:
+   * Extract C1,C0 bits from register address (bits 5-4) and combine with base_addr */
+  uint8_t c1c0_bits = (reg >> 4) & 0x03;  /* Extract C1,C0 from register */
+  i2c_addr = priv->base_addr | (c1c0_bits << 1) | WK2132_ADDR_REG_ACCESS;
+
+  /* Setup data buffer */
+  buffer[0] = reg & 0x0F;  /* Use lower 4 bits as actual register address */
   buffer[1] = value;
 
   /* Setup I2C message */
   msg.frequency = WK2132_I2C_FREQUENCY;
-  msg.addr      = priv->addr;
+  msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = buffer;
   msg.length    = 2;
@@ -157,28 +190,38 @@ static int wk2132_i2c_write(FAR struct wk2132_dev_s *priv, uint8_t reg,
 }
 
 /**
- * @brief Read a register via I2C
+ * @brief Read from a global register via I2C
+ *
+ * Use this function for global registers that are not channel-specific:
+ * - WK2132_GENA (Global Enable Register)
+ * - WK2132_GRST (Global Reset Register)
+ * - WK2132_GMUT (Global Master IRQ Enable)
+ * - WK2132_GIER (Global IRQ Enable Register)
+ * - WK2132_GIFR (Global IRQ Flag Register)
  */
-static int wk2132_i2c_read(FAR struct wk2132_dev_s *priv, uint8_t reg,
-                            FAR uint8_t *value)
+static int wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                   FAR uint8_t *value)
 {
   struct i2c_msg_s msgs[2];
-  uint8_t regaddr;
+  uint8_t i2c_addr;
   int ret;
 
-  /* Construct the register address with port selection */
-  regaddr = reg | ((priv->port - 1) << 4);
+  /* Construct I2C address for global register:
+   * Extract C1,C0 bits from register address (bits 5-4) and combine with base_addr */
+  uint8_t c1c0_bits = (reg >> 4) & 0x03;  /* Extract C1,C0 from register */
+  uint8_t reg_addr = reg & 0x0F;          /* Use lower 4 bits as actual register address */
+  i2c_addr = priv->base_addr | (c1c0_bits << 1) | WK2132_ADDR_REG_ACCESS;
 
   /* Setup I2C write message for register address */
   msgs[0].frequency = WK2132_I2C_FREQUENCY;
-  msgs[0].addr      = priv->addr;
+  msgs[0].addr      = i2c_addr;
   msgs[0].flags     = 0;
-  msgs[0].buffer    = &regaddr;
+  msgs[0].buffer    = &reg_addr;
   msgs[0].length    = 1;
 
   /* Setup I2C read message for data */
   msgs[1].frequency = WK2132_I2C_FREQUENCY;
-  msgs[1].addr      = priv->addr;
+  msgs[1].addr      = i2c_addr;
   msgs[1].flags     = I2C_M_READ;
   msgs[1].buffer    = value;
   msgs[1].length    = 1;
@@ -186,6 +229,350 @@ static int wk2132_i2c_read(FAR struct wk2132_dev_s *priv, uint8_t reg,
   /* Perform the transfer */
   ret = I2C_TRANSFER(priv->i2c, msgs, 2);
   return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Write a channel-specific register via I2C
+ *
+ * Use this function for channel-specific registers:
+ * - WK2132_SPAGE (Sub-page Select Register)
+ * - WK2132_SCR (Sub-channel Control Register)
+ * - WK2132_LCR (Line Control Register)
+ * - WK2132_FCR (FIFO Control Register)
+ * - WK2132_SIER (Sub-channel IRQ Enable Register)
+ * - WK2132_SIFR (Sub-channel IRQ Flag Register)
+ * - WK2132_FSR (FIFO Status Register)
+ * - WK2132_LSR (Line Status Register)
+ * - And baud rate registers (BAUD1, BAUD0, PRES) in sub-page 1
+ */
+static int wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                 uint8_t value)
+{
+  struct i2c_msg_s msg;
+  uint8_t buffer[2];
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, reg access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, false);
+
+  /* Setup data buffer */
+  buffer[0] = reg;
+  buffer[1] = value;
+
+  /* Setup I2C message */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = 0;
+  msg.buffer    = buffer;
+  msg.length    = 2;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Write to FIFO via I2C (single byte)
+ *
+ * As shown in timing diagram 11.2.3, FIFO write operations send data directly
+ * to the FIFO without specifying a register address.
+ */
+static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
+
+  /* Setup I2C message - direct data write to FIFO as per timing diagram */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = 0;
+  msg.buffer    = &value;
+  msg.length    = 1;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Write multiple bytes to FIFO via I2C
+ *
+ * As shown in timing diagram 11.2.3, FIFO write operations can handle
+ * multiple data bytes in a single I2C transaction for improved efficiency.
+ * This function respects FIFO buffer size limitations.
+ */
+static int wk2132_i2c_write_fifo_multi(FAR struct wk2132_dev_s *priv,
+                                        FAR const uint8_t *data, size_t length)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  uint8_t fsr;
+  uint8_t tfcnt;
+  size_t available_space;
+  size_t write_length;
+  int ret;
+
+  if (!data || length == 0)
+    {
+      return -EINVAL;
+    }
+
+  /* Check FIFO status to determine available space */
+  ret = wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* If FIFO is full, cannot write anything */
+  if (fsr & WK2132_FSR_TFULL)
+    {
+      return -EAGAIN;
+    }
+
+  /* Read TX FIFO count to determine available space */
+  ret = wk2132_i2c_read_reg(priv, WK2132_TFCNT, &tfcnt);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Calculate available space in FIFO */
+  available_space = WK2132_FIFO_SIZE - tfcnt;
+
+  /* Limit write length to available space */
+  write_length = (length < available_space) ? length : available_space;
+
+  if (write_length == 0)
+    {
+      return -EAGAIN;  /* No space available */
+    }
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
+
+  /* Setup I2C message - direct multi-byte data write to FIFO */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = 0;
+  msg.buffer    = (FAR uint8_t *)data;
+  msg.length    = write_length;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
+  return (ret >= 0) ? write_length : ret;  /* Return number of bytes written or error */
+}/**
+ * @brief Read a channel-specific register via I2C
+ *
+ * Use this function for channel-specific registers:
+ * - WK2132_SPAGE (Sub-page Select Register)
+ * - WK2132_SCR (Sub-channel Control Register)
+ * - WK2132_LCR (Line Control Register)
+ * - WK2132_FCR (FIFO Control Register)
+ * - WK2132_SIER (Sub-channel IRQ Enable Register)
+ * - WK2132_SIFR (Sub-channel IRQ Flag Register)
+ * - WK2132_FSR (FIFO Status Register)
+ * - WK2132_LSR (Line Status Register)
+ * - And baud rate registers (BAUD1, BAUD0, PRES) in sub-page 1
+ */
+static int wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
+                                FAR uint8_t *value)
+{
+  struct i2c_msg_s msgs[2];
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, reg access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, false);
+
+  /* Setup I2C write message for register address */
+  msgs[0].frequency = WK2132_I2C_FREQUENCY;
+  msgs[0].addr      = i2c_addr;
+  msgs[0].flags     = 0;
+  msgs[0].buffer    = &reg;
+  msgs[0].length    = 1;
+
+  /* Setup I2C read message for data */
+  msgs[1].frequency = WK2132_I2C_FREQUENCY;
+  msgs[1].addr      = i2c_addr;
+  msgs[1].flags     = I2C_M_READ;
+  msgs[1].buffer    = value;
+  msgs[1].length    = 1;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, msgs, 2);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Read from FIFO via I2C (single byte)
+ *
+ * As shown in timing diagram 11.2.4, FIFO read operations read data directly
+ * from the FIFO without specifying a register address.
+ */
+static int wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *value)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
+
+  /* Setup I2C read message - direct data read from FIFO as per timing diagram */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = I2C_M_READ;
+  msg.buffer    = value;
+  msg.length    = 1;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Read multiple bytes from FIFO via I2C
+ *
+ * As shown in timing diagram 11.2.4, FIFO read operations can handle
+ * multiple data bytes in a single I2C transaction for improved efficiency.
+ * This function respects FIFO buffer size limitations.
+ */
+static int wk2132_i2c_read_fifo_multi(FAR struct wk2132_dev_s *priv,
+                                       FAR uint8_t *data, size_t length)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  uint8_t fsr;
+  uint8_t rfcnt;
+  size_t available_data;
+  size_t read_length;
+  int ret;
+
+  if (!data || length == 0)
+    {
+      return -EINVAL;
+    }
+
+  /* Check FIFO status to see if data is available */
+  ret = wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* If no data available, return immediately */
+  if (!(fsr & WK2132_FSR_RDAT))
+    {
+      return 0;  /* No data available */
+    }
+
+  /* Read RX FIFO count to determine available data */
+  ret = wk2132_i2c_read_reg(priv, WK2132_RFCNT, &rfcnt);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Determine how much data we can read */
+  available_data = rfcnt;
+  read_length = (length < available_data) ? length : available_data;
+
+  if (read_length == 0)
+    {
+      return 0;  /* No data to read */
+    }
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
+
+  /* Setup I2C read message - direct multi-byte data read from FIFO */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = I2C_M_READ;
+  msg.buffer    = data;
+  msg.length    = read_length;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
+  return (ret >= 0) ? read_length : ret;  /* Return number of bytes read or error */
+}
+
+/**
+ * @brief Bulk receive function for efficient multi-byte reads
+ *
+ * This function can read multiple bytes in a single I2C transaction,
+ * respecting FIFO buffer limitations as shown in the timing diagrams.
+ */
+static int wk2132_bulk_receive(FAR struct uart_dev_s *dev, FAR uint8_t *buffer,
+                               size_t buflen, FAR size_t *received)
+{
+  FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
+  int ret;
+
+  if (!buffer || !received || buflen == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (!priv->enabled)
+    {
+      *received = 0;
+      return -ENODEV;
+    }
+
+  /* Use multi-byte FIFO read for efficiency */
+  ret = wk2132_i2c_read_fifo_multi(priv, buffer, buflen);
+
+  if (ret < 0)
+    {
+      *received = 0;
+      return ret;
+    }
+
+  *received = ret;  /* ret contains number of bytes actually read */
+  return OK;
+}
+
+/**
+ * @brief Bulk send function for efficient multi-byte writes
+ *
+ * This function can write multiple bytes in a single I2C transaction,
+ * respecting FIFO buffer limitations as shown in the timing diagrams.
+ */
+static int wk2132_bulk_send(FAR struct uart_dev_s *dev, FAR const uint8_t *buffer,
+                            size_t buflen, FAR size_t *sent)
+{
+  FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
+  int ret;
+
+  if (!buffer || !sent || buflen == 0)
+    {
+      return -EINVAL;
+    }
+
+  if (!priv->enabled)
+    {
+      *sent = 0;
+      return -ENODEV;
+    }
+
+  /* Use multi-byte FIFO write for efficiency */
+  ret = wk2132_i2c_write_fifo_multi(priv, buffer, buflen);
+
+  if (ret < 0)
+    {
+      *sent = 0;
+      return ret;
+    }
+
+  *sent = ret;  /* ret contains number of bytes actually written */
+  return OK;
 }
 
 /**
@@ -223,33 +610,33 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
   baud0 = divisor & 0xFF;
 
   /* Select sub-page 1 for baud rate configuration */
-  ret = wk2132_i2c_write(priv, WK2132_SPAGE, 1);
+  ret = wk2132_i2c_write_reg(priv, WK2132_SPAGE, 1);
   if (ret < 0)
     {
       return ret;
     }
 
   /* Set baud rate registers */
-  ret = wk2132_i2c_write(priv, WK2132_BAUD1, baud1);
+  ret = wk2132_i2c_write_reg(priv, WK2132_BAUD1, baud1);
   if (ret < 0)
     {
       return ret;
     }
 
-  ret = wk2132_i2c_write(priv, WK2132_BAUD0, baud0);
+  ret = wk2132_i2c_write_reg(priv, WK2132_BAUD0, baud0);
   if (ret < 0)
     {
       return ret;
     }
 
-  ret = wk2132_i2c_write(priv, WK2132_PRES, pres);
+  ret = wk2132_i2c_write_reg(priv, WK2132_PRES, pres);
   if (ret < 0)
     {
       return ret;
     }
 
   /* Return to sub-page 0 */
-  ret = wk2132_i2c_write(priv, WK2132_SPAGE, 0);
+  ret = wk2132_i2c_write_reg(priv, WK2132_SPAGE, 0);
 
   return ret;
 }
@@ -307,7 +694,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
     }
 
   /* Read current global enable register */
-  ret = wk2132_i2c_read(priv, WK2132_GENA, &gena);
+  ret = wk2132_i2c_read_global(priv, WK2132_GENA, &gena);
   if (ret < 0)
     {
       goto errout;
@@ -316,7 +703,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   /* Enable the UART port in global register */
   uint8_t gena_bit = 1 << (priv->port - 1);
   gena |= gena_bit;
-  ret = wk2132_i2c_write(priv, WK2132_GENA, gena);
+  ret = wk2132_i2c_write_global(priv, WK2132_GENA, gena);
   if (ret < 0)
     {
       goto errout;
@@ -350,7 +737,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
       lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM0;
     }
 
-  ret = wk2132_i2c_write(priv, WK2132_LCR, lcr);
+  ret = wk2132_i2c_write_reg(priv, WK2132_LCR, lcr);
   if (ret < 0)
     {
       goto errout;
@@ -364,14 +751,14 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
     }
 
   /* Enable FIFOs and reset them */
-  ret = wk2132_i2c_write(priv, WK2132_FCR, 0x07);
+  ret = wk2132_i2c_write_reg(priv, WK2132_FCR, 0x07);
   if (ret < 0)
     {
       goto errout;
     }
 
   /* Enable RX data available interrupt */
-  ret = wk2132_i2c_write(priv, WK2132_SIER, WK2132_SIER_RFTRIG_IEN);
+  ret = wk2132_i2c_write_reg(priv, WK2132_SIER, WK2132_SIER_RFTRIG_IEN);
   if (ret < 0)
     {
       goto errout;
@@ -400,14 +787,14 @@ static void wk2132_shutdown(FAR struct uart_dev_s *dev)
   uint8_t gena;
 
   /* Disable all interrupts */
-  wk2132_i2c_write(priv, WK2132_SIER, 0x00);
+  wk2132_i2c_write_reg(priv, WK2132_SIER, 0x00);
 
   /* Disable the UART port in global register */
-  if (wk2132_i2c_read(priv, WK2132_GENA, &gena) >= 0)
+  if (wk2132_i2c_read_global(priv, WK2132_GENA, &gena) >= 0)
     {
       uint8_t gena_bit = 1 << (priv->port - 1);
       gena &= ~gena_bit;
-      wk2132_i2c_write(priv, WK2132_GENA, gena);
+      wk2132_i2c_write_global(priv, WK2132_GENA, gena);
     }
 
   priv->enabled = false;
@@ -541,14 +928,14 @@ static int wk2132_receive(FAR struct uart_dev_s *dev, unsigned int *status)
   int ret;
 
   /* Get FIFO status */
-  ret = wk2132_i2c_read(priv, WK2132_FSR, &fsr);
+  ret = wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr);
   if (ret < 0)
     {
       return -EIO;
     }
 
   /* Get line status */
-  ret = wk2132_i2c_read(priv, WK2132_LSR, &lsr);
+  ret = wk2132_i2c_read_reg(priv, WK2132_LSR, &lsr);
   if (ret < 0)
     {
       return -EIO;
@@ -557,7 +944,7 @@ static int wk2132_receive(FAR struct uart_dev_s *dev, unsigned int *status)
   *status = (fsr << 8) | lsr;
 
   /* Read data from FIFO */
-  ret = wk2132_i2c_read(priv, WK2132_FDAT, &rxdata);
+  ret = wk2132_i2c_read_fifo(priv, &rxdata);
   if (ret < 0)
     {
       return -EIO;
@@ -575,7 +962,7 @@ static void wk2132_rxint(FAR struct uart_dev_s *dev, bool enable)
   uint8_t sier;
 
   /* Read current interrupt enable register */
-  if (wk2132_i2c_read(priv, WK2132_SIER, &sier) < 0)
+  if (wk2132_i2c_read_reg(priv, WK2132_SIER, &sier) < 0)
     {
       return;
     }
@@ -590,7 +977,7 @@ static void wk2132_rxint(FAR struct uart_dev_s *dev, bool enable)
       sier &= ~WK2132_SIER_RFTRIG_IEN;
     }
 
-  wk2132_i2c_write(priv, WK2132_SIER, sier);
+  wk2132_i2c_write_reg(priv, WK2132_SIER, sier);
 }
 
 /**
@@ -607,7 +994,7 @@ static bool wk2132_rxavailable(FAR struct uart_dev_s *dev)
     }
 
   /* Check FIFO status register for available data */
-  if (wk2132_i2c_read(priv, WK2132_FSR, &fsr) < 0)
+  if (wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr) < 0)
     {
       return false;
     }
@@ -623,7 +1010,7 @@ static void wk2132_send(FAR struct uart_dev_s *dev, int ch)
   FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
 
   /* Write data to FIFO */
-  wk2132_i2c_write(priv, WK2132_FDAT, (uint8_t)ch);
+  wk2132_i2c_write_fifo(priv, (uint8_t)ch);
 }
 
 /**
@@ -635,7 +1022,7 @@ static void wk2132_txint(FAR struct uart_dev_s *dev, bool enable)
   uint8_t sier;
 
   /* Read current interrupt enable register */
-  if (wk2132_i2c_read(priv, WK2132_SIER, &sier) < 0)
+  if (wk2132_i2c_read_reg(priv, WK2132_SIER, &sier) < 0)
     {
       return;
     }
@@ -650,7 +1037,7 @@ static void wk2132_txint(FAR struct uart_dev_s *dev, bool enable)
       sier &= ~WK2132_SIER_TFTRIG_IEN;
     }
 
-  wk2132_i2c_write(priv, WK2132_SIER, sier);
+  wk2132_i2c_write_reg(priv, WK2132_SIER, sier);
 }
 
 /**
@@ -667,7 +1054,7 @@ static bool wk2132_txready(FAR struct uart_dev_s *dev)
     }
 
   /* Check FIFO status register */
-  if (wk2132_i2c_read(priv, WK2132_FSR, &fsr) < 0)
+  if (wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr) < 0)
     {
       return false;
     }
@@ -690,7 +1077,7 @@ static bool wk2132_txempty(FAR struct uart_dev_s *dev)
     }
 
   /* Check FIFO status register */
-  if (wk2132_i2c_read(priv, WK2132_FSR, &fsr) < 0)
+  if (wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr) < 0)
     {
       return false;
     }
@@ -707,7 +1094,7 @@ static bool wk2132_txempty(FAR struct uart_dev_s *dev)
  * @brief Initialize a WK2132 UART port
  */
 FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
-                                         uint8_t addr, uint8_t port)
+                                         uint8_t base_addr, uint8_t port)
 {
   FAR struct wk2132_dev_s *priv;
   FAR struct uart_dev_s *dev;
@@ -735,7 +1122,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
 
   /* Initialize private structure */
   priv->i2c       = i2c;
-  priv->addr      = addr;
+  priv->base_addr = base_addr;
   priv->port      = port;
   priv->baud      = 115200;  /* Default baud rate */
   priv->parity    = 0;       /* No parity */
@@ -765,12 +1152,12 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       goto errout;
     }
 
-  /* Test if device is present by reading a register */
+  /* Test if device is present by reading a global register */
   uint8_t test;
-  ret = wk2132_i2c_read(priv, WK2132_GENA, &test);
+  ret = wk2132_i2c_read_global(priv, WK2132_GENA, &test);
   if (ret < 0)
     {
-      syslog(LOG_ERR, "WK2132: Failed to detect device at 0x%02x\n", addr);
+      syslog(LOG_ERR, "WK2132: Failed to detect device at base_addr 0x%02x\n", base_addr);
       goto errout;
     }
 
@@ -780,7 +1167,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       g_wk2132_devices[g_wk2132_device_count++] = dev;
     }
 
-  syslog(LOG_INFO, "WK2132: Initialized port %d at I2C 0x%02x\n", port, addr);
+  syslog(LOG_INFO, "WK2132: Initialized port %d with base_addr 0x%02x\n", port, base_addr);
   return dev;
 
 errout:
@@ -800,7 +1187,7 @@ errout:
 /**
  * @brief Register WK2132 serial devices
  */
-int wk2132_register_devices(int i2c_bus, uint8_t i2c_addr,
+int wk2132_register_devices(int i2c_bus, uint8_t i2c_base_addr,
                             int base_tty, int num_ports)
 {
   FAR struct i2c_master_s *i2c;
@@ -826,7 +1213,7 @@ int wk2132_register_devices(int i2c_bus, uint8_t i2c_addr,
   /* Initialize UART ports */
   for (i = 0; i < num_ports; i++)
     {
-      devs[i] = wk2132_uart_init(i2c, i2c_addr, i + 1);
+      devs[i] = wk2132_uart_init(i2c, i2c_base_addr, i + 1);
       if (devs[i] == NULL)
         {
           syslog(LOG_ERR, "WK2132: Failed to initialize port %d\n", i + 1);
