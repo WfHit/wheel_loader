@@ -175,4 +175,24 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
 int wk2132_register_devices(int i2c_bus, uint8_t i2c_base_addr,
                             int base_tty, int num_ports);
 
+/**
+ * Board-specific WK2132 initialization
+ *
+ * This function initializes the WK2132 I2C-to-UART bridge chip
+ * using board-specific configuration parameters.
+ *
+ * @return              OK on success, negative error code on failure
+ */
+int wk2132_board_init(void);
+
+/**
+ * Get WK2132 device path for a specific port
+ *
+ * @param port_num      Port number (0-3)
+ * @param path          Buffer to store device path
+ * @param path_len      Length of path buffer
+ * @return              OK on success, negative on error
+ */
+int wk2132_get_device_path(int port_num, char *path, size_t path_len);
+
 __END_DECLS

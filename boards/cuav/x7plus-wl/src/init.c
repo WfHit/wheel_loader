@@ -56,15 +56,13 @@
 #include <drivers/drv_board_led.h>
 #include <systemlib/px4_macros.h>
 #include <px4_arch/io_timer.h>
+#include <px4_arch/wk2132.h>
 #include <px4_platform_common/init.h>
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_dma_alloc.h>
 
 #include <mpu.h>
 
-#ifdef CONFIG_WK2132_SERIAL
-#include <px4_arch/wk2132.h>
-#endif
 
 __BEGIN_DECLS
 extern void led_init(void);
@@ -224,10 +222,9 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 	px4_platform_configure();
 
-#ifdef CONFIG_WK2132_SERIAL
 	/* Initialize WK2132 I2C-to-UART bridge */
+	syslog(LOG_INFO, "[boot] Initializing WK2132 I2C-to-UART bridge\n");
 	wk2132_board_init();
-#endif
 
 	return OK;
 }
