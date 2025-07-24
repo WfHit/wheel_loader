@@ -106,20 +106,14 @@ static int  wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
 static int  wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
                                   uint8_t value);
 static int  wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value);
-static int  wk2132_i2c_write_fifo_multi(FAR struct wk2132_dev_s *priv,
-                                         FAR const uint8_t *data, size_t length);
 static int  wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
                                  FAR uint8_t *value);
 static int  wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *value);
-static int  wk2132_i2c_read_fifo_multi(FAR struct wk2132_dev_s *priv,
-                                        FAR uint8_t *data, size_t length);
 
 static int  wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud);
 static void wk2132_poll_worker(FAR void *arg);
-static int  wk2132_bulk_receive(FAR struct uart_dev_s *dev, FAR uint8_t *buffer,
-                                 size_t buflen, FAR size_t *received);
-static int  wk2132_bulk_send(FAR struct uart_dev_s *dev, FAR const uint8_t *buffer,
-                              size_t buflen, FAR size_t *sent);/****************************************************************************
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
 
@@ -300,73 +294,6 @@ static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
 }
 
 /**
- * @brief Write multiple bytes to FIFO via I2C
- *
- * As shown in timing diagram 11.2.3, FIFO write operations can handle
- * multiple data bytes in a single I2C transaction for improved efficiency.
- * This function respects FIFO buffer size limitations.
- */
-static int wk2132_i2c_write_fifo_multi(FAR struct wk2132_dev_s *priv,
-                                        FAR const uint8_t *data, size_t length)
-{
-  struct i2c_msg_s msg;
-  uint8_t i2c_addr;
-  uint8_t fsr;
-  uint8_t tfcnt;
-  size_t available_space;
-  size_t write_length;
-  int ret;
-
-  if (!data || length == 0)
-    {
-      return -EINVAL;
-    }
-
-  /* Check FIFO status to determine available space */
-  ret = wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  /* If FIFO is full, cannot write anything */
-  if (fsr & WK2132_FSR_TFULL)
-    {
-      return -EAGAIN;
-    }
-
-  /* Read TX FIFO count to determine available space */
-  ret = wk2132_i2c_read_reg(priv, WK2132_TFCNT, &tfcnt);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  /* Calculate available space in FIFO */
-  available_space = WK2132_FIFO_SIZE - tfcnt;
-
-  /* Limit write length to available space */
-  write_length = (length < available_space) ? length : available_space;
-
-  if (write_length == 0)
-    {
-      return -EAGAIN;  /* No space available */
-    }
-
-  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
-  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
-
-  /* Setup I2C message - direct multi-byte data write to FIFO */
-  msg.frequency = WK2132_I2C_FREQUENCY;
-  msg.addr      = i2c_addr;
-  msg.flags     = 0;
-  msg.buffer    = (FAR uint8_t *)data;
-  msg.length    = write_length;
-
-  /* Perform the transfer */
-  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
-  return (ret >= 0) ? write_length : ret;  /* Return number of bytes written or error */
-}/**
  * @brief Read a channel-specific register via I2C
  *
  * Use this function for channel-specific registers:
@@ -434,145 +361,6 @@ static int wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *valu
   /* Perform the transfer */
   ret = I2C_TRANSFER(priv->i2c, &msg, 1);
   return (ret >= 0) ? OK : ret;
-}
-
-/**
- * @brief Read multiple bytes from FIFO via I2C
- *
- * As shown in timing diagram 11.2.4, FIFO read operations can handle
- * multiple data bytes in a single I2C transaction for improved efficiency.
- * This function respects FIFO buffer size limitations.
- */
-static int wk2132_i2c_read_fifo_multi(FAR struct wk2132_dev_s *priv,
-                                       FAR uint8_t *data, size_t length)
-{
-  struct i2c_msg_s msg;
-  uint8_t i2c_addr;
-  uint8_t fsr;
-  uint8_t rfcnt;
-  size_t available_data;
-  size_t read_length;
-  int ret;
-
-  if (!data || length == 0)
-    {
-      return -EINVAL;
-    }
-
-  /* Check FIFO status to see if data is available */
-  ret = wk2132_i2c_read_reg(priv, WK2132_FSR, &fsr);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  /* If no data available, return immediately */
-  if (!(fsr & WK2132_FSR_RDAT))
-    {
-      return 0;  /* No data available */
-    }
-
-  /* Read RX FIFO count to determine available data */
-  ret = wk2132_i2c_read_reg(priv, WK2132_RFCNT, &rfcnt);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  /* Determine how much data we can read */
-  available_data = rfcnt;
-  read_length = (length < available_data) ? length : available_data;
-
-  if (read_length == 0)
-    {
-      return 0;  /* No data to read */
-    }
-
-  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
-  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
-
-  /* Setup I2C read message - direct multi-byte data read from FIFO */
-  msg.frequency = WK2132_I2C_FREQUENCY;
-  msg.addr      = i2c_addr;
-  msg.flags     = I2C_M_READ;
-  msg.buffer    = data;
-  msg.length    = read_length;
-
-  /* Perform the transfer */
-  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
-  return (ret >= 0) ? read_length : ret;  /* Return number of bytes read or error */
-}
-
-/**
- * @brief Bulk receive function for efficient multi-byte reads
- *
- * This function can read multiple bytes in a single I2C transaction,
- * respecting FIFO buffer limitations as shown in the timing diagrams.
- */
-static int wk2132_bulk_receive(FAR struct uart_dev_s *dev, FAR uint8_t *buffer,
-                               size_t buflen, FAR size_t *received)
-{
-  FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
-  int ret;
-
-  if (!buffer || !received || buflen == 0)
-    {
-      return -EINVAL;
-    }
-
-  if (!priv->enabled)
-    {
-      *received = 0;
-      return -ENODEV;
-    }
-
-  /* Use multi-byte FIFO read for efficiency */
-  ret = wk2132_i2c_read_fifo_multi(priv, buffer, buflen);
-
-  if (ret < 0)
-    {
-      *received = 0;
-      return ret;
-    }
-
-  *received = ret;  /* ret contains number of bytes actually read */
-  return OK;
-}
-
-/**
- * @brief Bulk send function for efficient multi-byte writes
- *
- * This function can write multiple bytes in a single I2C transaction,
- * respecting FIFO buffer limitations as shown in the timing diagrams.
- */
-static int wk2132_bulk_send(FAR struct uart_dev_s *dev, FAR const uint8_t *buffer,
-                            size_t buflen, FAR size_t *sent)
-{
-  FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
-  int ret;
-
-  if (!buffer || !sent || buflen == 0)
-    {
-      return -EINVAL;
-    }
-
-  if (!priv->enabled)
-    {
-      *sent = 0;
-      return -ENODEV;
-    }
-
-  /* Use multi-byte FIFO write for efficiency */
-  ret = wk2132_i2c_write_fifo_multi(priv, buffer, buflen);
-
-  if (ret < 0)
-    {
-      *sent = 0;
-      return ret;
-    }
-
-  *sent = ret;  /* ret contains number of bytes actually written */
-  return OK;
 }
 
 /**
