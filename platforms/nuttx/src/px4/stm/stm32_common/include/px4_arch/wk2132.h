@@ -87,6 +87,11 @@ __BEGIN_DECLS
 #define WK2132_LCR_WLS1     0x02  /* Word Length Select 1 */
 #define WK2132_LCR_WLS0     0x01  /* Word Length Select 0 */
 
+/* SCR Register Bits */
+#define WK2132_SCR_RXEN     0x01  /* RX Enable */
+#define WK2132_SCR_TXEN     0x02  /* TX Enable */
+#define WK2132_SCR_SLEEP    0x04  /* Sleep Mode */
+
 /* LSR Register Bits */
 #define WK2132_LSR_OE       0x08  /* Overrun Error */
 #define WK2132_LSR_BI       0x04  /* Break Interrupt */
@@ -112,6 +117,20 @@ __BEGIN_DECLS
 #define WK2132_SIER_TFTRIG_IEN  0x04  /* TX FIFO Trigger IRQ Enable */
 #define WK2132_SIER_RFTRIG_IEN  0x02  /* RX FIFO Trigger IRQ Enable */
 #define WK2132_SIER_RFTOUT_IEN  0x01  /* RX FIFO Timeout IRQ Enable */
+
+/* FCR Register Bits */
+#define WK2132_FCR_RFRST        0x02  /* RX FIFO Reset */
+#define WK2132_FCR_TFRST        0x04  /* TX FIFO Reset */
+#define WK2132_FCR_RFEN         0x08  /* RX FIFO Enable */
+#define WK2132_FCR_TFEN         0x10  /* TX FIFO Enable */
+#define WK2132_FCR_RFTRIG_112   0x80  /* RX FIFO Trigger Level 112 */
+#define WK2132_FCR_RFTRIG_56    0x40  /* RX FIFO Trigger Level 56 */
+#define WK2132_FCR_RFTRIG_24    0x20  /* RX FIFO Trigger Level 24 */
+#define WK2132_FCR_RFTRIG_8     0x00  /* RX FIFO Trigger Level 8 (default) */
+#define WK2132_FCR_TFTRIG_112   0x10  /* TX FIFO Trigger Level 112 */
+#define WK2132_FCR_TFTRIG_56    0x08  /* TX FIFO Trigger Level 56 */
+#define WK2132_FCR_TFTRIG_24    0x04  /* TX FIFO Trigger Level 24 */
+#define WK2132_FCR_TFTRIG_8     0x00  /* TX FIFO Trigger Level 8 (default) */
 
 /* Configuration */
 #define WK2132_CRYSTAL_FREQ     14745600  /* 14.7456 MHz crystal */

@@ -89,6 +89,7 @@ Test modes:
 - Echo test (requires external echo device)
 - Pattern transmission test
 - Continuous transmission test
+- Simple test (send message every second at 115200 baud)
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("wk2132_test", "command");
@@ -97,6 +98,7 @@ Test modes:
 	PRINT_MODULE_USAGE_COMMAND_DESCR("echo", "Run echo test (requires external echo device)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("pattern", "Send test pattern");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("continuous", "Continuous transmission test");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("simple", "Simple test: send message every second at 115200 baud");
 
 	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS4", "<device>", "Serial device", true);
 	PRINT_MODULE_USAGE_PARAM_INT('b', 9600, 1200, 921600, "Baud rate", true);
@@ -232,15 +234,18 @@ static int test_basic_connectivity(const struct test_config *config)
 
 	// Test basic write capability
 	const char *test_msg = "WK2132 Test Message\r\n";
-	ssize_t written = write(fd, test_msg, strlen(test_msg));
+	size_t msg_len = strlen(test_msg);
+	ssize_t written = write(fd, test_msg, msg_len);
 
 	if (written < 0) {
 		PX4_ERR("Write failed: %s", strerror(errno));
 		close(fd);
 		return -1;
+	} else if (written != (ssize_t)msg_len) {
+		PX4_WARN("Partial write: wrote %zd of %zu bytes", written, msg_len);
+	} else {
+		PX4_INFO("Successfully wrote %zd bytes: 'WK2132 Test Message'", written);
 	}
-
-	PX4_INFO("Successfully wrote %zd bytes", written);
 
 	// Test read capability (with timeout)
 	char read_buffer[64];
@@ -440,6 +445,86 @@ static int test_pattern(const struct test_config *config)
 	return 0;
 }
 
+static int test_simple(const struct test_config *config)
+{
+	PX4_INFO("Starting simple test on %s at 115200 baud", config->device);
+
+	int fd = open(config->device, O_RDWR | O_NOCTTY);
+	if (fd < 0) {
+		PX4_ERR("Failed to open %s: %s", config->device, strerror(errno));
+		return -1;
+	}
+
+	// Force baudrate to 115200 for simple test
+	struct test_config simple_config = *config;
+	simple_config.baudrate = 115200;
+
+	if (setup_serial_port(fd, &simple_config) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	char read_buffer[256];
+	int message_count = 0;
+
+	PX4_INFO("Sending messages every second for %d seconds...", config->duration);
+	PX4_INFO("Press Ctrl+C to stop");
+
+	time_t start_time = time(NULL);
+	time_t end_time = start_time + config->duration;
+	time_t last_send = 0;
+
+	while (time(NULL) < end_time) {
+		time_t current_time = time(NULL);
+
+		// Send message every second
+		if (current_time != last_send) {
+			char send_buffer[64];
+			snprintf(send_buffer, sizeof(send_buffer), "WK2132 Test #%d - Time: %ld\r\n",
+				++message_count, current_time);
+
+			size_t msg_len = strlen(send_buffer);
+			ssize_t written = write(fd, send_buffer, msg_len);
+
+			if (written == (ssize_t)msg_len) {
+				// Remove \r\n from display for cleaner log output
+				char display_buffer[64];
+				strncpy(display_buffer, send_buffer, sizeof(display_buffer) - 1);
+				display_buffer[sizeof(display_buffer) - 1] = '\0';
+				char *newline = strstr(display_buffer, "\r\n");
+				if (newline) *newline = '\0';
+				PX4_INFO("Sent: %s (%zu bytes)", display_buffer, msg_len);
+			} else if (written > 0) {
+				PX4_WARN("Partial write: %zd of %zu bytes sent", written, msg_len);
+			} else {
+				PX4_ERR("Write failed: %s", strerror(errno));
+			}
+			last_send = current_time;
+		}
+
+		// Check for received data
+		ssize_t bytes_read = read(fd, read_buffer, sizeof(read_buffer) - 1);
+		if (bytes_read > 0) {
+			read_buffer[bytes_read] = '\0';
+
+			// Remove \r\n from display for cleaner log output
+			char display_recv_buffer[256];
+			strncpy(display_recv_buffer, read_buffer, sizeof(display_recv_buffer) - 1);
+			display_recv_buffer[sizeof(display_recv_buffer) - 1] = '\0';
+			char *newline = strstr(display_recv_buffer, "\r\n");
+			if (newline) *newline = '\0';
+
+			PX4_INFO("Received: %s (%zd bytes)", display_recv_buffer, bytes_read);
+		}
+
+		usleep(100000); // 100ms sleep to avoid busy loop
+	}
+
+	close(fd);
+	PX4_INFO("Simple test completed: sent %d messages", message_count);
+	return 0;
+}
+
 extern "C" __EXPORT int wk2132_test_main(int argc, char *argv[])
 {
 	struct test_config config = {
@@ -517,6 +602,8 @@ extern "C" __EXPORT int wk2132_test_main(int argc, char *argv[])
 		config.continuous = true;
 		config.duration = 3600; // 1 hour max
 		return test_pattern(&config);
+	} else if (strcmp(command, "simple") == 0) {
+		return test_simple(&config);
 	} else {
 		PX4_ERR("Unknown command: %s", command);
 		usage();
