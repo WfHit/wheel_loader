@@ -464,7 +464,6 @@ static int test_simple(const struct test_config *config)
 		return -1;
 	}
 
-	char read_buffer[256];
 	int message_count = 0;
 
 	PX4_INFO("Sending messages every second for %d seconds...", config->duration);
@@ -487,36 +486,16 @@ static int test_simple(const struct test_config *config)
 			ssize_t written = write(fd, send_buffer, msg_len);
 
 			if (written == (ssize_t)msg_len) {
-				// Remove \r\n from display for cleaner log output
-				char display_buffer[64];
-				strncpy(display_buffer, send_buffer, sizeof(display_buffer) - 1);
-				display_buffer[sizeof(display_buffer) - 1] = '\0';
-				char *newline = strstr(display_buffer, "\r\n");
-				if (newline) *newline = '\0';
-				PX4_INFO("Sent: %s (%zu bytes)", display_buffer, msg_len);
+				PX4_INFO("Sent: %zu bytes", msg_len);
 			} else if (written > 0) {
 				PX4_WARN("Partial write: %zd of %zu bytes sent", written, msg_len);
 			} else {
 				PX4_ERR("Write failed: %s", strerror(errno));
 			}
+
 			last_send = current_time;
+
 		}
-
-		// Check for received data
-		ssize_t bytes_read = read(fd, read_buffer, sizeof(read_buffer) - 1);
-		if (bytes_read > 0) {
-			read_buffer[bytes_read] = '\0';
-
-			// Remove \r\n from display for cleaner log output
-			char display_recv_buffer[256];
-			strncpy(display_recv_buffer, read_buffer, sizeof(display_recv_buffer) - 1);
-			display_recv_buffer[sizeof(display_recv_buffer) - 1] = '\0';
-			char *newline = strstr(display_recv_buffer, "\r\n");
-			if (newline) *newline = '\0';
-
-			PX4_INFO("Received: %s (%zd bytes)", display_recv_buffer, bytes_read);
-		}
-
 		usleep(100000); // 100ms sleep to avoid busy loop
 	}
 

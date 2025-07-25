@@ -33,7 +33,7 @@
 px4_add_module(
 	MODULE systemcmds__wk2132_test
 	MAIN wk2132_test
-	STACK_MAIN 2048
+	STACK_MAIN 4096
 	COMPILE_FLAGS
 	SRCS
 		wk2132_test.cpp

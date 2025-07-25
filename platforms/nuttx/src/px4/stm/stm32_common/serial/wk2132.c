@@ -1126,7 +1126,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
   dev->isconsole = false;
 
   /* Allocate RX/TX buffers */
-  dev->xmit.size   = 256;
+  dev->xmit.size   = 32;
   dev->xmit.buffer = (FAR char *)kmm_malloc(dev->xmit.size);
   if (dev->xmit.buffer == NULL)
     {
@@ -1134,7 +1134,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       goto errout;
     }
 
-  dev->recv.size   = 256;
+  dev->recv.size   = 32;
   dev->recv.buffer = (FAR char *)kmm_malloc(dev->recv.size);
   if (dev->recv.buffer == NULL)
     {
