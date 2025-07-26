@@ -105,9 +105,10 @@ static int  wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
                                     FAR uint8_t *value);
 static int  wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
                                   uint8_t value);
-static int  wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value);
 static int  wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
                                  FAR uint8_t *value);
+
+static int  wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value);
 static int  wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *value);
 
 static int  wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud);
@@ -284,33 +285,6 @@ static int wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
 }
 
 /**
- * @brief Write to FIFO via I2C (single byte)
- *
- * As shown in timing diagram 11.2.3, FIFO write operations send data directly
- * to the FIFO without specifying a register address.
- */
-static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
-{
-  struct i2c_msg_s msg;
-  uint8_t i2c_addr;
-  int ret;
-
-  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
-  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
-
-  /* Setup I2C message - direct data write to FIFO as per timing diagram */
-  msg.frequency = WK2132_I2C_FREQUENCY;
-  msg.addr      = i2c_addr;
-  msg.flags     = 0;
-  msg.buffer    = &value;
-  msg.length    = 1;
-
-  /* Perform the transfer */
-  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
-  return (ret >= 0) ? OK : ret;
-}
-
-/**
  * @brief Read a channel-specific register via I2C
  *
  * Use this function for channel-specific registers:
@@ -350,6 +324,33 @@ static int wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
 
   /* Perform the transfer */
   ret = I2C_TRANSFER(priv->i2c, msgs, 2);
+  return (ret >= 0) ? OK : ret;
+}
+
+/**
+ * @brief Write to FIFO via I2C (single byte)
+ *
+ * As shown in timing diagram 11.2.3, FIFO write operations send data directly
+ * to the FIFO without specifying a register address.
+ */
+static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
+{
+  struct i2c_msg_s msg;
+  uint8_t i2c_addr;
+  int ret;
+
+  /* Construct I2C address: base_addr in bits 6-3, channel in bits 2-1, FIFO access in bit 0 */
+  i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
+
+  /* Setup I2C message - direct data write to FIFO as per timing diagram */
+  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.addr      = i2c_addr;
+  msg.flags     = 0;
+  msg.buffer    = &value;
+  msg.length    = 1;
+
+  /* Perform the transfer */
+  ret = I2C_TRANSFER(priv->i2c, &msg, 1);
   return (ret >= 0) ? OK : ret;
 }
 
@@ -622,7 +623,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   /* Step 5: Sub interrupt setting - Enable multiple interrupt sources like DFRobot */
   syslog(LOG_DEBUG, "WK2132: Sub interrupt setting for port %d\n", priv->port);
   uint8_t sier = WK2132_SIER_RFTRIG_IEN |   /* RX FIFO trigger interrupt */
-                 WK2132_SIER_RFTOUT_IEN |   /* RX FIFO timeout interrupt */
+                 WK2132_SIER_RXOUT_IEN |    /* RX timeout interrupt */
                  WK2132_SIER_TFTRIG_IEN |   /* TX FIFO trigger interrupt */
                  WK2132_SIER_TFEMPTY_IEN |  /* TX FIFO empty interrupt */
                  WK2132_SIER_FERR_IEN;      /* Frame error interrupt */
@@ -654,7 +655,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   /* Apply DFRobot FCR settings using OR operation like subSerialRegConfig */
   uint8_t fcr_settings = WK2132_FCR_RFRST |     /* Reset RX FIFO (rfRst = 1) */
-                         /* No TFRST */          /* Don't reset TX FIFO (tfRst = 0) */
+                         WK2132_FCR_TFRST |     /* Reset TX FIFO (tfRst = 1) */
                          WK2132_FCR_RFEN |      /* Enable RX FIFO (rfEn = 1) */
                          WK2132_FCR_TFEN;       /* Enable TX FIFO (tfEn = 1) */
                          /* Trigger levels default to 0 (rfTrig = 0, tfTrig = 0) */
@@ -674,32 +675,39 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Set FCR=0x%02x (was 0x%02x, wrote 0x%02x) for port %d\n",
          fcr_verify, fcr_current, fcr_new, priv->port);
 
-  /* Configure LCR based on settings */
-  if (priv->nbits == 7)
-    {
-      lcr |= WK2132_LCR_WLS0;
-    }
-  else if (priv->nbits == 8)
-    {
-      lcr |= WK2132_LCR_WLS1;
-    }
-  else if (priv->nbits == 9)
-    {
-      lcr |= WK2132_LCR_WLS1 | WK2132_LCR_WLS0;
-    }
 
+  /* Configure LCR based on settings according to datasheet */
+  /* Note: WK2132 supports only 8-bit data length (fixed) */
+  /* LCR Register bits from datasheet image:
+   * Bit 6: Reserved (0)
+   * Bit 5: BREAK - Line Break output enable
+   * Bit 4: IREN - IR mode enable
+   * Bit 3: PAEN - Parity enable
+   * Bit 2-1: PAM1-0 - Parity mode (10=Even, 01=Odd, 00=Reserved, 11=Mark/Space)
+   * Bit 0: STB - Stop bits (0=1bit, 1=2bits)
+   */
+
+  /* Configure stop bits */
   if (priv->stopbits2)
     {
-      lcr |= WK2132_LCR_STB;
+      lcr |= WK2132_LCR_STB;  /* 2 stop bits */
     }
 
-  if (priv->parity == 1)       /* Odd parity */
+  /* Configure parity according to datasheet and termios standards */
+  switch (priv->parity)
     {
-      lcr |= WK2132_LCR_PAEN;
-    }
-  else if (priv->parity == 2)  /* Even parity */
-    {
-      lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM0;
+    case 0:  /* No parity */
+      /* PAEN=0, no parity bits needed */
+      break;
+    case 1:  /* Odd parity */
+      lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM0;  /* Enable parity, PAM1=0,PAM0=1 for odd */
+      break;
+    case 2:  /* Even parity */
+      lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM1;  /* Enable parity, PAM1=1,PAM0=0 for even */
+      break;
+    default:
+      syslog(LOG_WARNING, "WK2132: Invalid parity mode %lu, using no parity\n", (unsigned long)priv->parity);
+      break;
     }
 
   ret = wk2132_i2c_write_reg(priv, WK2132_LCR, lcr);
@@ -813,14 +821,8 @@ static int wk2132_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
         /* Return current settings */
         termiosp->c_cflag = 0;
 
-        if (priv->nbits == 7)
-          {
-            termiosp->c_cflag |= CS7;
-          }
-        else if (priv->nbits == 8)
-          {
-            termiosp->c_cflag |= CS8;
-          }
+        /* WK2132 only supports 8-bit data according to datasheet */
+        termiosp->c_cflag |= CS8;
 
         if (priv->stopbits2)
           {
@@ -855,14 +857,8 @@ static int wk2132_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
         /* Extract new settings */
         priv->baud = cfgetispeed(termiosp);
 
-        if ((termiosp->c_cflag & CSIZE) == CS7)
-          {
-            priv->nbits = 7;
-          }
-        else
-          {
-            priv->nbits = 8;
-          }
+        /* WK2132 only supports 8-bit data according to datasheet */
+        priv->nbits = 8;
 
         priv->stopbits2 = (termiosp->c_cflag & CSTOPB) != 0;
 
@@ -1142,7 +1138,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       goto errout;
     }
 
-  syslog(LOG_DEBUG, "WK2132: Allocated TX/RX buffers (256 bytes each) for port %d\n", port);
+  syslog(LOG_DEBUG, "WK2132: Allocated TX/RX buffers (32 bytes each) for port %d\n", port);
 
   /* Test if device is present by reading a global register */
   uint8_t test;

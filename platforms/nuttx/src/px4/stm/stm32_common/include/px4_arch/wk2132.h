@@ -54,24 +54,30 @@ __BEGIN_DECLS
 #define WK2132_GIFR     0x11  /* Global IRQ Flag Register */
 
 /* WK2132 Register Definitions - Page Select */
-#define WK2132_SPAGE    0x03  /* Sub-page Select Register */
+#define WK2132_SPAGE    0x03  /* Sub-page Select Register - (C1,C0)0011 */
 
-/* WK2132 Register Definitions - Sub-page 0 (UART Registers) */
-#define WK2132_SCR      0x04  /* Sub-channel Control Register */
-#define WK2132_LCR      0x05  /* Line Control Register */
-#define WK2132_FCR      0x06  /* FIFO Control Register */
-#define WK2132_SIER     0x07  /* Sub-channel IRQ Enable Register */
-#define WK2132_SIFR     0x08  /* Sub-channel IRQ Flag Register */
-#define WK2132_TFCNT    0x09  /* TX FIFO Count Register */
-#define WK2132_RFCNT    0x0A  /* RX FIFO Count Register */
-#define WK2132_FSR      0x0B  /* FIFO Status Register */
-#define WK2132_LSR      0x0C  /* Line Status Register */
-#define WK2132_FDAT     0x0D  /* FIFO Data Register */
+/* WK2132 Register Definitions - Sub-page 0 (SPAGE0) */
+#define WK2132_SCR      0x04  /* Sub-channel Control Register - (C1,C0)0100 */
+#define WK2132_LCR      0x05  /* Line Control Register - (C1,C0)0101 */
+#define WK2132_FCR      0x06  /* FIFO Control Register - (C1,C0)0110 */
+#define WK2132_SIER     0x07  /* Sub-channel IRQ Enable Register - (C1,C0)0111 */
+#define WK2132_SIFR     0x08  /* Sub-channel IRQ Flag Register - (C1,C0)1000 */
+#define WK2132_TFCNT    0x09  /* TX FIFO Count Register - (C1,C0)1001 */
+#define WK2132_RFCNT    0x0A  /* RX FIFO Count Register - (C1,C0)1010 */
+#define WK2132_FSR      0x0B  /* FIFO Status Register - (C1,C0)1011 */
+#define WK2132_LSR      0x0C  /* Line Status Register - (C1,C0)1100 */
+#define WK2132_FDAT     0x0D  /* FIFO Data Register - (C1,C0)1101 */
 
-/* WK2132 Register Definitions - Sub-page 1 (Baud Rate) */
-#define WK2132_BAUD1    0x04  /* Baud Rate Control Register 1 */
-#define WK2132_BAUD0    0x05  /* Baud Rate Control Register 0 */
-#define WK2132_PRES     0x06  /* Prescaler Register */
+/* WK2132 Register Definitions - Sub-page 1 (SPAGE1) */
+#define WK2132_BAUD1    0x04  /* Baud Rate Control Register 1 - (C1,C0)0100 */
+#define WK2132_BAUD0    0x05  /* Baud Rate Control Register 0 - (C1,C0)0101 */
+#define WK2132_PRES     0x06  /* Prescaler Register - (C1,C0)0110 */
+#define WK2132_RFTL     0x07  /* RX FIFO Trigger Level Register - (C1,C0)0111 */
+#define WK2132_TFTL     0x08  /* TX FIFO Trigger Level Register - (C1,C0)1000 */
+
+/* Page Select Values */
+#define WK2132_SPAGE_PAGE0  0x00  /* Select PAGE0 (UART control registers) */
+#define WK2132_SPAGE_PAGE1  0x01  /* Select PAGE1 (Baud rate and FIFO trigger registers) */
 
 /* GENA Register Bits */
 #define WK2132_GENA_UT4EN   0x08  /* UART4 Enable */
@@ -79,58 +85,87 @@ __BEGIN_DECLS
 #define WK2132_GENA_UT2EN   0x02  /* UART2 Enable */
 #define WK2132_GENA_UT1EN   0x01  /* UART1 Enable */
 
-/* LCR Register Bits */
-#define WK2132_LCR_PAM1     0x80  /* Parity Mode 1 */
-#define WK2132_LCR_PAM0     0x40  /* Parity Mode 0 */
-#define WK2132_LCR_PAEN     0x20  /* Parity Enable */
-#define WK2132_LCR_STB      0x10  /* Stop Bit */
-#define WK2132_LCR_WLS1     0x02  /* Word Length Select 1 */
-#define WK2132_LCR_WLS0     0x01  /* Word Length Select 0 */
+/* GRST Register Bits - Global Reset */
+#define WK2132_GRST_UT4SLEEP 0x20  /* UART4 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT1SLEEP 0x10  /* UART1 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT2RST   0x02  /* UART2 Reset Control (0: Reset UART2, 1: Release reset) */
+#define WK2132_GRST_UT1RST   0x01  /* UART1 Reset Control (0: Reset UART1, 1: Release reset) */
+
+/* GIER Register Bits - Global Interrupt Enable */
+#define WK2132_GIER_UT2IE    0x02  /* UART2 Interrupt Enable (0: Disable, 1: Enable) */
+#define WK2132_GIER_UT1IE    0x01  /* UART1 Interrupt Enable (0: Disable, 1: Enable) */
+
+/* GIFR Register Bits - Global Interrupt Flag Register */
+#define WK2132_GIFR_UT2INT   0x02  /* UART2 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_GIFR_UT1INT   0x01  /* UART1 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+
+/* SPAGE Register Bits - Sub-page Select Register */
+#define WK2132_SPAGE_PAGE    0x01  /* PAGE Select bit (0: PAGE0, 1: PAGE1) */
 
 /* SCR Register Bits */
-#define WK2132_SCR_RXEN     0x01  /* RX Enable */
-#define WK2132_SCR_TXEN     0x02  /* TX Enable */
-#define WK2132_SCR_SLEEP    0x04  /* Sleep Mode */
+#define WK2132_SCR_SLEEPEN   0x04  /* Sleep Enable (0: Disable, 1: Enable) */
+#define WK2132_SCR_TXEN      0x02  /* TX Enable (0: Disable, 1: Enable) */
+#define WK2132_SCR_RXEN      0x01  /* RX Enable (0: Disable, 1: Enable) */
 
-/* LSR Register Bits */
-#define WK2132_LSR_OE       0x08  /* Overrun Error */
-#define WK2132_LSR_BI       0x04  /* Break Interrupt */
-#define WK2132_LSR_FE       0x02  /* Framing Error */
-#define WK2132_LSR_PE       0x01  /* Parity Error */
+/* LCR Register Bits */
+#define WK2132_LCR_BREAK    0x20  /* Break Line Output Enable (0: Normal output, 1: Line Break output) */
+#define WK2132_LCR_IREN     0x10  /* IR Mode Enable (0: Normal mode, 1: IR mode) */
+#define WK2132_LCR_PAEN     0x08  /* Parity Enable (0: No parity, 1: Parity) */
+#define WK2132_LCR_PAM1     0x04  /* Parity Mode bit 1 */
+#define WK2132_LCR_PAM0     0x02  /* Parity Mode bit 0 (PAM1,PAM0: 00=Odd, 01=Even, 10=Mark, 11=Space) */
+#define WK2132_LCR_STB      0x01  /* Stop Bit (0: 1bit, 1: 2bits) */
 
-/* FSR Register Bits */
-#define WK2132_FSR_RFOE     0x80  /* RX FIFO Overrun Error */
-#define WK2132_FSR_RFBI     0x40  /* RX FIFO Break Interrupt */
-#define WK2132_FSR_RFFE     0x20  /* RX FIFO Framing Error */
-#define WK2132_FSR_RFPE     0x10  /* RX FIFO Parity Error */
-#define WK2132_FSR_RDAT     0x08  /* RX Data Available */
-#define WK2132_FSR_TDAT     0x04  /* TX Data Available */
-#define WK2132_FSR_TFULL    0x02  /* TX FIFO Full */
-#define WK2132_FSR_TBUSY    0x01  /* TX Busy */
+/* FCR Register Bits */
+#define WK2132_FCR_TFTRIG1  0x80  /* TX FIFO Trigger Level bit 1 */
+#define WK2132_FCR_TFTRIG0  0x40  /* TX FIFO Trigger Level bit 0 (TFTRIG[1:0]: 00=8Byte, 01=16Byte, 10=24Byte, 11=30Byte) */
+#define WK2132_FCR_RFTRIG1  0x20  /* RX FIFO Trigger Level bit 1 */
+#define WK2132_FCR_RFTRIG0  0x10  /* RX FIFO Trigger Level bit 0 (RFTRIG[1:0]: 00=8Byte, 01=16Byte, 10=24Byte, 11=28Byte) */
+#define WK2132_FCR_TFEN     0x08  /* TX FIFO Enable (0: Disable, 1: Enable) */
+#define WK2132_FCR_RFEN     0x04  /* RX FIFO Enable (0: Disable, 1: Enable) */
+#define WK2132_FCR_TFRST    0x02  /* TX FIFO Reset (write 1 to reset, auto clear) */
+#define WK2132_FCR_RFRST    0x01  /* RX FIFO Reset (write 1 to reset, auto clear) */
 
 /* SIER Register Bits */
 #define WK2132_SIER_FERR_IEN    0x80  /* Frame Error IRQ Enable */
-#define WK2132_SIER_CTS_IEN     0x40  /* CTS IRQ Enable */
-#define WK2132_SIER_RTS_IEN     0x20  /* RTS IRQ Enable */
-#define WK2132_SIER_XOFF_IEN    0x10  /* XOFF IRQ Enable */
 #define WK2132_SIER_TFEMPTY_IEN 0x08  /* TX FIFO Empty IRQ Enable */
 #define WK2132_SIER_TFTRIG_IEN  0x04  /* TX FIFO Trigger IRQ Enable */
-#define WK2132_SIER_RFTRIG_IEN  0x02  /* RX FIFO Trigger IRQ Enable */
-#define WK2132_SIER_RFTOUT_IEN  0x01  /* RX FIFO Timeout IRQ Enable */
+#define WK2132_SIER_RXOUT_IEN   0x02  /* RX Timeout IRQ Enable */
+#define WK2132_SIER_RFTRIG_IEN  0x01  /* RX FIFO Trigger IRQ Enable */
 
-/* FCR Register Bits */
-#define WK2132_FCR_RFRST        0x02  /* RX FIFO Reset */
-#define WK2132_FCR_TFRST        0x04  /* TX FIFO Reset */
-#define WK2132_FCR_RFEN         0x08  /* RX FIFO Enable */
-#define WK2132_FCR_TFEN         0x10  /* TX FIFO Enable */
-#define WK2132_FCR_RFTRIG_112   0x80  /* RX FIFO Trigger Level 112 */
-#define WK2132_FCR_RFTRIG_56    0x40  /* RX FIFO Trigger Level 56 */
-#define WK2132_FCR_RFTRIG_24    0x20  /* RX FIFO Trigger Level 24 */
-#define WK2132_FCR_RFTRIG_8     0x00  /* RX FIFO Trigger Level 8 (default) */
-#define WK2132_FCR_TFTRIG_112   0x10  /* TX FIFO Trigger Level 112 */
-#define WK2132_FCR_TFTRIG_56    0x08  /* TX FIFO Trigger Level 56 */
-#define WK2132_FCR_TFTRIG_24    0x04  /* TX FIFO Trigger Level 24 */
-#define WK2132_FCR_TFTRIG_8     0x00  /* TX FIFO Trigger Level 8 (default) */
+/* SIFR Register Bits - Sub-channel Interrupt Flag Register */
+#define WK2132_SIFR_FERR_INT    0x80  /* Frame Error Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_SIFR_TFEMPTY_INT 0x08  /* TX FIFO Empty Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_SIFR_TFTRIG_INT  0x04  /* TX FIFO Trigger Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_SIFR_RXOUT_INT   0x02  /* RX Timeout Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_SIFR_RFTRIG_INT  0x01  /* RX FIFO Trigger Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+
+/* FSR Register Bits */
+#define WK2132_FSR_RFOE     0x80  /* RX FIFO Overrun Error (0: No OE error, 1: Has OE error) */
+#define WK2132_FSR_RFBI     0x40  /* RX FIFO Break Interrupt (0: No Line Break error, 1: Has Line Break error) */
+#define WK2132_FSR_RFFE     0x20  /* RX FIFO Framing Error (0: No FE error, 1: Has FE error) */
+#define WK2132_FSR_RFPE     0x10  /* RX FIFO Parity Error (0: No PE error, 1: Has PE error) */
+#define WK2132_FSR_RDAT     0x08  /* RX Data Available (0: RX FIFO empty, 1: RX FIFO has data) */
+#define WK2132_FSR_TDAT     0x04  /* TX Data Available (0: TX FIFO full, 1: TX FIFO has space) */
+#define WK2132_FSR_TFULL    0x02  /* TX FIFO Full (0: TX FIFO not full, 1: TX FIFO full) */
+#define WK2132_FSR_TBUSY    0x01  /* TX Busy (0: TX not busy, 1: TX busy) */
+
+/* LSR Register Bits */
+#define WK2132_LSR_OE       0x08  /* Overrun Error (0: No OE error, 1: Has OE error) */
+#define WK2132_LSR_BI       0x04  /* Break Interrupt (0: No Line Break error, 1: Has Line Break error) */
+#define WK2132_LSR_FE       0x02  /* Framing Error (0: No FE error, 1: Has FE error) */
+#define WK2132_LSR_PE       0x01  /* Parity Error (0: No PE error, 1: Has PE error) */
+
+/* RFTL Register Values (SPAGE1) - RX FIFO Trigger Levels */
+#define WK2132_RFTL_8           0x00  /* RX FIFO Trigger Level 8 bytes */
+#define WK2132_RFTL_16          0x01  /* RX FIFO Trigger Level 16 bytes */
+#define WK2132_RFTL_24          0x02  /* RX FIFO Trigger Level 24 bytes */
+#define WK2132_RFTL_30          0x03  /* RX FIFO Trigger Level 30 bytes */
+
+/* TFTL Register Values (SPAGE1) - TX FIFO Trigger Levels */
+#define WK2132_TFTL_8           0x00  /* TX FIFO Trigger Level 8 bytes */
+#define WK2132_TFTL_16          0x01  /* TX FIFO Trigger Level 16 bytes */
+#define WK2132_TFTL_24          0x02  /* TX FIFO Trigger Level 24 bytes */
+#define WK2132_TFTL_30          0x03  /* TX FIFO Trigger Level 30 bytes */
 
 /* Configuration */
 #define WK2132_CRYSTAL_FREQ     14745600  /* 14.7456 MHz crystal */

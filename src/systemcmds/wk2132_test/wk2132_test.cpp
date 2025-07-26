@@ -89,7 +89,8 @@ Test modes:
 - Echo test (requires external echo device)
 - Pattern transmission test
 - Continuous transmission test
-- Simple test (send message every second at 115200 baud)
+- Send test (send message every second at 115200 baud)
+- Receive test (listen and output received data for 30 seconds)
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("wk2132_test", "command");
@@ -98,7 +99,8 @@ Test modes:
 	PRINT_MODULE_USAGE_COMMAND_DESCR("echo", "Run echo test (requires external echo device)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("pattern", "Send test pattern");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("continuous", "Continuous transmission test");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("simple", "Simple test: send message every second at 115200 baud");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("send", "Send test: send message every second at 115200 baud");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("receive", "Receive test: listen and output received data for 30 seconds");
 
 	PRINT_MODULE_USAGE_PARAM_STRING('d', "/dev/ttyS4", "<device>", "Serial device", true);
 	PRINT_MODULE_USAGE_PARAM_INT('b', 9600, 1200, 921600, "Baud rate", true);
@@ -445,9 +447,9 @@ static int test_pattern(const struct test_config *config)
 	return 0;
 }
 
-static int test_simple(const struct test_config *config)
+static int test_send(const struct test_config *config)
 {
-	PX4_INFO("Starting simple test on %s at 115200 baud", config->device);
+	PX4_INFO("Starting send test on %s at 115200 baud", config->device);
 
 	int fd = open(config->device, O_RDWR | O_NOCTTY);
 	if (fd < 0) {
@@ -455,11 +457,11 @@ static int test_simple(const struct test_config *config)
 		return -1;
 	}
 
-	// Force baudrate to 115200 for simple test
-	struct test_config simple_config = *config;
-	simple_config.baudrate = 115200;
+	// Force baudrate to 115200 for send test
+	struct test_config send_config = *config;
+	send_config.baudrate = 115200;
 
-	if (setup_serial_port(fd, &simple_config) < 0) {
+	if (setup_serial_port(fd, &send_config) < 0) {
 		close(fd);
 		return -1;
 	}
@@ -500,7 +502,88 @@ static int test_simple(const struct test_config *config)
 	}
 
 	close(fd);
-	PX4_INFO("Simple test completed: sent %d messages", message_count);
+	PX4_INFO("Send test completed: sent %d messages", message_count);
+	return 0;
+}
+
+static int test_receive(const struct test_config *config)
+{
+	PX4_INFO("Starting receive test on %s at %d baud", config->device, config->baudrate);
+	PX4_INFO("Listening for incoming data for 30 seconds...");
+
+	int fd = open(config->device, O_RDWR | O_NOCTTY);
+	if (fd < 0) {
+		PX4_ERR("Failed to open %s: %s", config->device, strerror(errno));
+		return -1;
+	}
+
+	if (setup_serial_port(fd, config) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	char read_buffer[256];
+	int total_bytes_received = 0;
+	int message_count = 0;
+
+	time_t start_time = time(NULL);
+	time_t end_time = start_time + 30; // Fixed 30 seconds duration
+
+	PX4_INFO("Starting to listen... Press Ctrl+C to stop early");
+
+	while (time(NULL) < end_time) {
+		// Use poll to check for data availability
+		struct pollfd pfd;
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+
+		int poll_result = poll(&pfd, 1, 100); // 100ms timeout
+
+		if (poll_result > 0 && (pfd.revents & POLLIN)) {
+			// Data is available to read
+			ssize_t bytes_read = read(fd, read_buffer, sizeof(read_buffer) - 1);
+
+			if (bytes_read > 0) {
+				read_buffer[bytes_read] = '\0';
+				total_bytes_received += bytes_read;
+				message_count++;
+
+				// Get current timestamp
+				time_t current_time = time(NULL);
+				time_t elapsed = current_time - start_time;
+
+				PX4_INFO("[%02ld:%02ld] Msg #%d (%zd bytes): %s",
+					elapsed / 60, elapsed % 60, message_count, bytes_read, read_buffer);
+
+				if (config->verbose) {
+					// Also print hex dump
+					printf("Hex: ");
+					for (ssize_t i = 0; i < bytes_read; i++) {
+						printf("%02X ", (unsigned char)read_buffer[i]);
+					}
+					printf("\n");
+				}
+			} else if (bytes_read < 0) {
+				PX4_ERR("Read error: %s", strerror(errno));
+				break;
+			}
+		} else if (poll_result < 0) {
+			PX4_ERR("Poll error: %s", strerror(errno));
+			break;
+		}
+		// If poll_result == 0, it's just a timeout, continue loop
+	}
+
+	close(fd);
+
+	time_t total_time = time(NULL) - start_time;
+	PX4_INFO("Receive test completed:");
+	PX4_INFO("  Duration: %ld seconds", total_time);
+	PX4_INFO("  Messages received: %d", message_count);
+	PX4_INFO("  Total bytes received: %d", total_bytes_received);
+	PX4_INFO("  Average rate: %.2f bytes/sec", total_time > 0 ? (double)total_bytes_received / total_time : 0.0);
+
 	return 0;
 }
 
@@ -581,8 +664,10 @@ extern "C" __EXPORT int wk2132_test_main(int argc, char *argv[])
 		config.continuous = true;
 		config.duration = 3600; // 1 hour max
 		return test_pattern(&config);
-	} else if (strcmp(command, "simple") == 0) {
-		return test_simple(&config);
+	} else if (strcmp(command, "send") == 0) {
+		return test_send(&config);
+	} else if (strcmp(command, "receive") == 0) {
+		return test_receive(&config);
 	} else {
 		PX4_ERR("Unknown command: %s", command);
 		usage();
