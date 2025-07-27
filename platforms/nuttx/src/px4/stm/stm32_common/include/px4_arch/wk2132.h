@@ -181,7 +181,7 @@ __BEGIN_DECLS
 #define WK2132_FIFO_SIZE        256       /* FIFO size */
 
 /* Default I2C configuration */
-#define WK2132_I2C_FREQUENCY    1000000   /* 1 MHz for better performance */
+#define WK2132_I2C_FREQUENCY    1000000   /* 1 MHz High-Speed I2C mode for maximum performance */
 #define WK2132_DEFAULT_ADDR     0x10      /* Default I2C address */
 
 /* I2C Address bit definitions */
