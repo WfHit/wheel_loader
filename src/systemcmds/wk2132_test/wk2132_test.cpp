@@ -57,7 +57,7 @@
 #include <sys/ioctl.h>
 
 static const char *DEFAULT_DEVICE = "/dev/ttyS10";  // Default WK2132 serial device
-static const int DEFAULT_BAUDRATE = 9600;
+static const int DEFAULT_BAUDRATE = 115200;
 static const int DEFAULT_TEST_DURATION = 10;  // seconds
 
 struct test_config {
