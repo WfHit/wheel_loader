@@ -214,7 +214,7 @@ int NavLampController::custom_command(int argc, char *argv[])
 	if (!strcmp(argv[0], "state")) {
 		if (argc < 2) {
 			PX4_WARN("Usage: nav_lamp_controller state <state>");
-			PX4_INFO("Valid states: 0-4 (0=OFF, 1=ON, 2=BLINK_SLOW, 3=BLINK_FAST, 4=BLINK_ROTATE)");
+			PX4_INFO("Valid states: 0-4 (0=OFF, 1=BLINK_ROTATE, 2=BLINK_FAST, 3=BLINK_SLOW, 4=ON)");
 			return 1;
 		}
 
@@ -280,16 +280,16 @@ GPIO Configuration:
 The module monitors the nav_lamp_command topic and generates pulses
 to advance the state indicator through 5 states (0-4) sequentially:
 - State 0: OFF
-- State 1: ON (solid)
-- State 2: BLINK_SLOW
-- State 3: BLINK_FAST  
-- State 4: BLINK_ROTATE
+- State 1: BLINK_ROTATE
+- State 2: BLINK_FAST
+- State 3: BLINK_SLOW
+- State 4: ON (solid)
 
 ### Examples
 Manual state change:
 $ nav_lamp_controller state 0    # Turn off state indicator
-$ nav_lamp_controller state 1    # Turn on state indicator (solid)
-$ nav_lamp_controller state 2    # Set slow blinking mode
+$ nav_lamp_controller state 1    # Set rotating blink pattern
+$ nav_lamp_controller state 2    # Set fast blinking mode
 
 Illumination control:
 $ nav_lamp_controller light on   # Turn illumination lamp on
