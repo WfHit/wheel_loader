@@ -609,6 +609,9 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   syslog(LOG_DEBUG, "WK2132: Enabled clock for port %d in GENA, new value=0x%02x\n", priv->port, gena);
 
+  /* Allow clock to stabilize */
+  usleep(10000);  /* 10ms delay */
+
   /* Step 2: Software reset sub UART (DFRobot: subSerialGlobalRegEnable(subUartChannel, rst)) */
   syslog(LOG_DEBUG, "WK2132: Software reset sub UART for port %d\n", priv->port);
   ret = wk2132_i2c_read_global(priv, WK2132_GRST, &grst);
@@ -629,6 +632,9 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   syslog(LOG_DEBUG, "WK2132: Reset completed for port %d, GRST=0x%02x\n", priv->port, grst);
 
+  /* Allow reset to complete */
+  usleep(20000);  /* 20ms delay after reset */
+
   /* Step 3: Sub UART global interrupt enable (DFRobot: subSerialGlobalRegEnable(subUartChannel, intrpt)) */
   syslog(LOG_DEBUG, "WK2132: Sub UART global interrupt enable for port %d\n", priv->port);
   ret = wk2132_i2c_read_global(priv, WK2132_GIER, &gier);
@@ -648,6 +654,9 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
     }
 
   syslog(LOG_DEBUG, "WK2132: Global interrupt enabled for port %d, GIER=0x%02x\n", priv->port, gier);
+
+  /* Allow interrupt configuration to settle */
+  usleep(5000);  /* 5ms delay */
 
   /* Step 4: Sub UART page register setting (default PAGE0) */
   syslog(LOG_DEBUG, "WK2132: Sub UART page register setting (default PAGE0) for port %d\n", priv->port);
@@ -718,6 +727,8 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Set FCR=0x%02x (was 0x%02x, wrote 0x%02x) for port %d\n",
          fcr_verify, fcr_current, fcr_new, priv->port);
 
+  /* Allow FIFO configuration to settle */
+  usleep(5000);  /* 5ms delay */
 
   /* Configure LCR based on settings according to datasheet */
   /* Note: WK2132 supports only 8-bit data length (fixed) */
@@ -772,6 +783,9 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   syslog(LOG_DEBUG, "WK2132: Set baud rate %lu for port %d\n", (unsigned long)priv->baud, priv->port);
 
+  /* Allow baud rate configuration to settle */
+  usleep(10000);  /* 10ms delay */
+
   /* Step 7: Sub UART receive/transmit enable (DFRobot: sScrReg_t scr = {.rxEn = 0x01, .txEn = 0x01, .sleepEn = 0x00, .rsv = 0x00}) */
   syslog(LOG_DEBUG, "WK2132: Sub UART receive/transmit enable for port %d\n", priv->port);
   uint8_t scr = WK2132_SCR_RXEN | WK2132_SCR_TXEN;  /* Enable RX and TX, disable sleep mode */
@@ -784,6 +798,9 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
     }
 
   syslog(LOG_DEBUG, "WK2132: Set SCR=0x%02x for port %d (RX/TX enabled)\n", scr, priv->port);
+
+  /* Allow final configuration to settle */
+  usleep(10000);  /* 10ms delay */
 
   syslog(LOG_INFO, "WK2132: Setup completed successfully for port %d\n", priv->port);
 

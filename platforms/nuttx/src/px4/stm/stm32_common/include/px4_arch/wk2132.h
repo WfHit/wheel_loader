@@ -86,16 +86,24 @@ __BEGIN_DECLS
 #define WK2132_GENA_UT1EN   0x01  /* UART1 Enable */
 
 /* GRST Register Bits - Global Reset */
-#define WK2132_GRST_UT4SLEEP 0x20  /* UART4 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT4SLEEP 0x80  /* UART4 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT3SLEEP 0x40  /* UART3 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT2SLEEP 0x20  /* UART2 Sleep Mode Control (0: Wake up, 1: Sleep) */
 #define WK2132_GRST_UT1SLEEP 0x10  /* UART1 Sleep Mode Control (0: Wake up, 1: Sleep) */
+#define WK2132_GRST_UT4RST   0x08  /* UART4 Reset Control (0: Reset UART4, 1: Release reset) */
+#define WK2132_GRST_UT3RST   0x04  /* UART3 Reset Control (0: Reset UART3, 1: Release reset) */
 #define WK2132_GRST_UT2RST   0x02  /* UART2 Reset Control (0: Reset UART2, 1: Release reset) */
 #define WK2132_GRST_UT1RST   0x01  /* UART1 Reset Control (0: Reset UART1, 1: Release reset) */
 
 /* GIER Register Bits - Global Interrupt Enable */
+#define WK2132_GIER_UT4IE    0x08  /* UART4 Interrupt Enable (0: Disable, 1: Enable) */
+#define WK2132_GIER_UT3IE    0x04  /* UART3 Interrupt Enable (0: Disable, 1: Enable) */
 #define WK2132_GIER_UT2IE    0x02  /* UART2 Interrupt Enable (0: Disable, 1: Enable) */
 #define WK2132_GIER_UT1IE    0x01  /* UART1 Interrupt Enable (0: Disable, 1: Enable) */
 
 /* GIFR Register Bits - Global Interrupt Flag Register */
+#define WK2132_GIFR_UT4INT   0x08  /* UART4 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
+#define WK2132_GIFR_UT3INT   0x04  /* UART3 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
 #define WK2132_GIFR_UT2INT   0x02  /* UART2 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
 #define WK2132_GIFR_UT1INT   0x01  /* UART1 Interrupt Flag (0: No interrupt, 1: Has interrupt) */
 
