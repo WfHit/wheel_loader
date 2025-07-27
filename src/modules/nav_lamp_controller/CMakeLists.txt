@@ -32,11 +32,11 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__status_lamp
-	MAIN status_lamp
+	MODULE modules__nav_lamp_controller
+	MAIN nav_lamp_controller
 	COMPILE_FLAGS
 	SRCS
-		status_lamp.cpp
+		nav_lamp_controller.cpp
 	MODULE_CONFIG
 		module.yaml
 	DEPENDS

@@ -107,12 +107,19 @@
 #define GPIO_HEATER_OUTPUT   /* PA8 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTA|GPIO_PIN8)
 #define HEATER_OUTPUT_EN(on_true)      px4_arch_gpiowrite(GPIO_HEATER_OUTPUT, (on_true))
 
-/* STATUS LAMP TRIGGER - Wire connected to PH9 */
-#define GPIO_STATUS_LAMP_TRIGGER /* PH9 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN9)
-#define BOARD_HAS_STATUS_LAMP_TRIGGER 1
+/* STATUS LAMP SYSTEM - Multi-GPIO Configuration */
+#define GPIO_STATUS_LAMP_VCC     /* PH12 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTH|GPIO_PIN12)
+#define GPIO_STATUS_LAMP_STATE   /* PH11 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN11)
+#define GPIO_STATUS_LAMP_LIGHT   /* PH10 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN10)
+#define BOARD_HAS_NAV_LAMP 1
+
+/* Status Lamp Control Macros */
+#define STATUS_LAMP_VCC_EN(on_true)     px4_arch_gpiowrite(GPIO_STATUS_LAMP_VCC, (on_true))
+#define STATUS_LAMP_STATE_PULSE(on_true) px4_arch_gpiowrite(GPIO_STATUS_LAMP_STATE, (on_true))
+#define STATUS_LAMP_LIGHT_EN(on_true)   px4_arch_gpiowrite(GPIO_STATUS_LAMP_LIGHT, (on_true))
 
 /* PWM */
-#define DIRECT_PWM_OUTPUT_CHANNELS   13  /* PH9 reserved for status lamp, Timer12 Ch2 disabled */
+#define DIRECT_PWM_OUTPUT_CHANNELS   11  /* 9 PWM outputs available after reserving PH10, PH11, PH12 for status lamp system */
 #define BOARD_NUM_IO_TIMERS           4
 
 /* Power supply control and monitoring GPIOs */
@@ -217,7 +224,9 @@
 		GPIO_CAN1_SILENT_S0,              \
 		GPIO_CAN2_SILENT_S1,              \
 		GPIO_HEATER_OUTPUT,               \
-		GPIO_STATUS_LAMP_TRIGGER,         \
+		GPIO_STATUS_LAMP_VCC,             \
+		GPIO_STATUS_LAMP_STATE,           \
+		GPIO_STATUS_LAMP_LIGHT,           \
 		GPIO_nPOWER_IN_CAN,               \
 		GPIO_nPOWER_IN_ADC,               \
 		GPIO_nPOWER_IN_C,                 \

@@ -4,4 +4,4 @@
 #
 
 # Start status lamp controller
-status_lamp start
+nav_lamp_controller start
