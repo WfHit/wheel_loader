@@ -175,7 +175,7 @@ static int wk2132_i2c_write_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
   buffer[1] = value;
 
   /* Setup I2C message */
-  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msg.frequency = WK2132_I2C_FREQUENCY;
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = buffer;
@@ -214,14 +214,14 @@ static int wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
   i2c_addr = priv->base_addr | (c1c0_bits << 1) | WK2132_ADDR_REG_ACCESS;
 
   /* Setup I2C write message for register address */
-  msgs[0].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msgs[0].frequency = WK2132_I2C_FREQUENCY;
   msgs[0].addr      = i2c_addr;
   msgs[0].flags     = 0;
   msgs[0].buffer    = &reg_addr;
   msgs[0].length    = 1;
 
   /* Setup I2C read message for data */
-  msgs[1].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msgs[1].frequency = WK2132_I2C_FREQUENCY;
   msgs[1].addr      = i2c_addr;
   msgs[1].flags     = I2C_M_READ;
   msgs[1].buffer    = value;
@@ -266,7 +266,7 @@ static int wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
   buffer[1] = value;
 
   /* Setup I2C message */
-  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msg.frequency = WK2132_I2C_FREQUENCY;
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = buffer;
@@ -302,14 +302,14 @@ static int wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, false);
 
   /* Setup I2C write message for register address */
-  msgs[0].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msgs[0].frequency = WK2132_I2C_FREQUENCY;
   msgs[0].addr      = i2c_addr;
   msgs[0].flags     = 0;
   msgs[0].buffer    = &reg;
   msgs[0].length    = 1;
 
   /* Setup I2C read message for data */
-  msgs[1].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msgs[1].frequency = WK2132_I2C_FREQUENCY;
   msgs[1].addr      = i2c_addr;
   msgs[1].flags     = I2C_M_READ;
   msgs[1].buffer    = value;
@@ -336,7 +336,7 @@ static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
 
   /* Setup I2C message - direct data write to FIFO as per timing diagram */
-  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msg.frequency = WK2132_I2C_FREQUENCY;
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = &value;
@@ -363,7 +363,7 @@ static int wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *valu
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
 
   /* Setup I2C read message - direct data read from FIFO as per timing diagram */
-  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
+  msg.frequency = WK2132_I2C_FREQUENCY;
   msg.addr      = i2c_addr;
   msg.flags     = I2C_M_READ;
   msg.buffer    = value;
@@ -438,25 +438,12 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
     }
 
   /* Read back the baud rate registers for verification */
-  uint8_t verify_baud1, verify_baud0, verify_pres;
-  ret = wk2132_i2c_read_reg(priv, WK2132_BAUD1, &verify_baud1);
+  uint8_t verify_reg;
+  /* Simple verification - just check if we can read back any register to ensure I2C communication is working */
+  ret = wk2132_i2c_read_reg(priv, WK2132_BAUD1, &verify_reg);
   if (ret < 0)
     {
-      syslog(LOG_ERR, "WK2132: Failed to verify BAUD1 register for port %d\n", priv->port);
-      goto errout;
-    }
-
-  ret = wk2132_i2c_read_reg(priv, WK2132_BAUD0, &verify_baud0);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to verify BAUD0 register for port %d\n", priv->port);
-      goto errout;
-    }
-
-  ret = wk2132_i2c_read_reg(priv, WK2132_PRES, &verify_pres);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to verify PRES register for port %d\n", priv->port);
+      syslog(LOG_ERR, "WK2132: Failed to verify baud rate registers for port %d: %d\n", priv->port, ret);
       goto errout;
     }
 
