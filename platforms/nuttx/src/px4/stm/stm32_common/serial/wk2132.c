@@ -424,28 +424,36 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
          baud1, baud0, pres);
 
   /* Select sub-page 1 for baud rate configuration */
+  syslog(LOG_DEBUG, "WK2132: Switching to sub-page 1 for baud rate configuration on port %d\n", priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_SPAGE, 1);
   if (ret < 0)
     {
+      syslog(LOG_ERR, "WK2132: Failed to switch to sub-page 1 for port %d: %d\n", priv->port, ret);
       return ret;
     }
 
   /* Set baud rate registers */
+  syslog(LOG_DEBUG, "WK2132: Writing BAUD1=0x%02x to port %d\n", baud1, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_BAUD1, baud1);
   if (ret < 0)
     {
+      syslog(LOG_ERR, "WK2132: Failed to write BAUD1 register for port %d: %d\n", priv->port, ret);
       return ret;
     }
 
+  syslog(LOG_DEBUG, "WK2132: Writing BAUD0=0x%02x to port %d\n", baud0, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_BAUD0, baud0);
   if (ret < 0)
     {
+      syslog(LOG_ERR, "WK2132: Failed to write BAUD0 register for port %d: %d\n", priv->port, ret);
       return ret;
     }
 
+  syslog(LOG_DEBUG, "WK2132: Writing PRES=0x%02x to port %d\n", pres, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_PRES, pres);
   if (ret < 0)
     {
+      syslog(LOG_ERR, "WK2132: Failed to write PRES register for port %d: %d\n", priv->port, ret);
       return ret;
     }
 
@@ -632,7 +640,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 {
   FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
   uint8_t lcr = 0;
-  uint8_t gena, grst, gier;
+  uint8_t gena, grst;
   int ret;
 
   syslog(LOG_INFO, "WK2132: Setting up port %d\n", priv->port);
@@ -694,28 +702,28 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   /* Allow reset to complete */
   usleep(100000);  /* 100ms delay after reset */
 
-  /* Step 3: Sub UART global interrupt enable (DFRobot: subSerialGlobalRegEnable(subUartChannel, intrpt)) */
-  syslog(LOG_DEBUG, "WK2132: Sub UART global interrupt enable for port %d\n", priv->port);
-  ret = wk2132_i2c_read_global(priv, WK2132_GIER, &gier);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to read GIER register for port %d\n", priv->port);
-      goto errout;
-    }
-
-  uint8_t gier_bit = 1 << (priv->port - 1);
-  gier |= gier_bit;
-  ret = wk2132_i2c_write_global(priv, WK2132_GIER, gier);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to write GIER register for port %d\n", priv->port);
-      goto errout;
-    }
-
-  syslog(LOG_DEBUG, "WK2132: Global interrupt enabled for port %d, GIER=0x%02x\n", priv->port, gier);
-
-  /* Allow interrupt configuration to settle */
-  usleep(25000);  /* 25ms delay */
+//  /* Step 3: Sub UART global interrupt enable (DFRobot: subSerialGlobalRegEnable(subUartChannel, intrpt)) */
+//  syslog(LOG_DEBUG, "WK2132: Sub UART global interrupt enable for port %d\n", priv->port);
+//  ret = wk2132_i2c_read_global(priv, WK2132_GIER, &gier);
+//  if (ret < 0)
+//    {
+//      syslog(LOG_ERR, "WK2132: Failed to read GIER register for port %d\n", priv->port);
+//      goto errout;
+//    }
+//
+//  uint8_t gier_bit = 1 << (priv->port - 1);
+//  gier |= gier_bit;
+//  ret = wk2132_i2c_write_global(priv, WK2132_GIER, gier);
+//  if (ret < 0)
+//    {
+//      syslog(LOG_ERR, "WK2132: Failed to write GIER register for port %d\n", priv->port);
+//      goto errout;
+//    }
+//
+//  syslog(LOG_DEBUG, "WK2132: Global interrupt enabled for port %d, GIER=0x%02x\n", priv->port, gier);
+//
+//  /* Allow interrupt configuration to settle */
+//  usleep(25000);  /* 25ms delay */
 
   /* Step 4: Sub UART page register setting (default PAGE0) */
   syslog(LOG_DEBUG, "WK2132: Sub UART page register setting (default PAGE0) for port %d\n", priv->port);
@@ -726,22 +734,22 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
       goto errout;
     }
 
-  /* Step 5: Sub interrupt setting - Enable multiple interrupt sources like DFRobot */
-  syslog(LOG_DEBUG, "WK2132: Sub interrupt setting for port %d\n", priv->port);
-  uint8_t sier = WK2132_SIER_RFTRIG_IEN |   /* RX FIFO trigger interrupt */
-                 WK2132_SIER_RXOUT_IEN |    /* RX timeout interrupt */
-                 WK2132_SIER_TFTRIG_IEN |   /* TX FIFO trigger interrupt */
-                 WK2132_SIER_TFEMPTY_IEN |  /* TX FIFO empty interrupt */
-                 WK2132_SIER_FERR_IEN;      /* Frame error interrupt */
-
-  ret = wk2132_i2c_write_reg(priv, WK2132_SIER, sier);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to write SIER register for port %d\n", priv->port);
-      goto errout;
-    }
-
-  syslog(LOG_DEBUG, "WK2132: Set SIER=0x%02x for port %d\n", sier, priv->port);
+//  /* Step 5: Sub interrupt setting - Enable multiple interrupt sources like DFRobot */
+//  syslog(LOG_DEBUG, "WK2132: Sub interrupt setting for port %d\n", priv->port);
+//  uint8_t sier = WK2132_SIER_RFTRIG_IEN |   /* RX FIFO trigger interrupt */
+//                 WK2132_SIER_RXOUT_IEN |    /* RX timeout interrupt */
+//                 WK2132_SIER_TFTRIG_IEN |   /* TX FIFO trigger interrupt */
+//                 WK2132_SIER_TFEMPTY_IEN |  /* TX FIFO empty interrupt */
+//                 WK2132_SIER_FERR_IEN;      /* Frame error interrupt */
+//
+//  ret = wk2132_i2c_write_reg(priv, WK2132_SIER, sier);
+//  if (ret < 0)
+//    {
+//      syslog(LOG_ERR, "WK2132: Failed to write SIER register for port %d\n", priv->port);
+//      goto errout;
+//    }
+//
+//  syslog(LOG_DEBUG, "WK2132: Set SIER=0x%02x for port %d\n", sier, priv->port);
 
   /* Step 6: Enable transmit/receive FIFO with reset (DFRobot style) */
   syslog(LOG_DEBUG, "WK2132: Enable transmit/receive FIFO for port %d\n", priv->port);
@@ -766,9 +774,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
                          WK2132_FCR_TFEN;       /* Enable TX FIFO (tfEn = 1) */
                          /* Trigger levels default to 0 (rfTrig = 0, tfTrig = 0) */
 
-  uint8_t fcr_new = fcr_current | fcr_settings;
-
-  ret = wk2132_i2c_write_reg(priv, WK2132_FCR, fcr_new);
+  ret = wk2132_i2c_write_reg(priv, WK2132_FCR, fcr_settings);
   if (ret < 0)
     {
       syslog(LOG_ERR, "WK2132: Failed to write FCR register for port %d\n", priv->port);
@@ -783,12 +789,13 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
       syslog(LOG_ERR, "WK2132: Failed to verify FCR register for port %d\n", priv->port);
       goto errout;
     }
-  syslog(LOG_DEBUG, "WK2132: Set FCR=0x%02x (was 0x%02x, wrote 0x%02x) for port %d\n",
-         fcr_verify, fcr_current, fcr_new, priv->port);
+  syslog(LOG_DEBUG, "WK2132: Set FCR=0x%02x (was 0x%02x) for port %d\n",
+         fcr_verify, fcr_current, priv->port);
 
   /* Allow FIFO configuration to settle */
   usleep(25000);  /* 25ms delay */
 
+  /* Step 7: Sub UART LCR configuration */
   /* Configure LCR based on settings according to datasheet */
   /* Note: WK2132 supports only 8-bit data length (fixed) */
   /* LCR Register bits from datasheet image:
@@ -832,6 +839,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   syslog(LOG_DEBUG, "WK2132: Set LCR=0x%02x for port %d\n", lcr, priv->port);
 
+  /* Step 8: Sub UART baud rate configuration */
   /* Set baud rate */
   ret = wk2132_set_baud(priv, priv->baud);
   if (ret < 0)
@@ -845,7 +853,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   /* Allow baud rate configuration to settle */
   usleep(50000);  /* 50ms delay */
 
-  /* Step 7: Sub UART receive/transmit enable (DFRobot: sScrReg_t scr = {.rxEn = 0x01, .txEn = 0x01, .sleepEn = 0x00, .rsv = 0x00}) */
+  /* Step 9: Sub UART receive/transmit enable (DFRobot: sScrReg_t scr = {.rxEn = 0x01, .txEn = 0x01, .sleepEn = 0x00, .rsv = 0x00}) */
   syslog(LOG_DEBUG, "WK2132: Sub UART receive/transmit enable for port %d\n", priv->port);
   uint8_t scr = WK2132_SCR_RXEN | WK2132_SCR_TXEN;  /* Enable RX and TX, disable sleep mode */
 
@@ -863,6 +871,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
 
   syslog(LOG_INFO, "WK2132: Setup completed successfully for port %d\n", priv->port);
 
+  /* Step 10: Enable polling for this port */
   /* Start polling if not already started (with proper synchronization) */
   nxsem_wait(&g_wk2132_poll_sem);
   if (!g_wk2132_poll_started)
