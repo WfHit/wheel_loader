@@ -214,6 +214,7 @@ set(msg_files
 	SensorsStatusImu.msg
 	SensorUwb.msg
 	SensorAirflow.msg
+	StatusLampCommand.msg
 	SystemPower.msg
 	TakeoffStatus.msg
 	TaskExecutionCommand.msg

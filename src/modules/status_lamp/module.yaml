@@ -1,0 +1,35 @@
+module_name: Status Lamp Controller
+
+parameters:
+    - group: Status Lamp
+      definitions:
+        SLAMP_PULSE_MS:
+            description:
+                short: Lamp trigger pulse width
+                long: Width of trigger pulse to change lamp state in milliseconds
+            type: int32
+            min: 10
+            max: 1000
+            default: 100
+            unit: ms
+
+        SLAMP_INVERT:
+            description:
+                short: Invert trigger logic level
+                long: |
+                    0: Active high (idle LOW, pulse HIGH)
+                    1: Active low (idle HIGH, pulse LOW)
+            type: int32
+            min: 0
+            max: 1
+            default: 0
+
+        SLAMP_INT_MS:
+            description:
+                short: Interval between state changes
+                long: Delay between consecutive pulses when changing multiple states
+            type: int32
+            min: 50
+            max: 2000
+            default: 200
+            unit: ms

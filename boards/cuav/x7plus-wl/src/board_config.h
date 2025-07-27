@@ -107,8 +107,12 @@
 #define GPIO_HEATER_OUTPUT   /* PA8 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTA|GPIO_PIN8)
 #define HEATER_OUTPUT_EN(on_true)      px4_arch_gpiowrite(GPIO_HEATER_OUTPUT, (on_true))
 
+/* STATUS LAMP TRIGGER - Wire connected to PH9 */
+#define GPIO_STATUS_LAMP_TRIGGER /* PH9 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN9)
+#define BOARD_HAS_STATUS_LAMP_TRIGGER 1
+
 /* PWM */
-#define DIRECT_PWM_OUTPUT_CHANNELS   14
+#define DIRECT_PWM_OUTPUT_CHANNELS   13  /* PH9 reserved for status lamp, Timer12 Ch2 disabled */
 #define BOARD_NUM_IO_TIMERS           4
 
 /* Power supply control and monitoring GPIOs */
@@ -213,6 +217,7 @@
 		GPIO_CAN1_SILENT_S0,              \
 		GPIO_CAN2_SILENT_S1,              \
 		GPIO_HEATER_OUTPUT,               \
+		GPIO_STATUS_LAMP_TRIGGER,         \
 		GPIO_nPOWER_IN_CAN,               \
 		GPIO_nPOWER_IN_ADC,               \
 		GPIO_nPOWER_IN_C,                 \
