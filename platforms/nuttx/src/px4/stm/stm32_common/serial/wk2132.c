@@ -112,6 +112,7 @@ static int  wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value);
 static int  wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *value);
 
 static int  wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud);
+static int  wk2132_reconfigure(FAR struct uart_dev_s *dev);
 static void wk2132_poll_worker(FAR void *arg);
 
 /****************************************************************************
@@ -390,26 +391,9 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
 {
   uint16_t val_integer, val_decimal;
   uint8_t baud1, baud0, pres;
-  uint8_t scr_backup, clear = 0x00;
   int ret;
 
   syslog(LOG_DEBUG, "WK2132: Setting baud rate to %lu\n", (unsigned long)baud);
-
-  /* Save SCR register before modifying baud rate */
-  ret = wk2132_i2c_read_reg(priv, WK2132_SCR, &scr_backup);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to read SCR register\n");
-      return ret;
-    }
-
-  /* Clear SCR to disable TX/RX during baud rate change */
-  ret = wk2132_i2c_write_reg(priv, WK2132_SCR, clear);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to clear SCR register\n");
-      return ret;
-    }
 
   /* DFRobot algorithm:
    * val_integer = FOSC/(baud * 16) - 1
@@ -498,23 +482,98 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
       return ret;
     }
 
-  /* Restore SCR register to re-enable TX/RX */
-  ret = wk2132_i2c_write_reg(priv, WK2132_SCR, scr_backup);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "WK2132: Failed to restore SCR register\n");
-      return ret;
-    }
+  syslog(LOG_DEBUG, "WK2132: Baud rate %lu set successfully\n", (unsigned long)baud);
 
-  syslog(LOG_DEBUG, "WK2132: Baud rate %lu set successfully, SCR restored to 0x%02x\n",
-         (unsigned long)baud, scr_backup);
-
-  return ret;
+  return OK;
 
 errout:
   /* Try to restore state on error */
   wk2132_i2c_write_reg(priv, WK2132_SPAGE, 0);  /* Return to page 0 */
-  wk2132_i2c_write_reg(priv, WK2132_SCR, scr_backup);  /* Restore SCR */
+  return ret;
+}
+
+/**
+ * @brief Reconfigure UART port settings without disrupting polling
+ * This function safely updates port settings while preserving enabled state
+ */
+static int wk2132_reconfigure(FAR struct uart_dev_s *dev)
+{
+  FAR struct wk2132_dev_s *priv = (FAR struct wk2132_dev_s *)dev->priv;
+  uint8_t lcr = 0;
+  int ret;
+  bool was_enabled;
+
+  syslog(LOG_INFO, "WK2132: Reconfiguring port %d\n", priv->port);
+
+  /* Take exclusive access */
+  ret = nxsem_wait(&priv->exclsem);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "WK2132: Failed to get exclusive access for port %d\n", priv->port);
+      return ret;
+    }
+
+  /* Save and temporarily disable port to prevent data loss during reconfiguration */
+  was_enabled = priv->enabled;
+  priv->enabled = false;
+
+  /* Configure LCR based on new settings */
+  if (priv->stopbits2)
+    {
+      lcr |= WK2132_LCR_STB;  /* 2 stop bits */
+    }
+
+  /* Configure parity according to datasheet and termios standards */
+  switch (priv->parity)
+    {
+    case 0:  /* No parity */
+      /* PAEN=0, no parity bits needed */
+      break;
+    case 1:  /* Odd parity */
+      lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM0;  /* Enable parity, PAM1=0,PAM0=1 for odd */
+      break;
+    case 2:  /* Even parity */
+      lcr |= WK2132_LCR_PAEN | WK2132_LCR_PAM1;  /* Enable parity, PAM1=1,PAM0=0 for even */
+      break;
+    default:
+      syslog(LOG_WARNING, "WK2132: Invalid parity mode %lu, using no parity\n", (unsigned long)priv->parity);
+      break;
+    }
+
+  ret = wk2132_i2c_write_reg(priv, WK2132_LCR, lcr);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "WK2132: Failed to write LCR register for port %d\n", priv->port);
+      goto errout;
+    }
+
+  syslog(LOG_DEBUG, "WK2132: Set LCR=0x%02x for port %d\n", lcr, priv->port);
+
+  /* Set baud rate */
+  ret = wk2132_set_baud(priv, priv->baud);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "WK2132: Failed to set baud rate %lu for port %d\n", (unsigned long)priv->baud, priv->port);
+      goto errout;
+    }
+
+  syslog(LOG_DEBUG, "WK2132: Set baud rate %lu for port %d\n", (unsigned long)priv->baud, priv->port);
+
+  /* Allow configuration to settle */
+  usleep(10000);  /* 10ms delay */
+
+  syslog(LOG_INFO, "WK2132: Reconfiguration completed successfully for port %d\n", priv->port);
+
+  /* Restore enabled state */
+  priv->enabled = was_enabled;
+
+errout:
+  /* Restore enabled state on error too */
+  if (ret < 0)
+    {
+      priv->enabled = was_enabled;
+    }
+  nxsem_post(&priv->exclsem);
   return ret;
 }
 
@@ -610,7 +669,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Enabled clock for port %d in GENA, new value=0x%02x\n", priv->port, gena);
 
   /* Allow clock to stabilize */
-  usleep(10000);  /* 10ms delay */
+  usleep(50000);  /* 50ms delay */
 
   /* Step 2: Software reset sub UART (DFRobot: subSerialGlobalRegEnable(subUartChannel, rst)) */
   syslog(LOG_DEBUG, "WK2132: Software reset sub UART for port %d\n", priv->port);
@@ -633,7 +692,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Reset completed for port %d, GRST=0x%02x\n", priv->port, grst);
 
   /* Allow reset to complete */
-  usleep(20000);  /* 20ms delay after reset */
+  usleep(100000);  /* 100ms delay after reset */
 
   /* Step 3: Sub UART global interrupt enable (DFRobot: subSerialGlobalRegEnable(subUartChannel, intrpt)) */
   syslog(LOG_DEBUG, "WK2132: Sub UART global interrupt enable for port %d\n", priv->port);
@@ -656,7 +715,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Global interrupt enabled for port %d, GIER=0x%02x\n", priv->port, gier);
 
   /* Allow interrupt configuration to settle */
-  usleep(5000);  /* 5ms delay */
+  usleep(25000);  /* 25ms delay */
 
   /* Step 4: Sub UART page register setting (default PAGE0) */
   syslog(LOG_DEBUG, "WK2132: Sub UART page register setting (default PAGE0) for port %d\n", priv->port);
@@ -728,7 +787,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
          fcr_verify, fcr_current, fcr_new, priv->port);
 
   /* Allow FIFO configuration to settle */
-  usleep(5000);  /* 5ms delay */
+  usleep(25000);  /* 25ms delay */
 
   /* Configure LCR based on settings according to datasheet */
   /* Note: WK2132 supports only 8-bit data length (fixed) */
@@ -784,7 +843,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Set baud rate %lu for port %d\n", (unsigned long)priv->baud, priv->port);
 
   /* Allow baud rate configuration to settle */
-  usleep(10000);  /* 10ms delay */
+  usleep(50000);  /* 50ms delay */
 
   /* Step 7: Sub UART receive/transmit enable (DFRobot: sScrReg_t scr = {.rxEn = 0x01, .txEn = 0x01, .sleepEn = 0x00, .rsv = 0x00}) */
   syslog(LOG_DEBUG, "WK2132: Sub UART receive/transmit enable for port %d\n", priv->port);
@@ -800,7 +859,7 @@ static int wk2132_setup(FAR struct uart_dev_s *dev)
   syslog(LOG_DEBUG, "WK2132: Set SCR=0x%02x for port %d (RX/TX enabled)\n", scr, priv->port);
 
   /* Allow final configuration to settle */
-  usleep(10000);  /* 10ms delay */
+  usleep(50000);  /* 50ms delay */
 
   syslog(LOG_INFO, "WK2132: Setup completed successfully for port %d\n", priv->port);
 
@@ -970,12 +1029,12 @@ static int wk2132_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
             priv->parity = 0;
           }
 
-        /* Reconfigure the UART */
-        ret = wk2132_setup(dev);
+        /* Reconfigure the UART safely without disrupting polling */
+        ret = wk2132_reconfigure(dev);
         if (ret < 0)
           {
             syslog(LOG_ERR, "WK2132: Failed to reconfigure UART port %d: %d\n", priv->port, ret);
-            /* On setup failure, we should still return the error but the device remains usable with old settings */
+            /* On reconfigure failure, we should still return the error but the device remains usable with old settings */
           }
       }
       break;
