@@ -170,15 +170,12 @@ static int wk2132_i2c_write_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
   uint8_t c1c0_bits = (reg >> 4) & 0x03;  /* Extract C1,C0 from register */
   i2c_addr = priv->base_addr | (c1c0_bits << 1) | WK2132_ADDR_REG_ACCESS;
 
-  syslog(LOG_DEBUG, "WK2132: Write global reg=0x%02x, value=0x%02x, i2c_addr=0x%02x\n",
-         reg, value, i2c_addr);
-
   /* Setup data buffer */
   buffer[0] = reg & 0x0F;  /* Use lower 4 bits as actual register address */
   buffer[1] = value;
 
   /* Setup I2C message */
-  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = buffer;
@@ -216,17 +213,15 @@ static int wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
   uint8_t reg_addr = reg & 0x0F;          /* Use lower 4 bits as actual register address */
   i2c_addr = priv->base_addr | (c1c0_bits << 1) | WK2132_ADDR_REG_ACCESS;
 
-  syslog(LOG_DEBUG, "WK2132: Read global reg=0x%02x, i2c_addr=0x%02x\n", reg, i2c_addr);
-
   /* Setup I2C write message for register address */
-  msgs[0].frequency = WK2132_I2C_FREQUENCY;
+  msgs[0].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msgs[0].addr      = i2c_addr;
   msgs[0].flags     = 0;
   msgs[0].buffer    = &reg_addr;
   msgs[0].length    = 1;
 
   /* Setup I2C read message for data */
-  msgs[1].frequency = WK2132_I2C_FREQUENCY;
+  msgs[1].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msgs[1].addr      = i2c_addr;
   msgs[1].flags     = I2C_M_READ;
   msgs[1].buffer    = value;
@@ -237,10 +232,6 @@ static int wk2132_i2c_read_global(FAR struct wk2132_dev_s *priv, uint8_t reg,
   if (ret < 0)
     {
       syslog(LOG_ERR, "WK2132: Global read failed - reg=0x%02x, ret=%d\n", reg, ret);
-    }
-  else
-    {
-      syslog(LOG_DEBUG, "WK2132: Global read success - reg=0x%02x, value=0x%02x\n", reg, *value);
     }
   return (ret >= 0) ? OK : ret;
 }
@@ -275,7 +266,7 @@ static int wk2132_i2c_write_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
   buffer[1] = value;
 
   /* Setup I2C message */
-  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = buffer;
@@ -311,14 +302,14 @@ static int wk2132_i2c_read_reg(FAR struct wk2132_dev_s *priv, uint8_t reg,
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, false);
 
   /* Setup I2C write message for register address */
-  msgs[0].frequency = WK2132_I2C_FREQUENCY;
+  msgs[0].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msgs[0].addr      = i2c_addr;
   msgs[0].flags     = 0;
   msgs[0].buffer    = &reg;
   msgs[0].length    = 1;
 
   /* Setup I2C read message for data */
-  msgs[1].frequency = WK2132_I2C_FREQUENCY;
+  msgs[1].frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msgs[1].addr      = i2c_addr;
   msgs[1].flags     = I2C_M_READ;
   msgs[1].buffer    = value;
@@ -345,7 +336,7 @@ static int wk2132_i2c_write_fifo(FAR struct wk2132_dev_s *priv, uint8_t value)
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
 
   /* Setup I2C message - direct data write to FIFO as per timing diagram */
-  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msg.addr      = i2c_addr;
   msg.flags     = 0;
   msg.buffer    = &value;
@@ -372,7 +363,7 @@ static int wk2132_i2c_read_fifo(FAR struct wk2132_dev_s *priv, FAR uint8_t *valu
   i2c_addr = WK2132_MAKE_I2C_ADDR(priv->base_addr, priv->port, true);
 
   /* Setup I2C read message - direct data read from FIFO as per timing diagram */
-  msg.frequency = WK2132_I2C_FREQUENCY;
+  msg.frequency = 1000000;  /* Increase I2C frequency to 1MHz for better performance */
   msg.addr      = i2c_addr;
   msg.flags     = I2C_M_READ;
   msg.buffer    = value;
@@ -416,15 +407,7 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
     }
   pres = (uint8_t)val_decimal;
 
-  syslog(LOG_DEBUG, "WK2132: Baud calculation - FOSC=%d, baud=%lu\n",
-         WK2132_CRYSTAL_FREQ, (unsigned long)baud);
-  syslog(LOG_DEBUG, "WK2132: val_integer=%u, val_decimal=%u, pres=%u\n",
-         val_integer, val_decimal, pres);
-  syslog(LOG_DEBUG, "WK2132: Setting BAUD1=0x%02x, BAUD0=0x%02x, PRES=0x%02x\n",
-         baud1, baud0, pres);
-
   /* Select sub-page 1 for baud rate configuration */
-  syslog(LOG_DEBUG, "WK2132: Switching to sub-page 1 for baud rate configuration on port %d\n", priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_SPAGE, 1);
   if (ret < 0)
     {
@@ -433,7 +416,6 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
     }
 
   /* Set baud rate registers */
-  syslog(LOG_DEBUG, "WK2132: Writing BAUD1=0x%02x to port %d\n", baud1, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_BAUD1, baud1);
   if (ret < 0)
     {
@@ -441,7 +423,6 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
       return ret;
     }
 
-  syslog(LOG_DEBUG, "WK2132: Writing BAUD0=0x%02x to port %d\n", baud0, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_BAUD0, baud0);
   if (ret < 0)
     {
@@ -449,7 +430,6 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
       return ret;
     }
 
-  syslog(LOG_DEBUG, "WK2132: Writing PRES=0x%02x to port %d\n", pres, priv->port);
   ret = wk2132_i2c_write_reg(priv, WK2132_PRES, pres);
   if (ret < 0)
     {
@@ -479,9 +459,6 @@ static int wk2132_set_baud(FAR struct wk2132_dev_s *priv, uint32_t baud)
       syslog(LOG_ERR, "WK2132: Failed to verify PRES register for port %d\n", priv->port);
       goto errout;
     }
-
-  syslog(LOG_DEBUG, "WK2132: Verified BAUD1=0x%02x, BAUD0=0x%02x, PRES=0x%02x\n",
-         verify_baud1, verify_baud0, verify_pres);
 
   /* Return to sub-page 0 */
   ret = wk2132_i2c_write_reg(priv, WK2132_SPAGE, 0);
@@ -624,11 +601,11 @@ static void wk2132_poll_worker(FAR void *arg)
   should_continue = g_wk2132_poll_started;
   nxsem_post(&g_wk2132_poll_sem);
 
-  /* Schedule next poll */
+  /* Schedule next poll - reduced frequency to lower I2C burden */
   if (should_continue)
     {
       work_queue(LPWORK, &g_wk2132_poll_work, wk2132_poll_worker, NULL,
-                 MSEC2TICK(1));  /* Poll every 1ms */
+                 MSEC2TICK(5));  /* Poll every 5ms instead of 1ms to reduce I2C burden */
     }
 }
 
@@ -1086,7 +1063,6 @@ static int wk2132_receive(FAR struct uart_dev_s *dev, unsigned int *status)
   /* Check if data is actually available before reading */
   if ((fsr & WK2132_FSR_RDAT) == 0)
     {
-      syslog(LOG_DEBUG, "WK2132: No data available in RX FIFO for port %d\n", priv->port);
       *status = fsr << 8;
       return -EAGAIN;  /* No data available */
     }
@@ -1351,8 +1327,8 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
   dev->priv     = priv;
   dev->isconsole = false;
 
-  /* Allocate RX/TX buffers */
-  dev->xmit.size   = 32;
+  /* Allocate RX/TX buffers - increased to 512 bytes for better performance */
+  dev->xmit.size   = 512;
   dev->xmit.buffer = (FAR char *)kmm_malloc(dev->xmit.size);
   if (dev->xmit.buffer == NULL)
     {
@@ -1360,7 +1336,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       goto errout;
     }
 
-  dev->recv.size   = 32;
+  dev->recv.size   = 512;
   dev->recv.buffer = (FAR char *)kmm_malloc(dev->recv.size);
   if (dev->recv.buffer == NULL)
     {
@@ -1368,7 +1344,7 @@ FAR struct uart_dev_s *wk2132_uart_init(FAR struct i2c_master_s *i2c,
       goto errout;
     }
 
-  syslog(LOG_DEBUG, "WK2132: Allocated TX/RX buffers (32 bytes each) for port %d\n", port);
+  syslog(LOG_DEBUG, "WK2132: Allocated TX/RX buffers (512 bytes each) for port %d\n", port);
 
   /* Test if device is present by reading a global register */
   uint8_t test;
