@@ -53,6 +53,12 @@ else()
 		usb.c
 		wk2132_board.c
 	)
+
+	# Add CAN support if enabled
+	if(CONFIG_CAN)
+		target_sources(drivers_board PRIVATE can.c)
+	endif()
+
 	add_dependencies(drivers_board arch_board_hw_info)
 
 	target_link_libraries(drivers_board

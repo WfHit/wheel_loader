@@ -25,7 +25,6 @@ public:
 	uint8_t get_current_state() const { return _current_state; }
 	void manual_change_state(uint8_t target_state);
 	void set_light_state(bool enable);
-	void set_power_state(bool enable);
 
 private:
 	perf_counter_t _loop_perf{perf_alloc(PC_ELAPSED, MODULE_NAME ": cycle")};
@@ -37,13 +36,12 @@ private:
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::NLAMP_PULSE_MS>) _param_pulse_width,
 		(ParamInt<px4::params::NLAMP_INT_MS>) _param_state_interval,
-		(ParamInt<px4::params::NLAMP_PWR_INVERT>) _param_power_invert,
 		(ParamInt<px4::params::NLAMP_ST_INVERT>) _param_state_invert,
 		(ParamInt<px4::params::NLAMP_LT_INVERT>) _param_light_invert
 	)
 
 	uint8_t _current_state{0};
-	static constexpr uint8_t MAX_STATES = 8;
+	static constexpr uint8_t MAX_STATES = 5;
 
 	void parameters_update();
 	void process_commands();

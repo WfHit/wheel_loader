@@ -41,10 +41,9 @@ constexpr io_timers_t io_timers[MAX_IO_TIMERS] = {
 };
 
 constexpr timer_io_channels_t timer_io_channels[MAX_TIMER_IO_CHANNELS] = {
-	// PH10, PH11, PH12 removed - used for status lamp system (light, state, vcc)
-	// initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel1}, {GPIO::PortH, GPIO::Pin10}), // PH10 used for status lamp light
-	// initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel2}, {GPIO::PortH, GPIO::Pin11}), // PH11 used for status lamp state
-	// initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel3}, {GPIO::PortH, GPIO::Pin12}), // PH12 used for status lamp VCC
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel1}, {GPIO::PortH, GPIO::Pin10}), // PH10 used for status lamp light
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel2}, {GPIO::PortH, GPIO::Pin11}), // PH11 used for status lamp state
+	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel3}, {GPIO::PortH, GPIO::Pin12}), // PH12 used for status lamp VCC
 	initIOTimerChannel(io_timers, {Timer::Timer5, Timer::Channel4}, {GPIO::PortI, GPIO::Pin0}),
 	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel1}, {GPIO::PortD, GPIO::Pin12}),
 	initIOTimerChannel(io_timers, {Timer::Timer4, Timer::Channel2}, {GPIO::PortD, GPIO::Pin13}),

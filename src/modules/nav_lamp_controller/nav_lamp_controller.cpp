@@ -87,10 +87,6 @@ void NavLampController::process_commands()
 		perf_count(_command_perf);
 
 		switch (cmd.command) {
-		case nav_lamp_command_s::CMD_SET_POWER:
-			set_power_state(cmd.option == nav_lamp_command_s::OPTION_ON);
-			break;
-
 		case nav_lamp_command_s::CMD_SET_STATE:
 			handle_state_change(cmd.option);
 			break;
@@ -123,32 +119,12 @@ void NavLampController::set_light_state(bool enable)
 #endif
 }
 
-void NavLampController::set_power_state(bool enable)
-{
-#ifdef BOARD_HAS_NAV_LAMP
-	const bool output_level = _param_power_invert.get() ? !enable : enable;
-	STATUS_LAMP_VCC_EN(output_level);
-	PX4_INFO("Nav lamp power %s", enable ? "enabled" : "disabled");
-	if (enable) {
-		px4_usleep(10000); // 10ms delay for power stabilization
-	}
-#else
-	PX4_WARN("Nav lamp GPIO not available on this board");
-#endif
-}
-
 void NavLampController::run()
 {
 #ifdef BOARD_HAS_NAV_LAMP
-	// Initialize all navigation lamp GPIOs
-	px4_arch_configgpio(GPIO_STATUS_LAMP_VCC);
+	// Initialize navigation lamp GPIOs
 	px4_arch_configgpio(GPIO_STATUS_LAMP_STATE);
 	px4_arch_configgpio(GPIO_STATUS_LAMP_LIGHT);
-
-	// Power on the lamp system (considering power invert parameter)
-	const bool power_on_level = _param_power_invert.get() ? false : true;
-	STATUS_LAMP_VCC_EN(power_on_level);
-	px4_usleep(10000); // 10ms delay for power stabilization
 
 	// Set initial states
 	const bool idle_level = _param_state_invert.get();
@@ -158,8 +134,7 @@ void NavLampController::run()
 	const bool light_off_level = _param_light_invert.get() ? true : false;
 	STATUS_LAMP_LIGHT_EN(light_off_level);
 
-	PX4_INFO("Nav lamp started with dual-lamp configuration:");
-	PX4_INFO("  Power GPIO (VCC): enabled");
+	PX4_INFO("Nav lamp started with two-GPIO configuration:");
 	PX4_INFO("  State indicator GPIO: configured");
 	PX4_INFO("  Illumination GPIO: configured");
 #else
@@ -181,12 +156,7 @@ void NavLampController::run()
 
 	const bool shutdown_idle_level = _param_state_invert.get();
 	STATUS_LAMP_STATE_PULSE(shutdown_idle_level);
-	px4_usleep(10000);
-
-	// Power off the lamp system (considering power invert parameter)
-	const bool shutdown_power_off_level = _param_power_invert.get() ? true : false;
-	STATUS_LAMP_VCC_EN(shutdown_power_off_level);
-	PX4_INFO("Nav lamp system powered down");
+	PX4_INFO("Nav lamp system shutdown complete");
 #endif
 }
 
@@ -197,13 +167,11 @@ int NavLampController::print_status()
 	PX4_INFO("  State pulse width: %ld ms", (long)_param_pulse_width.get());
 	PX4_INFO("  State pulse interval: %ld ms", (long)_param_state_interval.get());
 	PX4_INFO("  State trigger inverted: %s", _param_state_invert.get() ? "yes" : "no");
-	PX4_INFO("  Power control inverted: %s", _param_power_invert.get() ? "yes" : "no");
 	PX4_INFO("  Light control inverted: %s", _param_light_invert.get() ? "yes" : "no");
 #ifdef BOARD_HAS_NAV_LAMP
-	PX4_INFO("  Dual-Lamp GPIO Configuration:");
-	PX4_INFO("    Power GPIO (PH12): controls lamp system power");
-	PX4_INFO("    State GPIO (PH11): triggers state indicator changes");
-	PX4_INFO("    Illumination GPIO (PH10): controls illumination lamp");
+	PX4_INFO("  Two-GPIO Configuration:");
+	PX4_INFO("    State GPIO (PF0): triggers state indicator changes (repurposed from I2C2_SDA)");
+	PX4_INFO("    Illumination GPIO (PF1): controls illumination lamp (repurposed from I2C2_SCL)");
 #else
 	PX4_INFO("  GPIO available: no (board not supported)");
 #endif
@@ -246,7 +214,7 @@ int NavLampController::custom_command(int argc, char *argv[])
 	if (!strcmp(argv[0], "state")) {
 		if (argc < 2) {
 			PX4_WARN("Usage: nav_lamp_controller state <state>");
-			PX4_INFO("Valid states: 0-7 (0=OFF, 1=GREEN, 2=YELLOW, 3=RED, 4=BLUE, 5=WHITE, 6=PURPLE, 7=ORANGE)");
+			PX4_INFO("Valid states: 0-4 (0=OFF, 1=ON, 2=BLINK_SLOW, 3=BLINK_FAST, 4=BLINK_ROTATE)");
 			return 1;
 		}
 
@@ -287,26 +255,6 @@ int NavLampController::custom_command(int argc, char *argv[])
 		}
 	}
 
-	if (!strcmp(argv[0], "power")) {
-		if (argc < 2) {
-			PX4_WARN("Usage: nav_lamp_controller power <on|off>");
-			return 1;
-		}
-
-		NavLampController *instance = get_instance();
-
-		if (!strcmp(argv[1], "on")) {
-			instance->set_power_state(true);
-			return 0;
-		} else if (!strcmp(argv[1], "off")) {
-			instance->set_power_state(false);
-			return 0;
-		} else {
-			PX4_WARN("Invalid power command: %s. Use 'on' or 'off'", argv[1]);
-			return 1;
-		}
-	}
-
 	return print_usage("unknown command");
 }
 
@@ -318,40 +266,40 @@ int NavLampController::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Navigation lamp controller with dual-lamp configuration that receives commands via uORB
-and controls two separate lamps with different control logic.
+Navigation lamp controller with simplified two-GPIO configuration that receives commands via uORB
+and controls two separate lamp functions.
 
-The system has two lamps controlled by three GPIOs:
-1. State Indicator Lamp: Cycles through 8 states (0-7) using trigger pulses
-2. Illumination Lamp: Simple on/off control
+The system controls two lamp functions using two GPIOs:
+1. State Indicator: Cycles through 5 states (0-4) using trigger pulses
+2. Illumination: Simple on/off control
 
 GPIO Configuration:
-- Power GPIO (PH12): Controls power to entire lamp system (HIGH=on, LOW=off)
-- State GPIO (PH11): Generates trigger pulses to change state indicator lamp
-- Illumination GPIO (PH10): Controls illumination lamp on/off (HIGH=on, LOW=off)
+- State GPIO (PF0): Generates trigger pulses to change state indicator [Repurposed from I2C2_SDA]
+- Illumination GPIO (PF1): Controls illumination lamp on/off (HIGH=on, LOW=off) [Repurposed from I2C2_SCL]
 
 The module monitors the nav_lamp_command topic and generates pulses
-to advance the state indicator through 8 states (0-7) sequentially.
+to advance the state indicator through 5 states (0-4) sequentially:
+- State 0: OFF
+- State 1: ON (solid)
+- State 2: BLINK_SLOW
+- State 3: BLINK_FAST  
+- State 4: BLINK_ROTATE
 
 ### Examples
 Manual state change:
-$ nav_lamp_controller state 3    # Change state indicator to state 3
-$ nav_lamp_controller state 0    # Change state indicator to OFF state
+$ nav_lamp_controller state 0    # Turn off state indicator
+$ nav_lamp_controller state 1    # Turn on state indicator (solid)
+$ nav_lamp_controller state 2    # Set slow blinking mode
 
 Illumination control:
 $ nav_lamp_controller light on   # Turn illumination lamp on
 $ nav_lamp_controller light off  # Turn illumination lamp off
 
-Power control:
-$ nav_lamp_controller power on   # Turn lamp system power on
-$ nav_lamp_controller power off  # Turn lamp system power off
-
 )DESCR_STR");
 	PRINT_MODULE_USAGE_NAME("nav_lamp_controller", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("state <state>", "Manually set state indicator lamp (0-7)");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("state <state>", "Manually set state indicator lamp (0-4)");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("light <on|off>", "Control illumination lamp");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("power <on|off>", "Control lamp system power");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 	return 0;
 }

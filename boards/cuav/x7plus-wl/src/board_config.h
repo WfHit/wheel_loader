@@ -103,23 +103,24 @@
 #define GPIO_CAN1_SILENT_S0  /* PH2  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN2)
 #define GPIO_CAN2_SILENT_S1  /* PH3  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN3)
 
+/* NOTE: I2C2 (PF0/PF1) has been disabled and repurposed for navigation lamp system */
+
 /* HEATER */
 #define GPIO_HEATER_OUTPUT   /* PA8 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTA|GPIO_PIN8)
 #define HEATER_OUTPUT_EN(on_true)      px4_arch_gpiowrite(GPIO_HEATER_OUTPUT, (on_true))
 
-/* STATUS LAMP SYSTEM - Multi-GPIO Configuration */
-#define GPIO_STATUS_LAMP_VCC     /* PH12 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_SET|GPIO_PORTH|GPIO_PIN12)
-#define GPIO_STATUS_LAMP_STATE   /* PH11 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN11)
-#define GPIO_STATUS_LAMP_LIGHT   /* PH10 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTH|GPIO_PIN10)
+/* STATUS LAMP SYSTEM - Simplified Two-GPIO Configuration */
+/* Using repurposed I2C2 pins for navigation lamp system */
+#define GPIO_STATUS_LAMP_STATE   /* PF0 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTF|GPIO_PIN0)  /* Former I2C2_SDA */
+#define GPIO_STATUS_LAMP_LIGHT   /* PF1 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTF|GPIO_PIN1)  /* Former I2C2_SCL */
 #define BOARD_HAS_NAV_LAMP 1
 
 /* Status Lamp Control Macros */
-#define STATUS_LAMP_VCC_EN(on_true)     px4_arch_gpiowrite(GPIO_STATUS_LAMP_VCC, (on_true))
 #define STATUS_LAMP_STATE_PULSE(on_true) px4_arch_gpiowrite(GPIO_STATUS_LAMP_STATE, (on_true))
 #define STATUS_LAMP_LIGHT_EN(on_true)   px4_arch_gpiowrite(GPIO_STATUS_LAMP_LIGHT, (on_true))
 
 /* PWM */
-#define DIRECT_PWM_OUTPUT_CHANNELS   11  /* 9 PWM outputs available after reserving PH10, PH11, PH12 for status lamp system */
+#define DIRECT_PWM_OUTPUT_CHANNELS   14  /* 14 PWM outputs available  */
 #define BOARD_NUM_IO_TIMERS           4
 
 /* Power supply control and monitoring GPIOs */
@@ -219,12 +220,8 @@
 		GPIO_HW_VER_DRIVE,                \
 		GPIO_CAN1_TX,                     \
 		GPIO_CAN1_RX,                     \
-		GPIO_CAN2_TX,                     \
-		GPIO_CAN2_RX,                     \
 		GPIO_CAN1_SILENT_S0,              \
-		GPIO_CAN2_SILENT_S1,              \
 		GPIO_HEATER_OUTPUT,               \
-		GPIO_STATUS_LAMP_VCC,             \
 		GPIO_STATUS_LAMP_STATE,           \
 		GPIO_STATUS_LAMP_LIGHT,           \
 		GPIO_nPOWER_IN_CAN,               \
