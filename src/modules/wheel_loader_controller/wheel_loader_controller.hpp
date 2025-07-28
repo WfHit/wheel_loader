@@ -54,6 +54,7 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/slip_estimation.h>
 #include <uORB/topics/steering_command.h>
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/task_execution_command.h>
@@ -127,6 +128,7 @@ private:
 	void processWheelLoaderCommand();
 	void processTaskExecution();
 	void processVehicleCommand();
+	void processSlipEstimation();
 	void updateControlState();
 	void publishCommands();
 	void publishStatus();
@@ -163,6 +165,7 @@ private:
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
 	uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
+	uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
 	uORB::SubscriptionMultiArray<wheel_status_s, 2> _wheel_status_subs{ORB_ID::wheel_status};
 
 	// uORB publications
@@ -203,6 +206,13 @@ private:
 	hrt_abstime _last_bucket_status_time{0};
 	hrt_abstime _last_steering_status_time{0};
 	hrt_abstime _last_wheel_status_time[2]{0, 0};
+
+	// Slip detection and traction control
+	slip_estimation_s _current_slip_data{};
+	bool _slip_detected{false};
+	bool _critical_slip{false};
+	hrt_abstime _last_slip_estimation_time{0};
+	float _traction_reduction_factor{1.0f};
 
 	// Performance counters
 	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};

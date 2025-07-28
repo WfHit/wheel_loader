@@ -96,6 +96,7 @@ void WheelLoaderController::Run()
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
+	processSlipEstimation();
 
 	// Update subsystem health monitoring
 	updateSubsystemHealth();
@@ -207,6 +208,44 @@ void WheelLoaderController::processVehicleCommand()
 	}
 }
 
+void WheelLoaderController::processSlipEstimation()
+{
+	if (_slip_estimation_sub.updated()) {
+		slip_estimation_s slip_data;
+		if (_slip_estimation_sub.copy(&slip_data)) {
+			_current_slip_data = slip_data;
+			_last_slip_estimation_time = hrt_absolute_time();
+			
+			// Update slip detection flags
+			_slip_detected = slip_data.slip_detected;
+			_critical_slip = slip_data.critical_slip;
+			
+			// Calculate traction reduction factor based on slip
+			if (_critical_slip) {
+				// Reduce power significantly for critical slip
+				_traction_reduction_factor = 0.3f;
+				if (_diagnostic_enable.get()) {
+					PX4_WARN("Critical slip detected - reducing traction to 30%%");
+				}
+			} else if (_slip_detected) {
+				// Moderate reduction for detected slip
+				_traction_reduction_factor = 0.7f;
+				if (_diagnostic_enable.get()) {
+					PX4_INFO("Slip detected - reducing traction to 70%%");
+				}
+			} else {
+				// Gradually restore full traction when no slip
+				_traction_reduction_factor = math::min(_traction_reduction_factor + 0.05f, 1.0f);
+			}
+			
+			// Apply additional safety measures for wheel speed variance
+			if (slip_data.wheel_speed_variance > 0.5f) {
+				_traction_reduction_factor *= 0.8f; // Further reduce for high variance
+			}
+		}
+	}
+}
+
 WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandSource()
 {
 	hrt_abstime now = hrt_absolute_time();
@@ -312,10 +351,16 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 {
 	hrt_abstime now = hrt_absolute_time();
 
+	// Apply traction control factor to wheel speeds if slip is detected
+	float front_left_speed = cmd.front_left_wheel_speed * _traction_reduction_factor;
+	float front_right_speed = cmd.front_right_wheel_speed * _traction_reduction_factor;
+	float rear_left_speed = cmd.rear_left_wheel_speed * _traction_reduction_factor;
+	float rear_right_speed = cmd.rear_right_wheel_speed * _traction_reduction_factor;
+
 	// Generate front wheel controller command
 	wheel_speeds_setpoint_s front_wheel_cmd{};
 	front_wheel_cmd.timestamp = now;
-	front_wheel_cmd.front_wheel_speed_rad_s = (cmd.front_left_wheel_speed + cmd.front_right_wheel_speed) * 0.5f;
+	front_wheel_cmd.front_wheel_speed_rad_s = (front_left_speed + front_right_speed) * 0.5f;
 	front_wheel_cmd.rear_wheel_speed_rad_s = front_wheel_cmd.front_wheel_speed_rad_s; // Synchronized
 	front_wheel_cmd.max_acceleration = _max_accel.get();
 	front_wheel_cmd.synchronized = true;
@@ -324,7 +369,7 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	// Generate rear wheel controller command
 	wheel_speeds_setpoint_s rear_wheel_cmd{};
 	rear_wheel_cmd.timestamp = now;
-	rear_wheel_cmd.front_wheel_speed_rad_s = (cmd.rear_left_wheel_speed + cmd.rear_right_wheel_speed) * 0.5f;
+	rear_wheel_cmd.front_wheel_speed_rad_s = (rear_left_speed + rear_right_speed) * 0.5f;
 	rear_wheel_cmd.rear_wheel_speed_rad_s = rear_wheel_cmd.front_wheel_speed_rad_s; // Synchronized
 	rear_wheel_cmd.max_acceleration = _max_accel.get();
 	rear_wheel_cmd.synchronized = true;

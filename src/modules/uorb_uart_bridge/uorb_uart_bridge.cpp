@@ -54,34 +54,29 @@ UorbUartBridge::~UorbUartBridge()
 {
 	// Stop work queue
 	ScheduledWorkItem::deinit();
-
-	// Clean up UART transport
-	if (_uart_transport) {
-		delete _uart_transport;
-		_uart_transport = nullptr;
-	}
 }
 
 bool UorbUartBridge::init()
 {
 	// Get UART parameters
-	char device_path[64];
-	param_get(param_find("UART_BRIDGE_DEV"), device_path);
+	char device_path[32];
+	param_get(param_find("UART_BRIDGE_DEV"), device_path, sizeof(device_path));
 
 	int32_t baudrate;
 	param_get(param_find("UART_BRIDGE_BAUD"), &baudrate);
 
-	// Initialize UART transport
-	_uart_transport = new UartTransport();
-	if (!_uart_transport) {
-		PX4_ERR("Failed to allocate UART transport");
+	int32_t enable;
+	param_get(param_find("UART_BRIDGE_EN"), &enable);
+
+	if (!enable) {
+		PX4_INFO("UART bridge disabled by parameter");
 		return false;
 	}
 
-	if (!_uart_transport->init(device_path, baudrate)) {
+	// Initialize UART transport
+	_uart_transport = distributed_uorb::UartTransport();
+	if (_uart_transport.init(device_path, (speed_t)baudrate) < 0) {
 		PX4_ERR("Failed to initialize UART transport on %s at %d baud", device_path, baudrate);
-		delete _uart_transport;
-		_uart_transport = nullptr;
 		return false;
 	}
 
@@ -95,7 +90,7 @@ bool UorbUartBridge::init()
 
 void UorbUartBridge::Run()
 {
-	if (!_uart_transport) {
+	if (!_uart_transport.isReady()) {
 		return;
 	}
 
