@@ -1,0 +1,5 @@
+menuconfig MODULES_WHEEL_LOADER_RC_INPUT
+	bool "wheel_loader_rc_input"
+	default n
+	---help---
+		Enable support for wheel loader RC input processing
