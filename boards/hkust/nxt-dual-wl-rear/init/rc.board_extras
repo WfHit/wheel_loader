@@ -19,6 +19,15 @@ fi
 # Start H-bridge driver for boom actuator
 hbridge start
 
+
+# Start lamp controllers
+echo "Starting load lamp controller"
+load_lamp_controller start
+
+echo "Starting driver lamp controller"
+driver_lamp_controller start
+
+
 # Initialize rear wheel motor control
 echo "Initializing rear wheel motor control"
 
