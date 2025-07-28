@@ -42,15 +42,11 @@ UorbUartProxy::UorbUartProxy() :
 	ModuleBase(MODULE_NAME),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	_param_uart_dev(PARAM_UART_PROXY_DEV),
-	_param_uart_baud(PARAM_UART_PROXY_BAUD),
-	_param_board_type(PARAM_UART_PROXY_TYPE),
-	_uart_transport(nullptr),
 	_last_heartbeat_time(0),
 	_last_statistics_time(0),
 	_last_main_board_heartbeat(0),
 	_tx_sequence(0),
-	_board_id(BOARD_ID_NXT_FRONT)
+	_board_id(0)
 {
 	// Initialize statistics
 	memset(&_stats, 0, sizeof(_stats));
@@ -60,12 +56,6 @@ UorbUartProxy::~UorbUartProxy()
 {
 	// Stop work queue
 	ScheduledWorkItem::deinit();
-
-	// Clean up UART transport
-	if (_uart_transport) {
-		delete _uart_transport;
-		_uart_transport = nullptr;
-	}
 }
 
 bool UorbUartProxy::init()
@@ -80,17 +70,17 @@ bool UorbUartProxy::init()
 	const char *device_path = _param_uart_dev.get();
 	int32_t baudrate = _param_uart_baud.get();
 
-	// Initialize UART transport
-	_uart_transport = new UartTransport();
-	if (!_uart_transport) {
-		PX4_ERR("Failed to allocate UART transport");
+	// Check if proxy is enabled
+	int32_t enable;
+	param_get(param_find("UART_PROXY_EN"), &enable);
+	if (!enable) {
+		PX4_INFO("UART proxy disabled by parameter");
 		return false;
 	}
 
-	if (!_uart_transport->init(device_path, baudrate)) {
+	// Initialize UART transport
+	if (_uart_transport.init(device_path, (speed_t)baudrate) < 0) {
 		PX4_ERR("Failed to initialize UART transport on %s at %d baud", device_path, baudrate);
-		delete _uart_transport;
-		_uart_transport = nullptr;
 		return false;
 	}
 
@@ -104,7 +94,7 @@ bool UorbUartProxy::init()
 
 void UorbUartProxy::Run()
 {
-	if (!_uart_transport) {
+	if (!_uart_transport.isReady()) {
 		return;
 	}
 

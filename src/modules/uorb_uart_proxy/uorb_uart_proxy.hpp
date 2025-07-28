@@ -106,13 +106,13 @@ private:
 
 	// Module parameters
 	DEFINE_PARAMETERS(
-		(ParamString<32>) _param_uart_dev,
-		(ParamInt<>) _param_uart_baud,
-		(ParamInt<>) _param_board_type
+		(ParamString<px4::params::UART_PROXY_DEV>) _param_uart_dev,
+		(ParamInt<px4::params::UART_PROXY_BAUD>) _param_uart_baud,
+		(ParamInt<px4::params::UART_PROXY_TYPE>) _param_board_type
 	)
 
 	// UART transport
-	UartTransport *_uart_transport;
+	distributed_uorb::UartTransport _uart_transport;
 
 	// uORB subscriptions (outgoing to main board)
 	uORB::Subscription _wheel_loader_status_sub{ORB_ID(wheel_loader_status)};
