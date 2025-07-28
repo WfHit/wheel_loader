@@ -147,6 +147,7 @@
 
 #define TONE_ALARM_TIMER        4 /* Timer 4 */
 #define TONE_ALARM_CHANNEL      3  /* PD14 GPIO_TIM4_CH3 NC */
+
 /*NC can be modified with Spare GPIO then connected with hardware */
 #define GPIO_BUZZER_1           /* PA4 */ GPIO_PA4
 
@@ -257,13 +258,13 @@
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \
-		GPIO_TONE_ALARM_IDLE, \
+		GPIO_LOAD_LAMP_LEFT, \
+		GPIO_LOAD_LAMP_RIGHT, \
+		GPIO_LOAD_LAMP_GND, \
+		GPIO_DRIVER_LAMP_LEFT, \
+		GPIO_DRIVER_LAMP_RIGHT, \
+		GPIO_DRIVER_LAMP_GND, \
 		GPIO_SPL_ADDR_SET, \
-		GPIO_PC0, \
-		GPIO_PC1, \
-		GPIO_PB2, \
-		GPIO_PB3, \
-		GPIO_PB4, \
 		DRV8701_RIGHT_DIR_GPIO, \
 		DRV8701_LEFT_DIR_GPIO, \
 		DRV8701_ENABLE_GPIO, \

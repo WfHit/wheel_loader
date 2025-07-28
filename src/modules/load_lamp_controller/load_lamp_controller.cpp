@@ -196,7 +196,7 @@ int LoadLampController::print_status()
 {
 	PX4_INFO("Load Lamp Controller");
 	PX4_INFO("  Overall motor load: %.2f", (double)_current_load);
-	PX4_INFO("  Blink interval: %u us", _blink_interval_us);
+	PX4_INFO("  Blink interval: %lu us", _blink_interval_us);
 	PX4_INFO("  Load thresholds: %.2f / %.2f / %.2f",
 		 (double)_param_threshold_low.get(),
 		 (double)_param_threshold_med.get(),
