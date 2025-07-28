@@ -93,11 +93,15 @@ private:
 	HazardState _hazard_state{HazardState::FIRST_SHORT};
 	uint64_t _hazard_timer{0};
 
+	// Test mode variables
+	bool _test_mode_active{false};
+	LampMode _test_mode{LampMode::OFF};
+
 	// Constants for timing
 	static constexpr uint32_t HAZARD_SHORT_ON_US = 100000;   // 100ms on
 	static constexpr uint32_t HAZARD_SHORT_OFF_US = 100000;  // 100ms off
-	static constexpr uint32_t HAZARD_LONG_ON_US = 300000;    // 300ms on
-	static constexpr uint32_t HAZARD_LONG_OFF_US = 200000;   // 200ms off
+	static constexpr uint32_t HAZARD_LONG_ON_US = 200000;    // 200ms on
+	static constexpr uint32_t HAZARD_LONG_OFF_US = 100000;   // 100ms off
 
 	// Methods
 	void parameters_update();
@@ -106,6 +110,10 @@ private:
 	void set_lamps(bool left, bool right);
 	void process_hazard_pattern();
 	uint32_t get_turn_signal_interval_us() const;
+
+	// Test mode methods
+	void test_mode(LampMode mode);
+	void test_mode_disable();
 
 	// Parameters
 	DEFINE_PARAMETERS(

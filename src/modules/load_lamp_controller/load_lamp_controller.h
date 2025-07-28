@@ -55,6 +55,11 @@ public:
 	void run();
 	int print_status();
 	void set_test_blink_rate(uint32_t interval_us);
+	void set_test_load(float load);
+
+	// Test mode methods
+	void test_mode_enable();
+	void test_mode_disable();
 
 private:
 	// Subscriptions
@@ -78,6 +83,9 @@ private:
 	int _channel_history_index[MAX_CHANNELS]{};
 	float _channel_average_load[MAX_CHANNELS]{};
 	bool _channel_has_data[MAX_CHANNELS]{};
+
+	// Test mode variables
+	bool _test_mode_active{false};
 
 	// Methods
 	void parameters_update();

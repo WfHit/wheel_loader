@@ -64,6 +64,13 @@ void DriverLampController::update_lamp_mode()
 {
 	perf_begin(_mode_update_perf);
 
+	// Skip normal mode logic if in test mode
+	if (_test_mode_active) {
+		_current_mode = _test_mode;
+		perf_end(_mode_update_perf);
+		return;
+	}
+
 	// Normal operation - check vehicle status
 	vehicle_status_s status;
 
@@ -271,6 +278,12 @@ int DriverLampController::print_status()
 {
 	PX4_INFO("Driver Lamp Controller");
 	PX4_INFO("  Current mode: %d", static_cast<int>(_current_mode));
+	PX4_INFO("  Test mode: %s", _test_mode_active ? "active" : "inactive");
+
+	if (_test_mode_active) {
+		PX4_INFO("  Test mode type: %d", static_cast<int>(_test_mode));
+	}
+
 	PX4_INFO("  Blink rate: %.1f Hz", (double)_param_blink_rate.get());
 	PX4_INFO("  Left lamp: %s", _left_lamp_on ? "on" : "off");
 	PX4_INFO("  Right lamp: %s", _right_lamp_on ? "on" : "off");
@@ -317,6 +330,54 @@ int DriverLampController::task_spawn(int argc, char *argv[])
 
 int DriverLampController::custom_command(int argc, char *argv[])
 {
+	if (!is_running()) {
+		PX4_ERR("not running");
+		return PX4_ERROR;
+	}
+
+	DriverLampController *instance = get_instance();
+
+	if (!instance) {
+		PX4_ERR("instance not found");
+		return PX4_ERROR;
+	}
+
+	if (argc >= 2 && strcmp(argv[0], "test") == 0) {
+		if (argc < 2) {
+			PX4_INFO("Usage: driver_lamp_controller test <mode>");
+			PX4_INFO("Available modes: off, left, right, reverse, hazard");
+			return PX4_OK;
+		}
+
+		const char *mode = argv[1];
+
+		if (strcmp(mode, "off") == 0) {
+			instance->test_mode(LampMode::OFF);
+			PX4_INFO("Testing: OFF mode");
+		} else if (strcmp(mode, "left") == 0) {
+			instance->test_mode(LampMode::LEFT_TURN);
+			PX4_INFO("Testing: LEFT TURN mode");
+		} else if (strcmp(mode, "right") == 0) {
+			instance->test_mode(LampMode::RIGHT_TURN);
+			PX4_INFO("Testing: RIGHT TURN mode");
+		} else if (strcmp(mode, "reverse") == 0) {
+			instance->test_mode(LampMode::REVERSE);
+			PX4_INFO("Testing: REVERSE mode");
+		} else if (strcmp(mode, "hazard") == 0) {
+			instance->test_mode(LampMode::HAZARD);
+			PX4_INFO("Testing: HAZARD mode");
+		} else if (strcmp(mode, "normal") == 0) {
+			instance->test_mode_disable();
+			PX4_INFO("Returning to normal operation");
+		} else {
+			PX4_ERR("Unknown test mode: %s", mode);
+			PX4_INFO("Available modes: off, left, right, reverse, hazard, normal");
+			return PX4_ERROR;
+		}
+
+		return PX4_OK;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -347,12 +408,43 @@ Hazard pattern: 100ms on, 100ms off, 100ms on, 100ms off, 300ms on, 400ms off, r
 To start the module:
 $ driver_lamp_controller start
 
+To test different lamp modes:
+$ driver_lamp_controller test off      # Test OFF mode
+$ driver_lamp_controller test left     # Test LEFT TURN mode
+$ driver_lamp_controller test right    # Test RIGHT TURN mode
+$ driver_lamp_controller test reverse  # Test REVERSE mode
+$ driver_lamp_controller test hazard   # Test HAZARD mode
+$ driver_lamp_controller test normal   # Return to normal operation
+
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("driver_lamp_controller", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Test lamp modes");
+	PRINT_MODULE_USAGE_ARG("off|left|right|reverse|hazard|normal", "Test mode", false);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 	return 0;
+}
+
+void DriverLampController::test_mode(LampMode mode)
+{
+	_test_mode_active = true;
+	_test_mode = mode;
+	_current_mode = mode;
+
+	// Reset timing variables for the new mode
+	_last_toggle = hrt_absolute_time();
+	_hazard_timer = hrt_absolute_time();
+	_hazard_state = HazardState::FIRST_SHORT;
+	_left_lamp_on = false;
+	_right_lamp_on = false;
+}
+
+void DriverLampController::test_mode_disable()
+{
+	_test_mode_active = false;
+	_current_mode = LampMode::OFF;
+	set_lamps(false, false);
 }
 
 int DriverLampController::run_trampoline(int argc, char *argv[])

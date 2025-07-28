@@ -67,6 +67,19 @@
 #  define BOARD_OVERLOAD_LED     LED_RED
 #  define BOARD_ARMED_STATE_LED  LED_BLUE
 
+// test
+// px4_arch_configgpio(GPIO_PA4);
+// px4_arch_gpiowrite(GPIO_PA4, 1);
+// px4_arch_configgpio(GPIO_PC0);
+// px4_arch_gpiowrite(GPIO_PC0, 0);
+// px4_arch_configgpio(GPIO_PC1);
+// px4_arch_gpiowrite(GPIO_PC1, 1);
+// px4_arch_configgpio(GPIO_PB2);
+// px4_arch_gpiowrite(GPIO_PB2, 1);
+// px4_arch_configgpio(GPIO_PB3);
+// px4_arch_gpiowrite(GPIO_PB3, 0);
+// px4_arch_configgpio(GPIO_PB4);
+// px4_arch_gpiowrite(GPIO_PB4, 1);
 
 /* Load Lamp Controller GPIOs */
 #define BOARD_HAS_LOAD_LAMP           1

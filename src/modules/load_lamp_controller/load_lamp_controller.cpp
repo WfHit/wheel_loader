@@ -64,6 +64,12 @@ void LoadLampController::update_load()
 {
 	perf_begin(_load_update_perf);
 
+	// Skip normal load updates if in test mode
+	if (_test_mode_active) {
+		perf_end(_load_update_perf);
+		return;
+	}
+
 	hbridge_status_s status;
 
 	if (_hbridge_status_sub.update(&status)) {
@@ -143,6 +149,21 @@ void LoadLampController::set_test_blink_rate(uint32_t interval_us)
 	_blink_interval_us = interval_us;
 }
 
+void LoadLampController::set_test_load(float load)
+{
+	_current_load = load;
+}
+
+void LoadLampController::test_mode_enable()
+{
+	_test_mode_active = true;
+}
+
+void LoadLampController::test_mode_disable()
+{
+	_test_mode_active = false;
+}
+
 void LoadLampController::run()
 {
 #ifdef BOARD_HAS_LOAD_LAMP
@@ -196,6 +217,7 @@ int LoadLampController::print_status()
 {
 	PX4_INFO("Load Lamp Controller");
 	PX4_INFO("  Overall motor load: %.2f", (double)_current_load);
+	PX4_INFO("  Test mode: %s", _test_mode_active ? "active" : "inactive");
 	PX4_INFO("  Blink interval: %lu us", _blink_interval_us);
 	PX4_INFO("  Load thresholds: %.2f / %.2f / %.2f",
 		 (double)_param_threshold_low.get(),
@@ -280,6 +302,10 @@ int LoadLampController::custom_command(int argc, char *argv[])
 		LoadLampController *instance = get_instance();
 
 		if (instance) {
+			// Enable test mode and set the current load to the test value
+			instance->test_mode_enable();
+			instance->set_test_load(test_load);
+
 			// Calculate blink rate based on load thresholds (same logic as update_blink_rate)
 			uint32_t blink_interval;
 			const char* rate_description;
@@ -299,7 +325,19 @@ int LoadLampController::custom_command(int argc, char *argv[])
 			}
 
 			instance->set_test_blink_rate(blink_interval);
-			PX4_INFO("Test load: %.2f -> %s", (double)test_load, rate_description);
+			PX4_INFO("Test mode enabled - Load set: %.2f -> %s", (double)test_load, rate_description);
+			return 0;
+		}
+
+		return 1;
+	}
+
+	if (!strcmp(argv[0], "normal")) {
+		LoadLampController *instance = get_instance();
+
+		if (instance) {
+			instance->test_mode_disable();
+			PX4_INFO("Test mode disabled - returning to normal operation");
 			return 0;
 		}
 
@@ -338,11 +376,15 @@ $ load_lamp_controller test 0.1    # Test low load (slow blink)
 $ load_lamp_controller test 0.5    # Test medium load (medium blink)
 $ load_lamp_controller test 0.9    # Test high load (very fast blink)
 
+To return to normal operation:
+$ load_lamp_controller normal      # Disable test mode
+
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("load_lamp_controller", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("test <load>", "Test with motor load value (0.0-1.0)");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("normal", "Return to normal operation");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 	return 0;
 }
