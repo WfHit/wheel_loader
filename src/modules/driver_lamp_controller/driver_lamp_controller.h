@@ -100,7 +100,7 @@ private:
 	// Constants for timing
 	static constexpr uint32_t HAZARD_SHORT_ON_US = 100000;   // 100ms on
 	static constexpr uint32_t HAZARD_SHORT_OFF_US = 100000;  // 100ms off
-	static constexpr uint32_t HAZARD_LONG_ON_US = 200000;    // 200ms on
+	static constexpr uint32_t HAZARD_LONG_ON_US = 400000;    // 400ms on
 	static constexpr uint32_t HAZARD_LONG_OFF_US = 100000;   // 100ms off
 
 	// Methods

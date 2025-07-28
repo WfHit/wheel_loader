@@ -116,8 +116,14 @@ void LoadLampController::update_load()
 void LoadLampController::update_blink_rate(float load)
 {
 	// Map load to blink frequency based on thresholds
-	if (load < _param_threshold_low.get()) {
-		_blink_interval_us = 500000; // 2 Hz (slow)
+	if (load < 0.1f) {
+		_blink_interval_us = 2000000; // 0.5 Hz (very slow)
+
+	} else if (load < 0.2f) {
+		_blink_interval_us = 1000000; // 1 Hz (slow)
+
+	} else if (load < _param_threshold_low.get()) {
+		_blink_interval_us = 500000; // 2 Hz (medium-slow)
 
 	} else if (load < _param_threshold_med.get()) {
 		_blink_interval_us = 200000; // 5 Hz (medium)
@@ -284,7 +290,9 @@ int LoadLampController::custom_command(int argc, char *argv[])
 		if (argc < 2) {
 			PX4_WARN("Usage: load_lamp_controller test <load_value>");
 			PX4_INFO("Test with motor load value (0.0 - 1.0):");
-			PX4_INFO("  0.0 - 0.3: Slow blink (2 Hz)");
+			PX4_INFO("  0.0 - 0.1: Very slow blink (0.5 Hz)");
+			PX4_INFO("  0.1 - 0.2: Slow blink (1 Hz)");
+			PX4_INFO("  0.2 - 0.3: Medium-slow blink (2 Hz)");
 			PX4_INFO("  0.3 - 0.6: Medium blink (5 Hz)");
 			PX4_INFO("  0.6 - 0.8: Fast blink (10 Hz)");
 			PX4_INFO("  0.8 - 1.0: Very fast blink (20 Hz)");
@@ -310,9 +318,15 @@ int LoadLampController::custom_command(int argc, char *argv[])
 			uint32_t blink_interval;
 			const char* rate_description;
 
-			if (test_load < instance->_param_threshold_low.get()) {
+			if (test_load < 0.1f) {
+				blink_interval = 2000000; // 0.5 Hz
+				rate_description = "Very slow blink (0.5 Hz)";
+			} else if (test_load < 0.2f) {
+				blink_interval = 1000000; // 1 Hz
+				rate_description = "Slow blink (1 Hz)";
+			} else if (test_load < instance->_param_threshold_low.get()) {
 				blink_interval = 500000; // 2 Hz
-				rate_description = "Slow blink (2 Hz)";
+				rate_description = "Medium-slow blink (2 Hz)";
 			} else if (test_load < instance->_param_threshold_med.get()) {
 				blink_interval = 200000; // 5 Hz
 				rate_description = "Medium blink (5 Hz)";
@@ -362,7 +376,9 @@ The module subscribes to hbridge_status topic to get motor load information
 and controls two lamps (PA4, PC1) with PC0 as ground.
 
 Blink rates based on motor load:
-- 0.0-0.3: Slow blink (2 Hz)
+- 0.0-0.1: Very slow blink (0.5 Hz)
+- 0.1-0.2: Slow blink (1 Hz)
+- 0.2-0.3: Medium-slow blink (2 Hz)
 - 0.3-0.6: Medium blink (5 Hz)
 - 0.6-0.8: Fast blink (10 Hz)
 - 0.8-1.0: Very fast blink (20 Hz)
