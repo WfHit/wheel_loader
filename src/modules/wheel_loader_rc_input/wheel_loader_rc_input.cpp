@@ -307,7 +307,7 @@ void WheelLoaderRcInput::applySafetyLimits(wheel_loader_command_s &cmd)
 	cmd.steering_angle_cmd = math::constrain(cmd.steering_angle_cmd, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE);
 	cmd.articulation_angle_cmd = math::constrain(cmd.articulation_angle_cmd, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE);
 
-	// Limit hydraulic commands (boom: velocity, bucket: angle)
+	// Limit electric motor commands (boom: velocity, bucket: angle)
 	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -MAX_BOOM_VELOCITY, MAX_BOOM_VELOCITY);
 	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -MAX_BUCKET_ANGLE, MAX_BUCKET_ANGLE);
 

@@ -5,7 +5,7 @@ description:
     long: |
         This module processes RC/SBUS input signals and converts them to wheel loader
         control commands. It handles channel mapping for chassis movement, boom/bucket
-        hydraulic controls, and safety features including emergency stop and failsafe.
+        electric motor controls, and safety features including emergency stop and failsafe.
 
 parameters:
     - group: Wheel Loader RC Input

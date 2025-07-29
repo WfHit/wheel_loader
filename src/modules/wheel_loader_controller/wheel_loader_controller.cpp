@@ -295,11 +295,11 @@ bool WheelLoaderController::validateCommand(const wheel_loader_command_s &cmd)
 		return false;
 	}
 
-	// Validate hydraulic commands
+	// Validate electric motor commands
 	if (fabsf(cmd.boom_lift_cmd) > M_PI_2_F ||
 		fabsf(cmd.boom_extend_cmd) > 1.0f ||
 		fabsf(cmd.bucket_angle_cmd) > M_PI_F) {
-		PX4_WARN("Hydraulic command exceeds limits");
+		PX4_WARN("Electric motor command exceeds limits");
 		return false;
 	}
 
@@ -324,7 +324,7 @@ void WheelLoaderController::applyCommandLimits(wheel_loader_command_s &cmd)
 	cmd.rear_left_wheel_speed = math::constrain(cmd.rear_left_wheel_speed, -max_speed, max_speed);
 	cmd.rear_right_wheel_speed = math::constrain(cmd.rear_right_wheel_speed, -max_speed, max_speed);
 
-	// Limit hydraulic commands
+	// Limit electric motor commands
 	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -M_PI_2_F, M_PI_2_F);
 	cmd.boom_extend_cmd = math::constrain(cmd.boom_extend_cmd, 0.0f, 1.0f);
 	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -M_PI_F, M_PI_F);
