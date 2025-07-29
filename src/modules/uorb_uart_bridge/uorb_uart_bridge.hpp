@@ -42,28 +42,46 @@ private:
 		(ParamInt<px4::params::UORB_UART_BAUD>) _param_uart_baud    /**< UART baudrate */
 	)
 
+	// Constants
+	static constexpr uint32_t MAIN_LOOP_INTERVAL_US = 10000;  // 10ms
+	static constexpr uint32_t HEARTBEAT_INTERVAL_US = 1000000; // 1s  
+	static constexpr uint32_t STATISTICS_INTERVAL_US = 5000000; // 5s
+	static constexpr uint32_t HEARTBEAT_TIMEOUT_US = 2000000;  // 2s
+
 	// UART transport
-	distributed_uorb::UartTransport _uart_transport;
+	distributed_uorb::UartTransport *_uart_transport;
+	bool _uart_initialized;
 
 	// Node information
 	distributed_uorb::NodeId _node_id{distributed_uorb::NodeId::X7_MAIN};
 	uint8_t _sequence_number{0};
+	uint16_t _tx_sequence{0};
+
+	// Timing variables
+	hrt_abstime _last_heartbeat_time{0};
+	hrt_abstime _last_statistics_time{0};
+	hrt_abstime _last_front_heartbeat{0};
+	hrt_abstime _last_rear_heartbeat{0};
 
 	// Subscriptions for outgoing topics
 	uORB::Subscription _wheel_loader_setpoint_sub{ORB_ID(wheel_loader_setpoint)};
-	uORB::Subscription _actuator_outputs_sub{ORB_ID(actuator_outputs)};
+	uORB::Subscription _actuator_outputs_front_sub{ORB_ID(actuator_outputs), 0};
+	uORB::Subscription _actuator_outputs_rear_sub{ORB_ID(actuator_outputs), 1};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
 	// Publications for incoming topics
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_front_pub{ORB_ID(wheel_loader_status), 0};
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_rear_pub{ORB_ID(wheel_loader_status), 1};
 
-	// Statistics
-	uint32_t _tx_count{0};
-	uint32_t _rx_count{0};
-	uint32_t _tx_errors{0};
-	uint32_t _rx_errors{0};
-	hrt_abstime _last_heartbeat{0};
+	// Statistics structure
+	struct {
+		uint32_t tx_messages;
+		uint32_t rx_messages;
+		uint32_t tx_bytes;
+		uint32_t rx_bytes;
+		uint32_t tx_errors;
+		uint32_t rx_errors;
+	} _stats;
 
 	/**
 	 * Initialize UART connection
