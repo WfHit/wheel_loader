@@ -12,14 +12,33 @@ The Wheel Loader RC Input module provides remote control capability for the whee
 - **Traction Control Integration**: Dynamic slip-based power reduction
 - **Configurable Parameters**: Adjustable limits, deadzone, and timeout settings
 
+## System Architecture
+
+### Hardware Configuration
+- **2 H-Bridge Devices**: Each with 2 channels (total 4 channels)
+  - **Front H-Bridge**: Located on NXT front board
+    - Channel 1: Front axle drive motor
+    - Channel 2: Bucket hydraulic control
+  - **Rear H-Bridge**: Located on NXT rear board  
+    - Channel 1: Rear axle drive motor
+    - Channel 2: Boom hydraulic control
+
+### Control Mapping
+- **Front/Rear Axles**: Controlled as units (not individual wheels)
+  - Front axle: Driven by front motor via front H-bridge
+  - Rear axle: Driven by rear motor via rear H-bridge
+- **Hydraulic Controls**:
+  - **Boom**: Angle/height control (position-based)
+  - **Bucket**: Velocity speed control (rate-based)
+
 ## RC Channel Mapping
 
 | Channel | Function | Range | Description |
 |---------|----------|-------|-------------|
 | 0 | Steering | ±0.7 rad (±40°) | Front axle steering angle |
-| 2 | Throttle | ±5.0 rad/s | Forward/reverse chassis speed |
-| 4 | Boom | ±0.5 rad/s | Boom lift rate control |
-| 5 | Bucket | ±1.0 rad/s | Bucket angle rate control |
+| 2 | Throttle | ±5.0 rad/s | Forward/reverse chassis speed (both axles) |
+| 4 | Boom | ±0.5 rad/s | Boom lift rate control (angle/height) |
+| 5 | Bucket | ±1.0 rad/s | Bucket angle rate control (velocity) |
 | 6 | E-Stop | Digital | Emergency stop (active low <1400us) |
 | 7 | Mode | Digital | Control mode switch (future) |
 
