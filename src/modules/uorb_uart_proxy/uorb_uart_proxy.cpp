@@ -124,19 +124,19 @@ void UorbUartProxy::Run()
 
 void UorbUartProxy::processIncomingMessages()
 {
-	UartFrame frame;
-	while (_uart_transport->receiveFrame(frame)) {
+	distributed_uorb::UartFrame frame;
+	while (_uart_transport.receiveFrame(frame) > 0) {
 		_stats.rx_messages++;
 		_stats.rx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 
 		// Update main board heartbeat tracking
-		if (frame.header.board_id == BOARD_ID_X7_PLUS) {
+		if (frame.header.board_id == distributed_uorb::BOARD_ID_X7_PLUS) {
 			_last_main_board_heartbeat = hrt_absolute_time();
 		}
 
 		// Process based on message type
-		switch (static_cast<UartMessageId>(frame.header.msg_id)) {
-		case UartMessageId::WHEEL_LOADER_SETPOINT: {
+		switch (static_cast<distributed_uorb::UartMessageId>(frame.header.msg_id)) {
+		case distributed_uorb::UartMessageId::WHEEL_LOADER_SETPOINT: {
 			if (frame.header.length == sizeof(wheel_loader_setpoint_s)) {
 				wheel_loader_setpoint_s setpoint;
 				memcpy(&setpoint, frame.payload, sizeof(setpoint));
@@ -148,13 +148,13 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::ACTUATOR_OUTPUTS_FRONT: {
+		case distributed_uorb::UartMessageId::ACTUATOR_OUTPUTS_FRONT: {
 			// Only process if this is the front board
-			if (_board_id == BOARD_ID_NXT_FRONT && frame.header.length == sizeof(actuator_outputs_s)) {
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT && frame.header.length == sizeof(actuator_outputs_s)) {
 				actuator_outputs_s outputs;
 				memcpy(&outputs, frame.payload, sizeof(outputs));
 				_actuator_outputs_pub.publish(outputs);
-			} else if (_board_id != BOARD_ID_NXT_FRONT) {
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_FRONT) {
 				// Ignore messages not intended for this board
 			} else {
 				_stats.rx_errors++;
@@ -163,13 +163,13 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::ACTUATOR_OUTPUTS_REAR: {
+		case distributed_uorb::UartMessageId::ACTUATOR_OUTPUTS_REAR: {
 			// Only process if this is the rear board
-			if (_board_id == BOARD_ID_NXT_REAR && frame.header.length == sizeof(actuator_outputs_s)) {
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR && frame.header.length == sizeof(actuator_outputs_s)) {
 				actuator_outputs_s outputs;
 				memcpy(&outputs, frame.payload, sizeof(outputs));
 				_actuator_outputs_pub.publish(outputs);
-			} else if (_board_id != BOARD_ID_NXT_REAR) {
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_REAR) {
 				// Ignore messages not intended for this board
 			} else {
 				_stats.rx_errors++;
@@ -178,7 +178,7 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::VEHICLE_STATUS: {
+		case distributed_uorb::UartMessageId::VEHICLE_STATUS: {
 			if (frame.header.length == sizeof(vehicle_status_s)) {
 				vehicle_status_s status;
 				memcpy(&status, frame.payload, sizeof(status));
@@ -190,7 +190,100 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::HEARTBEAT: {
+		case distributed_uorb::UartMessageId::TRACTION_CONTROL: {
+			if (frame.header.length == sizeof(traction_control_s)) {
+				traction_control_s traction_control;
+				memcpy(&traction_control, frame.payload, sizeof(traction_control));
+				_traction_control_pub.publish(traction_control);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid traction control length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::BOOM_COMMAND: {
+			// Only process if this is the rear board (boom control)
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR && frame.header.length == sizeof(boom_command_s)) {
+				boom_command_s boom_command;
+				memcpy(&boom_command, frame.payload, sizeof(boom_command));
+				_boom_command_pub.publish(boom_command);
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_REAR) {
+				// Ignore messages not intended for this board
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid boom command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::BUCKET_COMMAND: {
+			// Only process if this is the front board (bucket control)
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT && frame.header.length == sizeof(bucket_command_s)) {
+				bucket_command_s bucket_command;
+				memcpy(&bucket_command, frame.payload, sizeof(bucket_command));
+				_bucket_command_pub.publish(bucket_command);
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_FRONT) {
+				// Ignore messages not intended for this board
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid bucket command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::STEERING_COMMAND: {
+			// Only process if this is the rear board (steering control)
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR && frame.header.length == sizeof(steering_command_s)) {
+				steering_command_s steering_command;
+				memcpy(&steering_command, frame.payload, sizeof(steering_command));
+				_steering_command_pub.publish(steering_command);
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_REAR) {
+				// Ignore messages not intended for this board
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid steering command length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::VEHICLE_LOCAL_POSITION: {
+			if (frame.header.length == sizeof(vehicle_local_position_s)) {
+				vehicle_local_position_s position;
+				memcpy(&position, frame.payload, sizeof(position));
+				_vehicle_local_position_pub.publish(position);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid vehicle local position length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::VEHICLE_ATTITUDE: {
+			if (frame.header.length == sizeof(vehicle_attitude_s)) {
+				vehicle_attitude_s attitude;
+				memcpy(&attitude, frame.payload, sizeof(attitude));
+				_vehicle_attitude_pub.publish(attitude);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid vehicle attitude length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::VEHICLE_ODOMETRY: {
+			if (frame.header.length == sizeof(vehicle_odometry_s)) {
+				vehicle_odometry_s odometry;
+				memcpy(&odometry, frame.payload, sizeof(odometry));
+				_vehicle_odometry_pub.publish(odometry);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid vehicle odometry length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::HEARTBEAT: {
 			// Heartbeat received from main board - already tracked above
 			break;
 		}
@@ -208,14 +301,14 @@ void UorbUartProxy::processOutgoingMessages()
 	// Send wheel loader status from this board
 	wheel_loader_status_s status;
 	if (_wheel_loader_status_sub.update(&status)) {
-		UartFrame frame;
-		frame.header.sync = UART_SYNC_PATTERN;
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
 
 		// Use appropriate message ID based on board type
-		if (_board_id == BOARD_ID_NXT_FRONT) {
-			frame.header.msg_id = static_cast<uint8_t>(UartMessageId::WHEEL_LOADER_STATUS_FRONT);
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_FRONT);
 		} else {
-			frame.header.msg_id = static_cast<uint8_t>(UartMessageId::WHEEL_LOADER_STATUS_REAR);
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_REAR);
 		}
 
 		frame.header.board_id = _board_id;
@@ -225,7 +318,7 @@ void UorbUartProxy::processOutgoingMessages()
 
 		memcpy(frame.payload, &status, sizeof(status));
 
-		if (_uart_transport->sendFrame(frame)) {
+		if (_uart_transport.sendFrame(frame) >= 0) {
 			_stats.tx_messages++;
 			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 		} else {
@@ -233,19 +326,226 @@ void UorbUartProxy::processOutgoingMessages()
 			PX4_WARN("Failed to send wheel loader status");
 		}
 	}
+
+	// Send quadrature encoder data
+	sensor_quad_encoder_s encoder_data;
+	if (_sensor_quad_encoder_sub.update(&encoder_data)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		
+		// Use appropriate message ID based on board type
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(encoder_data);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &encoder_data, sizeof(encoder_data));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send quad encoder data");
+		}
+	}
+
+	// Send AS5600 sensor data (boom angle - rear board only)
+	if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR) {
+		sensor_as5600_s as5600_data;
+		if (_sensor_as5600_sub.update(&as5600_data)) {
+			distributed_uorb::UartFrame frame;
+			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_AS5600_BOOM);
+			frame.header.board_id = _board_id;
+			frame.header.length = sizeof(as5600_data);
+			frame.header.sequence = _tx_sequence++;
+			frame.header.timestamp = hrt_absolute_time();
+
+			memcpy(frame.payload, &as5600_data, sizeof(as5600_data));
+
+			if (_uart_transport.sendFrame(frame) >= 0) {
+				_stats.tx_messages++;
+				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+			} else {
+				_stats.tx_errors++;
+				PX4_WARN("Failed to send AS5600 data");
+			}
+		}
+	}
+
+	// Send limit sensor data (bucket limit - front board only)
+	if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+		limit_sensor_s limit_data;
+		if (_limit_sensor_sub.update(&limit_data)) {
+			distributed_uorb::UartFrame frame;
+			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::LIMIT_SENSOR_BUCKET);
+			frame.header.board_id = _board_id;
+			frame.header.length = sizeof(limit_data);
+			frame.header.sequence = _tx_sequence++;
+			frame.header.timestamp = hrt_absolute_time();
+
+			memcpy(frame.payload, &limit_data, sizeof(limit_data));
+
+			if (_uart_transport.sendFrame(frame) >= 0) {
+				_stats.tx_messages++;
+				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+			} else {
+				_stats.tx_errors++;
+				PX4_WARN("Failed to send limit sensor data");
+			}
+		}
+	}
+
+	// Send wheel encoder data
+	wheel_encoders_s wheel_encoder_data;
+	if (_wheel_encoders_sub.update(&wheel_encoder_data)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_ENCODERS_FRONT);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_ENCODERS_REAR);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(wheel_encoder_data);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &wheel_encoder_data, sizeof(wheel_encoder_data));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send wheel encoder data");
+		}
+	}
+
+	// Send slip estimation data
+	slip_estimation_s slip_data;
+	if (_slip_estimation_sub.update(&slip_data)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SLIP_ESTIMATION_FRONT);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SLIP_ESTIMATION_REAR);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(slip_data);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &slip_data, sizeof(slip_data));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send slip estimation data");
+		}
+	}
+
+	// Send boom status (rear board only)
+	if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR) {
+		boom_status_s boom_status;
+		if (_boom_status_sub.update(&boom_status)) {
+			distributed_uorb::UartFrame frame;
+			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::BOOM_STATUS);
+			frame.header.board_id = _board_id;
+			frame.header.length = sizeof(boom_status);
+			frame.header.sequence = _tx_sequence++;
+			frame.header.timestamp = hrt_absolute_time();
+
+			memcpy(frame.payload, &boom_status, sizeof(boom_status));
+
+			if (_uart_transport.sendFrame(frame) >= 0) {
+				_stats.tx_messages++;
+				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+			} else {
+				_stats.tx_errors++;
+				PX4_WARN("Failed to send boom status");
+			}
+		}
+	}
+
+	// Send bucket status (front board only)
+	if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+		bucket_status_s bucket_status;
+		if (_bucket_status_sub.update(&bucket_status)) {
+			distributed_uorb::UartFrame frame;
+			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::BUCKET_STATUS);
+			frame.header.board_id = _board_id;
+			frame.header.length = sizeof(bucket_status);
+			frame.header.sequence = _tx_sequence++;
+			frame.header.timestamp = hrt_absolute_time();
+
+			memcpy(frame.payload, &bucket_status, sizeof(bucket_status));
+
+			if (_uart_transport.sendFrame(frame) >= 0) {
+				_stats.tx_messages++;
+				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+			} else {
+				_stats.tx_errors++;
+				PX4_WARN("Failed to send bucket status");
+			}
+		}
+	}
+
+	// Send steering status (rear board only)
+	if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR) {
+		steering_status_s steering_status;
+		if (_steering_status_sub.update(&steering_status)) {
+			distributed_uorb::UartFrame frame;
+			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::STEERING_STATUS);
+			frame.header.board_id = _board_id;
+			frame.header.length = sizeof(steering_status);
+			frame.header.sequence = _tx_sequence++;
+			frame.header.timestamp = hrt_absolute_time();
+
+			memcpy(frame.payload, &steering_status, sizeof(steering_status));
+
+			if (_uart_transport.sendFrame(frame) >= 0) {
+				_stats.tx_messages++;
+				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+			} else {
+				_stats.tx_errors++;
+				PX4_WARN("Failed to send steering status");
+			}
+		}
+	}
 }
 
 void UorbUartProxy::sendHeartbeat()
 {
-	UartFrame frame;
-	frame.header.sync = UART_SYNC_PATTERN;
-	frame.header.msg_id = static_cast<uint8_t>(UartMessageId::HEARTBEAT);
+	distributed_uorb::UartFrame frame;
+	frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+	frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HEARTBEAT);
 	frame.header.board_id = _board_id;
 	frame.header.length = 0;
 	frame.header.sequence = _tx_sequence++;
 	frame.header.timestamp = hrt_absolute_time();
 
-	if (_uart_transport->sendFrame(frame)) {
+	if (_uart_transport.sendFrame(frame) >= 0) {
 		_stats.tx_messages++;
 		_stats.tx_bytes += sizeof(frame.header) + sizeof(frame.crc);
 	} else {
@@ -258,7 +558,7 @@ void UorbUartProxy::printStatistics()
 	hrt_abstime now = hrt_absolute_time();
 	bool main_board_online = (now - _last_main_board_heartbeat) < HEARTBEAT_TIMEOUT_US;
 
-	const char *board_name = (_board_id == BOARD_ID_NXT_FRONT) ? "FRONT" : "REAR";
+	const char *board_name = (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) ? "FRONT" : "REAR";
 
 	PX4_INFO("UART Proxy [%s] Stats - TX: %lu msgs, %lu bytes, %lu errors | RX: %lu msgs, %lu bytes, %lu errors",
 		 board_name, _stats.tx_messages, _stats.tx_bytes, _stats.tx_errors,
@@ -273,12 +573,12 @@ uint8_t UorbUartProxy::getBoardId()
 
 	switch (board_type) {
 	case 0:
-		return BOARD_ID_NXT_FRONT;
+		return distributed_uorb::BOARD_ID_NXT_FRONT;
 	case 1:
-		return BOARD_ID_NXT_REAR;
+		return distributed_uorb::BOARD_ID_NXT_REAR;
 	default:
 		PX4_WARN("Invalid board type %d, defaulting to front", board_type);
-		return BOARD_ID_NXT_FRONT;
+		return distributed_uorb::BOARD_ID_NXT_FRONT;
 	}
 }
 

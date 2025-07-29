@@ -21,12 +21,46 @@ static constexpr uint8_t BOARD_ID_NXT_REAR = 0x02;
 // Message IDs for wheel loader system
 enum class UartMessageId : uint8_t {
 	HEARTBEAT = 0x01,
+	
+	// High-level wheel loader commands and status
 	WHEEL_LOADER_SETPOINT = 0x10,
 	WHEEL_LOADER_STATUS_FRONT = 0x11,
 	WHEEL_LOADER_STATUS_REAR = 0x12,
+	
+	// Low-level actuator outputs
 	ACTUATOR_OUTPUTS_FRONT = 0x20,
 	ACTUATOR_OUTPUTS_REAR = 0x21,
-	VEHICLE_STATUS = 0x30
+	
+	// System status
+	VEHICLE_STATUS = 0x30,
+	
+	// Sensor data (NXT → X7+)
+	SENSOR_QUAD_ENCODER_FRONT = 0x40,
+	SENSOR_QUAD_ENCODER_REAR = 0x41,
+	SENSOR_AS5600_BOOM = 0x42,
+	LIMIT_SENSOR_BUCKET = 0x43,
+	WHEEL_ENCODERS_FRONT = 0x44,
+	WHEEL_ENCODERS_REAR = 0x45,
+	
+	// Slip estimation and traction (NXT → X7+, X7+ → NXT)
+	SLIP_ESTIMATION_FRONT = 0x50,
+	SLIP_ESTIMATION_REAR = 0x51,
+	TRACTION_CONTROL = 0x52,
+	
+	// Hydraulic control commands (X7+ → NXT)
+	BOOM_COMMAND = 0x60,
+	BOOM_STATUS = 0x61,
+	BUCKET_COMMAND = 0x62,
+	BUCKET_STATUS = 0x63,
+	
+	// Steering control (X7+ → NXT)
+	STEERING_COMMAND = 0x70,
+	STEERING_STATUS = 0x71,
+	
+	// EKF and navigation data (X7+ → NXT)
+	VEHICLE_LOCAL_POSITION = 0x80,
+	VEHICLE_ATTITUDE = 0x81,
+	VEHICLE_ODOMETRY = 0x82
 };
 
 // Message types (legacy - kept for compatibility)
