@@ -312,72 +312,6 @@ void UorbUartBridge::processOutgoingMessages()
 			PX4_WARN("Failed to send steering command");
 		}
 	}
-
-	// Process vehicle local position (X7+ -> both NXT boards for slip calculation)
-	vehicle_local_position_s vehicle_local_position;
-	if (_vehicle_local_position_sub.update(&vehicle_local_position)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::VEHICLE_LOCAL_POSITION);
-		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
-		frame.header.length = sizeof(vehicle_local_position);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &vehicle_local_position, sizeof(vehicle_local_position));
-
-		if (_uart_transport->sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send vehicle local position");
-		}
-	}
-
-	// Process vehicle attitude (X7+ -> both NXT boards)
-	vehicle_attitude_s vehicle_attitude;
-	if (_vehicle_attitude_sub.update(&vehicle_attitude)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::VEHICLE_ATTITUDE);
-		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
-		frame.header.length = sizeof(vehicle_attitude);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &vehicle_attitude, sizeof(vehicle_attitude));
-
-		if (_uart_transport->sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send vehicle attitude");
-		}
-	}
-
-	// Process vehicle odometry (X7+ -> both NXT boards)
-	vehicle_odometry_s vehicle_odometry;
-	if (_vehicle_odometry_sub.update(&vehicle_odometry)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::VEHICLE_ODOMETRY);
-		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
-		frame.header.length = sizeof(vehicle_odometry);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &vehicle_odometry, sizeof(vehicle_odometry));
-
-		if (_uart_transport->sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send vehicle odometry");
-		}
-	}
 }
 
 void UorbUartBridge::processIncomingMessages()
@@ -389,66 +323,6 @@ void UorbUartBridge::processIncomingMessages()
 
 		// Process based on message type
 		switch (static_cast<distributed_uorb::UartMessageId>(frame.header.msg_id)) {
-		case distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_FRONT: {
-			if (frame.header.length == sizeof(wheel_loader_status_s)) {
-				wheel_loader_status_s status;
-				memcpy(&status, frame.payload, sizeof(status));
-				_wheel_loader_status_front_pub.publish(status);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid front wheel loader status length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_REAR: {
-			if (frame.header.length == sizeof(wheel_loader_status_s)) {
-				wheel_loader_status_s status;
-				memcpy(&status, frame.payload, sizeof(status));
-				_wheel_loader_status_rear_pub.publish(status);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid rear wheel loader status length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT: {
-			if (frame.header.length == sizeof(sensor_quad_encoder_s)) {
-				sensor_quad_encoder_s sensor_data;
-				memcpy(&sensor_data, frame.payload, sizeof(sensor_data));
-				_sensor_quad_encoder_front_pub.publish(sensor_data);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid front quad encoder length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR: {
-			if (frame.header.length == sizeof(sensor_quad_encoder_s)) {
-				sensor_quad_encoder_s sensor_data;
-				memcpy(&sensor_data, frame.payload, sizeof(sensor_data));
-				_sensor_quad_encoder_rear_pub.publish(sensor_data);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid rear quad encoder length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::SENSOR_AS5600_BOOM: {
-			if (frame.header.length == sizeof(sensor_as5600_s)) {
-				sensor_as5600_s sensor_data;
-				memcpy(&sensor_data, frame.payload, sizeof(sensor_data));
-				_sensor_as5600_boom_pub.publish(sensor_data);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid AS5600 sensor length: %d", frame.header.length);
-			}
-			break;
-		}
-
 		case distributed_uorb::UartMessageId::LIMIT_SENSOR_BUCKET: {
 			if (frame.header.length == sizeof(limit_sensor_s)) {
 				limit_sensor_s sensor_data;
@@ -457,30 +331,6 @@ void UorbUartBridge::processIncomingMessages()
 			} else {
 				_stats.rx_errors++;
 				PX4_WARN("Invalid limit sensor length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::WHEEL_ENCODERS_FRONT: {
-			if (frame.header.length == sizeof(wheel_encoders_s)) {
-				wheel_encoders_s encoder_data;
-				memcpy(&encoder_data, frame.payload, sizeof(encoder_data));
-				_wheel_encoders_front_pub.publish(encoder_data);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid front wheel encoders length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::WHEEL_ENCODERS_REAR: {
-			if (frame.header.length == sizeof(wheel_encoders_s)) {
-				wheel_encoders_s encoder_data;
-				memcpy(&encoder_data, frame.payload, sizeof(encoder_data));
-				_wheel_encoders_rear_pub.publish(encoder_data);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid rear wheel encoders length: %d", frame.header.length);
 			}
 			break;
 		}

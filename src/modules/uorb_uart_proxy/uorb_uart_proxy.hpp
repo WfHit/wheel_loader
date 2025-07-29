@@ -40,13 +40,9 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <uORB/topics/wheel_loader_setpoint.h>
-#include <uORB/topics/wheel_loader_status.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/sensor_as5600.h>
 #include <uORB/topics/limit_sensor.h>
-#include <uORB/topics/wheel_encoders.h>
 #include <uORB/topics/slip_estimation.h>
 #include <uORB/topics/traction_control.h>
 #include <uORB/topics/boom_command.h>
@@ -55,9 +51,6 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/steering_command.h>
 #include <uORB/topics/steering_status.h>
-#include <uORB/topics/vehicle_local_position.h>
-#include <uORB/topics/vehicle_attitude.h>
-#include <uORB/topics/vehicle_odometry.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/uart_protocol/uart_protocol.hpp>
@@ -130,11 +123,7 @@ private:
 	distributed_uorb::UartTransport _uart_transport;
 
 	// uORB subscriptions (outgoing to main board)
-	uORB::Subscription _wheel_loader_status_sub{ORB_ID(wheel_loader_status)};
-	uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
-	uORB::Subscription _sensor_as5600_sub{ORB_ID(sensor_as5600)};
 	uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
-	uORB::Subscription _wheel_encoders_sub{ORB_ID(wheel_encoders)};
 	uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
@@ -148,9 +137,6 @@ private:
 	uORB::Publication<boom_command_s> _boom_command_pub{ORB_ID(boom_command)};
 	uORB::Publication<bucket_command_s> _bucket_command_pub{ORB_ID(bucket_command)};
 	uORB::Publication<steering_command_s> _steering_command_pub{ORB_ID(steering_command)};
-	uORB::Publication<vehicle_local_position_s> _vehicle_local_position_pub{ORB_ID(vehicle_local_position)};
-	uORB::Publication<vehicle_attitude_s> _vehicle_attitude_pub{ORB_ID(vehicle_attitude)};
-	uORB::Publication<vehicle_odometry_s> _vehicle_odometry_pub{ORB_ID(vehicle_odometry)};
 
 	// Communication statistics
 	struct {
