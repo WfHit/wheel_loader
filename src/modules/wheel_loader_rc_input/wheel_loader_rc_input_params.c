@@ -58,30 +58,30 @@ PARAM_DEFINE_FLOAT(WL_RC_MAX_SPEED, 5.0f);
 PARAM_DEFINE_FLOAT(WL_RC_MAX_STEER, 0.7f);
 
 /**
- * Wheel loader RC maximum boom angle
+ * Wheel loader RC maximum boom velocity
  *
- * Maximum boom angle when using RC control (angle/height based control).
+ * Maximum boom movement velocity when using RC control (velocity based control).
  *
- * @unit rad
+ * @unit rad/s
  * @min 0.1
  * @max 2.0
  * @decimal 1
  * @group Wheel Loader RC Input
  */
-PARAM_DEFINE_FLOAT(WL_RC_MAX_BOOM, 0.5f);
+PARAM_DEFINE_FLOAT(WL_RC_MAX_BOOM, 1.0f);
 
 /**
- * Wheel loader RC maximum bucket velocity
+ * Wheel loader RC maximum bucket angle
  *
- * Maximum bucket movement velocity when using RC control (velocity based control).
+ * Maximum bucket angle when using RC control (angle based control).
  *
- * @unit rad/s
+ * @unit rad
  * @min 0.1
- * @max 3.0
+ * @max 1.5
  * @decimal 1
  * @group Wheel Loader RC Input
  */
-PARAM_DEFINE_FLOAT(WL_RC_MAX_BUCKET, 1.0f);
+PARAM_DEFINE_FLOAT(WL_RC_MAX_BUCKET, 0.5f);
 
 /**
  * Wheel loader RC deadzone
