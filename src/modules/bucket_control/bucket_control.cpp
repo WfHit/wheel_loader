@@ -40,10 +40,10 @@ bool BucketControl::init()
     _motor_index = _param_motor_index.get();
 
     // Get limit sensor instance IDs
-    uint8_t coarse_instance = _param_limit_coarse_idx.get();
-    uint8_t fine_instance = _param_limit_fine_idx.get();
+    uint8_t load_instance = _param_limit_load_idx.get();     // Load limit (bucket down)
+    uint8_t dump_instance = _param_limit_dump_idx.get();     // Dump limit (bucket up)
 
-    PX4_INFO("Using limit sensors: coarse=%d, fine=%d", coarse_instance, fine_instance);
+    PX4_INFO("Using limit sensors: load=%d, dump=%d", load_instance, dump_instance);
 
     // Validate geometry
     if (_kinematics.bellcrank_length <= 0 || _kinematics.coupler_length <= 0) {
@@ -234,11 +234,27 @@ void BucketControl::Run()
     readEncoderFeedback();
     checkLimitSwitches();
 
-    // Get current boom angle for all calculations
-    boom_status_s boom_status;
+    // Get current boom angle from AS5600 magnetic encoder
+    sensor_mag_encoder_s mag_encoder_data;
     _current_boom_angle = 0.0f;
-    if (_boom_status_sub.copy(&boom_status)) {
-        _current_boom_angle = boom_status.angle;
+
+    // Read the latest magnetic encoder data for boom angle
+    if (_sensor_mag_encoder_sub.update(&mag_encoder_data)) {
+        // Validate sensor readings
+        if (mag_encoder_data.magnet_detected &&
+            !mag_encoder_data.magnet_too_strong &&
+            !mag_encoder_data.magnet_too_weak) {
+            _current_boom_angle = mag_encoder_data.angle;
+        } else {
+            // Log sensor issues for debugging
+            if (!mag_encoder_data.magnet_detected) {
+                PX4_DEBUG("Boom AS5600: No magnet detected");
+            } else if (mag_encoder_data.magnet_too_strong) {
+                PX4_DEBUG("Boom AS5600: Magnet too strong");
+            } else if (mag_encoder_data.magnet_too_weak) {
+                PX4_DEBUG("Boom AS5600: Magnet too weak");
+            }
+        }
     }
 
     // Update current angles for status
@@ -325,10 +341,10 @@ void BucketControl::updateStateMachine()
     switch (_state) {
         case State::UNINITIALIZED:
             _state = State::ZEROING;
-            _zeroing_state = ZeroingState::MOVE_TO_COARSE_LIMIT;
+            _zeroing_state = ZeroingState::MOVE_TO_LOAD_LIMIT;
             _zeroing_start_time = hrt_absolute_time();
             _zeroing_state_start_time = hrt_absolute_time();
-            PX4_INFO("Starting bucket zeroing operation");
+            PX4_INFO("Starting bucket zeroing operation - moving to load limit");
             break;
 
         case State::ZEROING:
@@ -357,21 +373,21 @@ void BucketControl::performZeroing()
     float slow_speed = _param_zeroing_slow_speed.get();
 
     switch (_zeroing_state) {
-        case ZeroingState::MOVE_TO_COARSE_LIMIT:
+        case ZeroingState::MOVE_TO_LOAD_LIMIT:
         {
-            // Move down to coarse limit switch at moderate speed
-            if (!_limit_switch_coarse) {
+            // Move down to load limit switch (bucket down position) at moderate speed
+            if (!_limit_switch_load) {
                 setMotorCommand(-fast_speed * 0.5f); // 50% of fast speed downward
             } else {
-                // Coarse limit reached, start deceleration
-                _zeroing_state = ZeroingState::SETTLE_AT_COARSE;
+                // Load limit reached, start deceleration
+                _zeroing_state = ZeroingState::SETTLE_AT_LOAD;
                 _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Coarse limit reached, settling");
+                PX4_INFO("Load limit reached, settling");
             }
             break;
         }
 
-        case ZeroingState::SETTLE_AT_COARSE:
+        case ZeroingState::SETTLE_AT_LOAD:
         {
             // Gradual stop to avoid overshoot
             float settle_time = hrt_elapsed_time(&_zeroing_state_start_time) * 1e-6f;
@@ -382,18 +398,18 @@ void BucketControl::performZeroing()
                 // Set target for fast move (90% of actuator range)
                 _zeroing_target = _current_actuator_length +
                                  (_kinematics.actuator_max_length - _kinematics.actuator_min_length) * 0.9f;
-                _zeroing_state = ZeroingState::FAST_MOVE_TO_FINE;
+                _zeroing_state = ZeroingState::FAST_MOVE_TO_DUMP;
                 _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Moving to fine limit, target: %.1fmm", static_cast<double>(_zeroing_target));
+                PX4_INFO("Moving to dump limit, target: %.1fmm", static_cast<double>(_zeroing_target));
             } else {
                 setMotorCommand(speed);
             }
             break;
         }
 
-        case ZeroingState::FAST_MOVE_TO_FINE:
+        case ZeroingState::FAST_MOVE_TO_DUMP:
         {
-            // Use PX4 motion planning library for smooth fast movement toward fine limit
+            // Use PX4 motion planning library for smooth fast movement toward dump limit
             float dt = 0.01f; // 100Hz control loop
 
             // Configure motion planning for zeroing (more aggressive parameters)
@@ -418,24 +434,24 @@ void BucketControl::performZeroing()
             float position_error = position_setpoint - _current_actuator_length;
             float control = math::constrain(position_error * 0.01f + velocity_setpoint * 0.005f, -fast_speed, fast_speed);
 
-            // Check if we're getting close to target or if fine limit is reached
-            if (_limit_switch_fine || fabsf(_zeroing_target - _current_actuator_length) < 10.0f) { // Within 10mm
-                _zeroing_state = ZeroingState::SLOW_APPROACH_FINE;
+            // Check if we're getting close to target or if dump limit is reached
+            if (_limit_switch_dump || fabsf(_zeroing_target - _current_actuator_length) < 10.0f) { // Within 10mm
+                _zeroing_state = ZeroingState::SLOW_APPROACH_DUMP;
                 _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Slow approach to fine limit");
+                PX4_INFO("Slow approach to dump limit");
             } else {
                 setMotorCommand(control);
             }
             break;
         }
 
-        case ZeroingState::SLOW_APPROACH_FINE:
+        case ZeroingState::SLOW_APPROACH_DUMP:
         {
-            // Very slow movement to touch fine limit switch
-            if (!_limit_switch_fine) {
+            // Very slow movement to touch dump limit switch
+            if (!_limit_switch_dump) {
                 setMotorCommand(slow_speed); // Slow upward movement
             } else {
-                // Fine limit reached - stop immediately and set zero
+                // Dump limit reached - stop immediately and set zero
                 setMotorCommand(0.0f);
 
                 // Record this as our maximum position
@@ -448,14 +464,14 @@ void BucketControl::performZeroing()
                         _current_actuator_length = _kinematics.actuator_max_length;
                         _zeroing_state = ZeroingState::COMPLETE;
                         _zeroing_complete = true;
-                        PX4_INFO("Zeroing complete at fine limit, offset: %lld", (long long)_encoder_zero_offset);
+                        PX4_INFO("Zeroing complete at dump limit, offset: %lld", (long long)_encoder_zero_offset);
                     }
                 }
             }
 
             // Timeout protection for slow approach
             if (hrt_elapsed_time(&_zeroing_state_start_time) > 15_s) {
-                PX4_ERR("Fine limit approach timeout");
+                PX4_ERR("Dump limit approach timeout");
                 _state = State::ERROR;
                 setMotorCommand(0.0f);
             }
@@ -477,9 +493,9 @@ void BucketControl::performZeroing()
 
 void BucketControl::updateMotionControl()
 {
-    // Check limits
-    if ((_limit_switch_coarse && _control_output < 0) ||
-        (_limit_switch_fine && _control_output > 0)) {
+    // Check limits: load limit prevents downward motion, dump limit prevents upward motion
+    if ((_limit_switch_load && _control_output < 0) ||   // Load limit active, blocking downward
+        (_limit_switch_dump && _control_output > 0)) {   // Dump limit active, blocking upward
         setMotorCommand(0.0f);
         return;
     }
@@ -584,19 +600,19 @@ bool BucketControl::checkLimitSwitches()
     // Read limit sensor states from limit_sensor topic
     limit_sensor_s limit_sensor_data;
 
-    uint8_t coarse_instance = _param_limit_coarse_idx.get();
-    uint8_t fine_instance = _param_limit_fine_idx.get();
+    uint8_t load_instance = _param_limit_load_idx.get();  // Load limit (bucket down)
+    uint8_t dump_instance = _param_limit_dump_idx.get();  // Dump limit (bucket up)
 
     // Check for updated limit sensor data
     while (_limit_sensor_sub.update(&limit_sensor_data)) {
-        if (limit_sensor_data.instance == coarse_instance) {
-            _limit_switch_coarse = limit_sensor_data.state;
-        } else if (limit_sensor_data.instance == fine_instance) {
-            _limit_switch_fine = limit_sensor_data.state;
+        if (limit_sensor_data.instance == load_instance) {
+            _limit_switch_load = limit_sensor_data.state;   // Load limit switch
+        } else if (limit_sensor_data.instance == dump_instance) {
+            _limit_switch_dump = limit_sensor_data.state;   // Dump limit switch
         }
     }
 
-    return _limit_switch_coarse || _limit_switch_fine;
+    return _limit_switch_load || _limit_switch_dump;
 }
 
 // AHRS Integration Methods
@@ -774,8 +790,8 @@ void BucketControl::publishStatus()
     status.ground_angle = _current_ground_angle;
     status.velocity = _current_velocity;
     status.control_output = _control_output;
-    status.limit_switch_coarse = _limit_switch_coarse;
-    status.limit_switch_fine = _limit_switch_fine;
+    status.limit_switch_coarse = _limit_switch_load;     // Load limit switch status
+    status.limit_switch_fine = _limit_switch_dump;       // Dump limit switch status
     status.zeroing_complete = _zeroing_complete;
 
     // AHRS-related status
@@ -818,6 +834,133 @@ int BucketControl::task_spawn(int argc, char *argv[])
 
 int BucketControl::custom_command(int argc, char *argv[])
 {
+    if (!is_running()) {
+        PX4_ERR("Module not running");
+        return PX4_ERROR;
+    }
+
+    BucketControl *instance = get_instance();
+    if (!instance) {
+        PX4_ERR("Instance not available");
+        return PX4_ERROR;
+    }
+
+    if (argc < 2) {
+        return print_usage("missing command");
+    }
+
+    if (!strcmp(argv[1], "test")) {
+        if (argc < 3) {
+            PX4_INFO("Available test commands:");
+            PX4_INFO("  mode <0-4>     - Set control mode (0=MANUAL, 1=AUTO_LEVEL, 2=SLOPE_COMP, 3=GRADING, 4=TRANSPORT)");
+            PX4_INFO("  angle <deg>    - Set target angle in degrees");
+            PX4_INFO("  status         - Show current status");
+            return PX4_OK;
+        }
+
+        if (!strcmp(argv[2], "mode")) {
+            if (argc < 4) {
+                PX4_ERR("Usage: bucket_control test mode <0-4>");
+                return PX4_ERROR;
+            }
+
+            int mode = atoi(argv[3]);
+            if (mode < 0 || mode > 4) {
+                PX4_ERR("Invalid mode %d. Valid range: 0-4", mode);
+                return PX4_ERROR;
+            }
+
+            // Create and publish bucket command to change mode
+            bucket_command_s cmd{};
+            cmd.timestamp = hrt_absolute_time();
+            cmd.target_angle = instance->_target_ground_angle; // Keep current target angle
+            cmd.control_mode = static_cast<uint8_t>(mode);
+            cmd.command_mode = 0; // Position mode
+            cmd.coordinate_frame = 0; // Ground reference
+            cmd.max_velocity = instance->_param_max_velocity.get() / 1000.0f; // Convert mm/s to m/s for angle rate
+            cmd.enable_stability_limit = instance->_param_ahrs_enabled.get();
+            cmd.enable_anti_spill = (mode == 4); // Enable anti-spill for transport mode
+            cmd.grading_angle = std::nanf(""); // Use parameter defaults
+            cmd.transport_angle = std::nanf(""); // Use parameter defaults
+            cmd.stability_threshold = std::nanf(""); // Use parameter defaults
+
+            // Publish the command
+            static uORB::Publication<bucket_command_s> test_bucket_cmd_pub{ORB_ID(bucket_command)};
+            test_bucket_cmd_pub.publish(cmd);
+
+            const char* mode_names[] = {"MANUAL", "AUTO_LEVEL", "SLOPE_COMPENSATION", "GRADING", "TRANSPORT"};
+            PX4_INFO("Bucket command published: mode %d (%s)", mode, mode_names[mode]);
+            return PX4_OK;
+        }
+
+        if (!strcmp(argv[2], "angle")) {
+            if (argc < 4) {
+                PX4_ERR("Usage: bucket_control test angle <degrees>");
+                return PX4_ERROR;
+            }
+
+            float angle_deg = atof(argv[3]);
+            float angle_rad = math::radians(angle_deg);
+
+            // Validate angle range (typical bucket range: -90 to +90 degrees)
+            if (angle_deg < -90.0f || angle_deg > 90.0f) {
+                PX4_WARN("Angle %f° is outside typical range [-90, +90]", static_cast<double>(angle_deg));
+            }
+
+            // Create and publish bucket command to set target angle
+            bucket_command_s cmd{};
+            cmd.timestamp = hrt_absolute_time();
+            cmd.target_angle = angle_rad; // Set the target angle
+            cmd.control_mode = static_cast<uint8_t>(instance->_control_mode); // Keep current mode
+            cmd.command_mode = 0; // Position mode
+            cmd.coordinate_frame = 0; // Ground reference
+            cmd.max_velocity = instance->_param_max_velocity.get() / 1000.0f; // Convert mm/s to m/s for angle rate
+            cmd.enable_stability_limit = instance->_param_ahrs_enabled.get();
+            cmd.enable_anti_spill = (instance->_control_mode == ControlMode::TRANSPORT);
+            cmd.grading_angle = std::nanf(""); // Use parameter defaults
+            cmd.transport_angle = std::nanf(""); // Use parameter defaults
+            cmd.stability_threshold = std::nanf(""); // Use parameter defaults
+
+            // Publish the command
+            static uORB::Publication<bucket_command_s> test_bucket_cmd_pub{ORB_ID(bucket_command)};
+            test_bucket_cmd_pub.publish(cmd);
+
+            PX4_INFO("Bucket command published: target angle %.1f° (%.3f rad)", static_cast<double>(angle_deg), static_cast<double>(angle_rad));
+            return PX4_OK;
+        }
+
+        if (!strcmp(argv[2], "status")) {
+            const char* mode_names[] = {"MANUAL", "AUTO_LEVEL", "SLOPE_COMPENSATION", "GRADING", "TRANSPORT"};
+            const char* state_names[] = {"UNINITIALIZED", "ZEROING", "READY", "MOVING", "ERROR"};
+
+            PX4_INFO("=== Bucket Control Status ===");
+            PX4_INFO("State: %s", state_names[static_cast<int>(instance->_state)]);
+            PX4_INFO("Control Mode: %s", mode_names[static_cast<int>(instance->_control_mode)]);
+            PX4_INFO("Target Ground Angle: %.1f°", static_cast<double>(math::degrees(instance->_target_ground_angle)));
+            PX4_INFO("Current Bucket Angle: %.1f°", static_cast<double>(math::degrees(instance->_current_bucket_angle)));
+            PX4_INFO("Current Ground Angle: %.1f°", static_cast<double>(math::degrees(instance->_current_ground_angle)));
+            PX4_INFO("Actuator Length: %.1f mm (target: %.1f mm)",
+                     static_cast<double>(instance->_current_actuator_length),
+                     static_cast<double>(instance->_target_actuator_length));
+            PX4_INFO("Limit Switches - Load: %s, Dump: %s",
+                     instance->_limit_switch_load ? "ACTIVE" : "inactive",
+                     instance->_limit_switch_dump ? "ACTIVE" : "inactive");
+            PX4_INFO("Zeroing Complete: %s", instance->_zeroing_complete ? "YES" : "NO");
+
+            if (instance->_param_ahrs_enabled.get()) {
+                PX4_INFO("Machine Pitch: %.1f°, Roll: %.1f°",
+                         static_cast<double>(math::degrees(instance->_machine_pitch)),
+                         static_cast<double>(math::degrees(instance->_machine_roll)));
+                PX4_INFO("Stability Factor: %.2f", static_cast<double>(instance->_stability_factor));
+                PX4_INFO("Anti-spill Active: %s", instance->_anti_spill_active ? "YES" : "NO");
+            }
+
+            return PX4_OK;
+        }
+
+        return print_usage("unknown test command");
+    }
+
     return print_usage("unknown command");
 }
 
@@ -833,12 +976,15 @@ int BucketControl::print_usage(const char *reason)
 Bucket control module for wheel loader.
 
 Manages bucket angle control through linear actuator with boom angle compensation.
-Supports zeroing procedure with coarse and fine limit switches.
+Supports zeroing procedure with load limit (bucket down) and dump limit (bucket up) switches.
 
 )DESCR_STR");
 
     PRINT_MODULE_USAGE_NAME("bucket_control", "controller");
     PRINT_MODULE_USAGE_COMMAND("start");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("test mode <0-4>", "Set control mode (0=MANUAL, 1=AUTO_LEVEL, 2=SLOPE_COMP, 3=GRADING, 4=TRANSPORT)");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("test angle <deg>", "Set target angle in degrees");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("test status", "Show current module status");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;

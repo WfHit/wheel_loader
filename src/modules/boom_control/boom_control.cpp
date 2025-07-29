@@ -43,8 +43,6 @@ BoomControl::BoomControl() :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
-	// Initialize PID controller
-	_position_pid.setOutputLimit(1.0f);
 }
 
 BoomControl::~BoomControl()
@@ -96,9 +94,6 @@ void BoomControl::Run()
 	// Update sensor data from AS5600
 	update_sensor_data();
 
-	// Process H-bridge channel status feedback
-	process_hbridge_status();
-
 	// Process boom command inputs
 	process_boom_command();
 
@@ -107,9 +102,6 @@ void BoomControl::Run()
 
 	// Run position control
 	run_position_control();
-
-	// Check safety limits
-	check_limits_and_safety();
 
 	// Publish H-bridge channel command
 	publish_hbridge_command();
@@ -138,8 +130,6 @@ void BoomControl::update_kinematics_from_params()
 	_kinematics.pivot_to_actuator_base = _param_kin_pivot_to_base.get();
 	_kinematics.pivot_to_actuator_attach = _param_kin_pivot_to_attach.get();
 	_kinematics.actuator_base_angle = math::radians(_param_kin_base_angle.get());
-	_kinematics.min_actuator_length = _param_actuator_min_length.get();
-	_kinematics.max_actuator_length = _param_actuator_max_length.get();
 }
 
 void BoomControl::update_sensor_data()
@@ -173,38 +163,6 @@ void BoomControl::update_sensor_data()
 	} else if (is_sensor_timeout()) {
 		_sensor_valid = false;
 		emergency_stop();
-	}
-}
-
-void BoomControl::process_hbridge_status()
-{
-	hbridge_status_s status{};
-	if (_hbridge_status_sub.update(&status)) {
-		uint8_t channel = static_cast<uint8_t>(_param_hbridge_channel.get());
-
-		// Check for faults from the H-bridge
-		if (status.fault_detected) {
-			PX4_WARN("H-bridge fault detected: instance %d", status.instance);
-			_state = BoomState::ERROR;
-			emergency_stop();
-		}
-
-		// Check if our channel is enabled
-		if (channel < 2 && !status.channel_enabled[channel]) {
-			PX4_WARN("H-bridge channel %d is not enabled", channel);
-		}
-
-		// Log runtime information (optional, can be removed for production)
-		static uint64_t last_log_time = 0;
-		if (hrt_elapsed_time(&last_log_time) > 5_s) {
-			if (channel < 2) {
-				PX4_INFO("H-bridge status: instance %d, channel %d enabled: %d, duty: %.2f, current: %.2fA, temp: %.1fC",
-						status.instance, channel, status.channel_enabled[channel],
-						(double)status.channel_duty_cycle[channel], (double)status.channel_current[channel],
-						(double)status.temperature);
-			}
-			last_log_time = hrt_absolute_time();
-		}
 	}
 }
 
@@ -285,11 +243,6 @@ void BoomControl::process_boom_command()
 		case 0: // Position control
 			_target_boom_angle = cmd.lift_angle_cmd;
 
-			// Constrain to limits
-			_target_boom_angle = math::constrain(_target_boom_angle,
-			                                    _param_boom_min_angle.get(),
-			                                    _param_boom_max_angle.get());
-
 			// Update trajectory parameters
 			_trajectory_generator.setMaxVelocityZ(cmd.max_lift_velocity);
 			_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get());
@@ -303,11 +256,6 @@ void BoomControl::process_boom_command()
 			// Direct velocity command - integrate to get position
 			float dt = 0.01f; // Assume 100Hz update rate
 			_target_boom_angle += cmd.lift_velocity_cmd * dt; // lift_velocity_cmd used as velocity
-
-			// Constrain to limits
-			_target_boom_angle = math::constrain(_target_boom_angle,
-			                                    _param_boom_min_angle.get(),
-			                                    _param_boom_max_angle.get());
 
 			_state = BoomState::MOVING;
 			break;
@@ -351,15 +299,6 @@ void BoomControl::update_trajectory()
 
 	// Convert boom angle to actuator length for trajectory planning
 	_target_actuator_length = boom_angle_to_actuator_length(_target_boom_angle);
-
-	// Check actuator limits
-	if (!check_actuator_limits(_target_actuator_length)) {
-		PX4_WARN("Target actuator length %.1f mm exceeds limits [%.1f, %.1f]",
-		         (double)_target_actuator_length,
-		         (double)_kinematics.min_actuator_length,
-		         (double)_kinematics.max_actuator_length);
-		return;
-	}
 
 	// Use PositionSmoothing for trajectory generation (1D motion using Z-axis)
 	matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length / 1000.0f}; // Convert to meters
@@ -414,41 +353,6 @@ void BoomControl::run_position_control()
 			_motor_output -= _param_motor_deadzone.get();
 		}
 	}
-
-	// Constrain output
-	_motor_output = math::constrain(_motor_output, -1.0f, 1.0f);
-}
-
-void BoomControl::check_limits_and_safety()
-{
-	// Check boom angle limits
-	_lower_limit_reached = _current_boom_angle <= _param_boom_min_angle.get();
-	_upper_limit_reached = _current_boom_angle >= _param_boom_max_angle.get();
-
-	// Apply software limits
-	if (_lower_limit_reached && _motor_output < 0.0f) {
-		_motor_output = 0.0f;
-		PX4_WARN("Lower boom limit reached");
-	}
-
-	if (_upper_limit_reached && _motor_output > 0.0f) {
-		_motor_output = 0.0f;
-		PX4_WARN("Upper boom limit reached");
-	}
-
-	// Check actuator limits
-	if (_current_actuator_length <= _kinematics.min_actuator_length && _motor_output < 0.0f) {
-		_motor_output = 0.0f;
-	}
-
-	if (_current_actuator_length >= _kinematics.max_actuator_length && _motor_output > 0.0f) {
-		_motor_output = 0.0f;
-	}
-
-	// Check for sensor timeout
-	if (is_sensor_timeout()) {
-		emergency_stop();
-	}
 }
 
 void BoomControl::publish_hbridge_command()
@@ -467,7 +371,7 @@ void BoomControl::publish_hbridge_command()
 
 	// Set duty cycle (-1.0 to 1.0 range)
 	// Positive = extend actuator (boom up), Negative = retract actuator (boom down)
-	cmd.duty_cycle = math::constrain(output, -1.0f, 1.0f);
+	cmd.duty_cycle = output;
 
 	// Enable channel if not in error state
 	cmd.enable = (_state != BoomState::ERROR);
@@ -511,16 +415,6 @@ void BoomControl::publish_boom_status()
 	}
 
 	_boom_status_pub.publish(status);
-}
-
-bool BoomControl::check_actuator_limits(float length)
-{
-	return (length >= _kinematics.min_actuator_length && length <= _kinematics.max_actuator_length);
-}
-
-bool BoomControl::check_boom_limits(float angle)
-{
-	return (angle >= _param_boom_min_angle.get() && angle <= _param_boom_max_angle.get());
 }
 
 void BoomControl::emergency_stop()

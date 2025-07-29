@@ -49,7 +49,6 @@
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/hbridge_command.h>
-#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_mag_encoder.h>
 
@@ -97,8 +96,6 @@ private:
 		float pivot_to_actuator_base;    // Distance from boom pivot to actuator base mount [mm]
 		float pivot_to_actuator_attach;  // Distance from boom pivot to actuator attachment point [mm]
 		float actuator_base_angle;       // Angle of actuator base mount from horizontal [rad]
-		float min_actuator_length;       // Minimum actuator length (fully retracted) [mm]
-		float max_actuator_length;       // Maximum actuator length (fully extended) [mm]
 	};
 
 	// Parameters
@@ -116,10 +113,6 @@ private:
 		(ParamFloat<px4::params::BOOM_ACCEL>) _param_boom_max_acc,
 		(ParamFloat<px4::params::BOOM_JERK>) _param_boom_max_jerk,
 
-		// Boom angle limits
-		(ParamFloat<px4::params::BOOM_ANGLE_MIN>) _param_boom_min_angle,
-		(ParamFloat<px4::params::BOOM_ANGLE_MAX>) _param_boom_max_angle,
-
 		// Preset positions
 		(ParamFloat<px4::params::BOOM_POS_GROUND>) _param_boom_pos_ground,
 		(ParamFloat<px4::params::BOOM_POS_CARRY>) _param_boom_pos_carry,
@@ -129,8 +122,6 @@ private:
 		(ParamFloat<px4::params::BOOM_KIN_L1>) _param_kin_pivot_to_base,
 		(ParamFloat<px4::params::BOOM_KIN_L2>) _param_kin_pivot_to_attach,
 		(ParamFloat<px4::params::BOOM_KIN_ANG>) _param_kin_base_angle,
-		(ParamFloat<px4::params::BOOM_ACT_MIN>) _param_actuator_min_length,
-		(ParamFloat<px4::params::BOOM_ACT_MAX>) _param_actuator_max_length,
 
 		// Magnetic encoder sensor calibration - using available sensor param
 		(ParamInt<px4::params::BOOM_ANGLE_SENS>) _param_mag_encoder_instance_id,
@@ -152,7 +143,6 @@ private:
 	// uORB subscriptions
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
 	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 
 	// uORB publications
@@ -175,8 +165,6 @@ private:
 	float _desired_position_m{0.0f};
 	float _desired_velocity_m_s{0.0f};
 
-	bool _upper_limit_reached{false};
-	bool _lower_limit_reached{false};
 	bool _sensor_valid{false};
 
 	uint64_t _last_sensor_update{0};
@@ -192,18 +180,14 @@ private:
 	// Control and sensor functions
 	void update_parameters();
 	void update_sensor_data();
-	void process_hbridge_status();
 	void process_boom_command();
 	void update_trajectory();
 	void run_position_control();
-	void check_limits_and_safety();
 	void publish_hbridge_command();
 	void publish_boom_status();
 
 	// Utility functions
 	void set_target_position(BoomPreset preset);
-	bool check_actuator_limits(float length);
-	bool check_boom_limits(float angle);
 	void update_kinematics_from_params();
 	void reset_trajectory();
 

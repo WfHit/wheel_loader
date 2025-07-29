@@ -17,7 +17,7 @@
 // uORB includes
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
-#include <uORB/topics/boom_status.h>
+#include <uORB/topics/sensor_mag_encoder.h>
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/hbridge_command.h>
@@ -55,10 +55,10 @@ private:
     };
 
     enum class ZeroingState {
-        MOVE_TO_COARSE_LIMIT,
-        SETTLE_AT_COARSE,
-        FAST_MOVE_TO_FINE,
-        SLOW_APPROACH_FINE,
+        MOVE_TO_LOAD_LIMIT,      // Move to load limit (bucket down)
+        SETTLE_AT_LOAD,          // Settle at load limit
+        FAST_MOVE_TO_DUMP,       // Fast move toward dump limit
+        SLOW_APPROACH_DUMP,      // Slow approach to dump limit (bucket up)
         COMPLETE
     };
 
@@ -72,7 +72,7 @@ private:
 
     // State machine
     State _state{State::UNINITIALIZED};
-    ZeroingState _zeroing_state{ZeroingState::MOVE_TO_COARSE_LIMIT};
+    ZeroingState _zeroing_state{ZeroingState::MOVE_TO_LOAD_LIMIT};
     void updateStateMachine();
 
     // Zeroing procedure
@@ -178,8 +178,8 @@ private:
     int64_t _encoder_count{0};
     int64_t _last_encoder_count{0};
     hrt_abstime _last_encoder_time{0};
-    bool _limit_switch_coarse{false};        // Down position (coarse)
-    bool _limit_switch_fine{false};          // Up position (fine)
+    bool _limit_switch_load{false};          // Load limit (bucket down position)
+    bool _limit_switch_dump{false};          // Dump limit (bucket up position)
 
     // PID controller
     PID _position_pid;
@@ -195,7 +195,7 @@ private:
 
     // uORB subscriptions
     uORB::Subscription _bucket_cmd_sub{ORB_ID(bucket_command)};
-    uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
+    uORB::Subscription _sensor_mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
     uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
     uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
@@ -214,8 +214,9 @@ private:
     DEFINE_PARAMETERS(
         (ParamInt<px4::params::BCT_HBRIDGE_CH>) _param_motor_index,
         (ParamInt<px4::params::BCT_ENC_IDX>) _param_encoder_index,
-        (ParamInt<px4::params::BCT_LIM_COARSE>) _param_limit_coarse_idx,
-        (ParamInt<px4::params::BCT_LIM_FINE>) _param_limit_fine_idx,
+        (ParamInt<px4::params::BCT_LIM_LOAD>) _param_limit_load_idx,
+        (ParamInt<px4::params::BCT_LIM_DUMP>) _param_limit_dump_idx,
+        (ParamInt<px4::params::BCT_BOOM_AS5600>) _param_boom_as5600_idx,
 
         // Actuator attachment point (relative to chassis/boom base)
         (ParamFloat<px4::params::BCT_ACT_BASE_X>) _param_actuator_base_x,
