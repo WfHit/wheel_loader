@@ -247,42 +247,6 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
-		case distributed_uorb::UartMessageId::VEHICLE_LOCAL_POSITION: {
-			if (frame.header.length == sizeof(vehicle_local_position_s)) {
-				vehicle_local_position_s position;
-				memcpy(&position, frame.payload, sizeof(position));
-				_vehicle_local_position_pub.publish(position);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid vehicle local position length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::VEHICLE_ATTITUDE: {
-			if (frame.header.length == sizeof(vehicle_attitude_s)) {
-				vehicle_attitude_s attitude;
-				memcpy(&attitude, frame.payload, sizeof(attitude));
-				_vehicle_attitude_pub.publish(attitude);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid vehicle attitude length: %d", frame.header.length);
-			}
-			break;
-		}
-
-		case distributed_uorb::UartMessageId::VEHICLE_ODOMETRY: {
-			if (frame.header.length == sizeof(vehicle_odometry_s)) {
-				vehicle_odometry_s odometry;
-				memcpy(&odometry, frame.payload, sizeof(odometry));
-				_vehicle_odometry_pub.publish(odometry);
-			} else {
-				_stats.rx_errors++;
-				PX4_WARN("Invalid vehicle odometry length: %d", frame.header.length);
-			}
-			break;
-		}
-
 		case distributed_uorb::UartMessageId::HEARTBEAT: {
 			// Heartbeat received from main board - already tracked above
 			break;
@@ -298,88 +262,6 @@ void UorbUartProxy::processIncomingMessages()
 
 void UorbUartProxy::processOutgoingMessages()
 {
-	// Send wheel loader status from this board
-	wheel_loader_status_s status;
-	if (_wheel_loader_status_sub.update(&status)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-
-		// Use appropriate message ID based on board type
-		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_FRONT);
-		} else {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_REAR);
-		}
-
-		frame.header.board_id = _board_id;
-		frame.header.length = sizeof(status);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &status, sizeof(status));
-
-		if (_uart_transport.sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send wheel loader status");
-		}
-	}
-
-	// Send quadrature encoder data
-	sensor_quad_encoder_s encoder_data;
-	if (_sensor_quad_encoder_sub.update(&encoder_data)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-		
-		// Use appropriate message ID based on board type
-		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT);
-		} else {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR);
-		}
-
-		frame.header.board_id = _board_id;
-		frame.header.length = sizeof(encoder_data);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &encoder_data, sizeof(encoder_data));
-
-		if (_uart_transport.sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send quad encoder data");
-		}
-	}
-
-	// Send AS5600 sensor data (boom angle - rear board only)
-	if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR) {
-		sensor_as5600_s as5600_data;
-		if (_sensor_as5600_sub.update(&as5600_data)) {
-			distributed_uorb::UartFrame frame;
-			frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_AS5600_BOOM);
-			frame.header.board_id = _board_id;
-			frame.header.length = sizeof(as5600_data);
-			frame.header.sequence = _tx_sequence++;
-			frame.header.timestamp = hrt_absolute_time();
-
-			memcpy(frame.payload, &as5600_data, sizeof(as5600_data));
-
-			if (_uart_transport.sendFrame(frame) >= 0) {
-				_stats.tx_messages++;
-				_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-			} else {
-				_stats.tx_errors++;
-				PX4_WARN("Failed to send AS5600 data");
-			}
-		}
-	}
-
 	// Send limit sensor data (bucket limit - front board only)
 	if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
 		limit_sensor_s limit_data;
@@ -401,35 +283,6 @@ void UorbUartProxy::processOutgoingMessages()
 				_stats.tx_errors++;
 				PX4_WARN("Failed to send limit sensor data");
 			}
-		}
-	}
-
-	// Send wheel encoder data
-	wheel_encoders_s wheel_encoder_data;
-	if (_wheel_encoders_sub.update(&wheel_encoder_data)) {
-		distributed_uorb::UartFrame frame;
-		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
-
-		// Use appropriate message ID based on board type
-		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_ENCODERS_FRONT);
-		} else {
-			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_ENCODERS_REAR);
-		}
-
-		frame.header.board_id = _board_id;
-		frame.header.length = sizeof(wheel_encoder_data);
-		frame.header.sequence = _tx_sequence++;
-		frame.header.timestamp = hrt_absolute_time();
-
-		memcpy(frame.payload, &wheel_encoder_data, sizeof(wheel_encoder_data));
-
-		if (_uart_transport.sendFrame(frame) >= 0) {
-			_stats.tx_messages++;
-			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
-		} else {
-			_stats.tx_errors++;
-			PX4_WARN("Failed to send wheel encoder data");
 		}
 	}
 
