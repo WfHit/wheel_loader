@@ -12,6 +12,21 @@
 #include <uORB/topics/wheel_loader_status.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/sensor_quad_encoder.h>
+#include <uORB/topics/sensor_as5600.h>
+#include <uORB/topics/limit_sensor.h>
+#include <uORB/topics/wheel_encoders.h>
+#include <uORB/topics/slip_estimation.h>
+#include <uORB/topics/traction_control.h>
+#include <uORB/topics/boom_command.h>
+#include <uORB/topics/boom_status.h>
+#include <uORB/topics/bucket_command.h>
+#include <uORB/topics/bucket_status.h>
+#include <uORB/topics/steering_command.h>
+#include <uORB/topics/steering_status.h>
+#include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_odometry.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/topic_registry/topic_registry.hpp>
@@ -63,15 +78,33 @@ private:
 	hrt_abstime _last_front_heartbeat{0};
 	hrt_abstime _last_rear_heartbeat{0};
 
-	// Subscriptions for outgoing topics
+	// Subscriptions for outgoing topics (X7+ → NXT)
 	uORB::Subscription _wheel_loader_setpoint_sub{ORB_ID(wheel_loader_setpoint)};
 	uORB::Subscription _actuator_outputs_front_sub{ORB_ID(actuator_outputs), 0};
 	uORB::Subscription _actuator_outputs_rear_sub{ORB_ID(actuator_outputs), 1};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
+	uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
+	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
+	uORB::Subscription _bucket_command_sub{ORB_ID(bucket_command)};
+	uORB::Subscription _steering_command_sub{ORB_ID(steering_command)};
+	uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
+	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+	uORB::Subscription _vehicle_odometry_sub{ORB_ID(vehicle_odometry)};
 
-	// Publications for incoming topics
+	// Publications for incoming topics (NXT → X7+)
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_front_pub{ORB_ID(wheel_loader_status), 0};
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_rear_pub{ORB_ID(wheel_loader_status), 1};
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_front_pub{ORB_ID(sensor_quad_encoder), 0};
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_rear_pub{ORB_ID(sensor_quad_encoder), 1};
+	uORB::Publication<sensor_as5600_s> _sensor_as5600_boom_pub{ORB_ID(sensor_as5600)};
+	uORB::Publication<limit_sensor_s> _limit_sensor_bucket_pub{ORB_ID(limit_sensor)};
+	uORB::Publication<wheel_encoders_s> _wheel_encoders_front_pub{ORB_ID(wheel_encoders), 0};
+	uORB::Publication<wheel_encoders_s> _wheel_encoders_rear_pub{ORB_ID(wheel_encoders), 1};
+	uORB::Publication<slip_estimation_s> _slip_estimation_front_pub{ORB_ID(slip_estimation), 0};
+	uORB::Publication<slip_estimation_s> _slip_estimation_rear_pub{ORB_ID(slip_estimation), 1};
+	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
+	uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
+	uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};
 
 	// Statistics structure
 	struct {
