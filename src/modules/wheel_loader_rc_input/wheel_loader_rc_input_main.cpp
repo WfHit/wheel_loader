@@ -80,7 +80,7 @@ Wheel Loader RC Input module for processing SBUS/RC commands.
 
 This module converts RC transmitter input (SBUS protocol) into wheel loader 
 control commands. It handles channel mapping for chassis movement, boom/bucket 
-hydraulic controls, and safety features including emergency stop and failsafe.
+electric motor controls, and safety features including emergency stop and failsafe.
 
 ### Implementation
 The module subscribes to input_rc and manual_control_setpoint topics and publishes

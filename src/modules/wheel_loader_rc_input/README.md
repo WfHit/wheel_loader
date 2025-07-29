@@ -18,16 +18,16 @@ The Wheel Loader RC Input module provides remote control capability for the whee
 - **2 H-Bridge Devices**: Each with 2 channels (total 4 channels)
   - **Front H-Bridge**: Located on NXT front board
     - Channel 1: Front axle drive motor
-    - Channel 2: Bucket hydraulic control
+    - Channel 2: Bucket electric motor control
   - **Rear H-Bridge**: Located on NXT rear board  
     - Channel 1: Rear axle drive motor
-    - Channel 2: Boom hydraulic control
+    - Channel 2: Boom electric motor control
 
 ### Control Mapping
 - **Front/Rear Axles**: Controlled as units (not individual wheels)
   - Front axle: Driven by front motor via front H-bridge
   - Rear axle: Driven by rear motor via rear H-bridge
-- **Hydraulic Controls**:
+- **Electric Motor Controls**:
   - **Boom**: Velocity speed control (rate-based)
   - **Bucket**: Angle control (position-based)
 
