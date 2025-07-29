@@ -44,7 +44,8 @@ UorbUartBridge::UorbUartBridge() :
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	_uart_transport(nullptr),
 	_last_heartbeat_time(0),
-	_last_statistics_time(0)
+	_last_statistics_time(0),
+	_uart_initialized(false)
 {
 	// Initialize statistics
 	memset(&_stats, 0, sizeof(_stats));
@@ -54,43 +55,60 @@ UorbUartBridge::~UorbUartBridge()
 {
 	// Stop work queue
 	ScheduledWorkItem::deinit();
+	
+	// Clean up UART transport
+	if (_uart_transport) {
+		delete _uart_transport;
+		_uart_transport = nullptr;
+	}
 }
 
 bool UorbUartBridge::init()
 {
-	// Get UART parameters
-	char device_path[32];
-	param_get(param_find("UART_BRIDGE_DEV"), device_path, sizeof(device_path));
-
-	int32_t baudrate;
-	param_get(param_find("UART_BRIDGE_BAUD"), &baudrate);
-
-	int32_t enable;
-	param_get(param_find("UART_BRIDGE_EN"), &enable);
-
-	if (!enable) {
-		PX4_INFO("UART bridge disabled by parameter");
-		return false;
-	}
-
-	// Initialize UART transport
-	_uart_transport = distributed_uorb::UartTransport();
-	if (_uart_transport.init(device_path, (speed_t)baudrate) < 0) {
-		PX4_ERR("Failed to initialize UART transport on %s at %d baud", device_path, baudrate);
-		return false;
-	}
-
-	PX4_INFO("UART bridge initialized on %s at %d baud", device_path, baudrate);
-
-	// Start work queue
+	// Just start the work queue - UART will be initialized in Run()
 	ScheduledWorkItem::ScheduleNow();
-
 	return true;
 }
 
 void UorbUartBridge::Run()
 {
-	if (!_uart_transport.isReady()) {
+	// Initialize UART if not done yet
+	if (!_uart_initialized) {
+		// Get UART parameters
+		char device_path[32];
+		param_get(param_find("UART_BRIDGE_DEV"), device_path, sizeof(device_path));
+
+		int32_t baudrate;
+		param_get(param_find("UART_BRIDGE_BAUD"), &baudrate);
+
+		int32_t enable;
+		param_get(param_find("UART_BRIDGE_EN"), &enable);
+
+		if (!enable) {
+			PX4_INFO("UART bridge disabled by parameter");
+			return;
+		}
+
+		// Initialize UART transport
+		_uart_transport = new distributed_uorb::UartTransport();
+		if (!_uart_transport) {
+			PX4_ERR("Failed to allocate UART transport");
+			return;
+		}
+
+		if (_uart_transport->init(device_path, (speed_t)baudrate) < 0) {
+			PX4_ERR("Failed to initialize UART transport on %s at %d baud", device_path, baudrate);
+			delete _uart_transport;
+			_uart_transport = nullptr;
+			return;
+		}
+
+		PX4_INFO("UART bridge initialized on %s at %d baud", device_path, baudrate);
+		_uart_initialized = true;
+	}
+
+	if (!_uart_transport || !_uart_transport->isReady()) {
+		ScheduleDelayed(MAIN_LOOP_INTERVAL_US);
 		return;
 	}
 
@@ -123,17 +141,17 @@ void UorbUartBridge::processOutgoingMessages()
 	// Process wheel loader setpoint (X7+ -> both NXT boards)
 	wheel_loader_setpoint_s setpoint;
 	if (_wheel_loader_setpoint_sub.update(&setpoint)) {
-		UartFrame frame;
-		frame.header.sync = UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::WHEEL_LOADER_SETPOINT);
-		frame.header.board_id = BOARD_ID_X7_PLUS;
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::WHEEL_LOADER_SETPOINT);
+		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
 		frame.header.length = sizeof(setpoint);
 		frame.header.sequence = _tx_sequence++;
 		frame.header.timestamp = hrt_absolute_time();
 
 		memcpy(frame.payload, &setpoint, sizeof(setpoint));
 
-		if (_uart_transport->sendFrame(frame)) {
+		if (_uart_transport->sendFrame(frame) >= 0) {
 			_stats.tx_messages++;
 			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 		} else {
@@ -145,17 +163,17 @@ void UorbUartBridge::processOutgoingMessages()
 	// Process actuator outputs for front wheel controller
 	actuator_outputs_s actuator_outputs;
 	if (_actuator_outputs_front_sub.update(&actuator_outputs)) {
-		UartFrame frame;
-		frame.header.sync = UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::ACTUATOR_OUTPUTS_FRONT);
-		frame.header.board_id = BOARD_ID_X7_PLUS;
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::ACTUATOR_OUTPUTS_FRONT);
+		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
 		frame.header.length = sizeof(actuator_outputs);
 		frame.header.sequence = _tx_sequence++;
 		frame.header.timestamp = hrt_absolute_time();
 
 		memcpy(frame.payload, &actuator_outputs, sizeof(actuator_outputs));
 
-		if (_uart_transport->sendFrame(frame)) {
+		if (_uart_transport->sendFrame(frame) >= 0) {
 			_stats.tx_messages++;
 			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 		} else {
@@ -166,17 +184,17 @@ void UorbUartBridge::processOutgoingMessages()
 
 	// Process actuator outputs for rear wheel controller
 	if (_actuator_outputs_rear_sub.update(&actuator_outputs)) {
-		UartFrame frame;
-		frame.header.sync = UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::ACTUATOR_OUTPUTS_REAR);
-		frame.header.board_id = BOARD_ID_X7_PLUS;
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::ACTUATOR_OUTPUTS_REAR);
+		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
 		frame.header.length = sizeof(actuator_outputs);
 		frame.header.sequence = _tx_sequence++;
 		frame.header.timestamp = hrt_absolute_time();
 
 		memcpy(frame.payload, &actuator_outputs, sizeof(actuator_outputs));
 
-		if (_uart_transport->sendFrame(frame)) {
+		if (_uart_transport->sendFrame(frame) >= 0) {
 			_stats.tx_messages++;
 			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 		} else {
@@ -188,17 +206,17 @@ void UorbUartBridge::processOutgoingMessages()
 	// Process vehicle status
 	vehicle_status_s vehicle_status;
 	if (_vehicle_status_sub.update(&vehicle_status)) {
-		UartFrame frame;
-		frame.header.sync = UART_SYNC_PATTERN;
-		frame.header.msg_id = static_cast<uint8_t>(UartMessageId::VEHICLE_STATUS);
-		frame.header.board_id = BOARD_ID_X7_PLUS;
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::VEHICLE_STATUS);
+		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
 		frame.header.length = sizeof(vehicle_status);
 		frame.header.sequence = _tx_sequence++;
 		frame.header.timestamp = hrt_absolute_time();
 
 		memcpy(frame.payload, &vehicle_status, sizeof(vehicle_status));
 
-		if (_uart_transport->sendFrame(frame)) {
+		if (_uart_transport->sendFrame(frame) >= 0) {
 			_stats.tx_messages++;
 			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 		} else {
@@ -210,14 +228,14 @@ void UorbUartBridge::processOutgoingMessages()
 
 void UorbUartBridge::processIncomingMessages()
 {
-	UartFrame frame;
-	while (_uart_transport->receiveFrame(frame)) {
+	distributed_uorb::UartFrame frame;
+	while (_uart_transport->receiveFrame(frame) > 0) {
 		_stats.rx_messages++;
 		_stats.rx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
 
 		// Process based on message type
-		switch (static_cast<UartMessageId>(frame.header.msg_id)) {
-		case UartMessageId::WHEEL_LOADER_STATUS_FRONT: {
+		switch (static_cast<distributed_uorb::UartMessageId>(frame.header.msg_id)) {
+		case distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_FRONT: {
 			if (frame.header.length == sizeof(wheel_loader_status_s)) {
 				wheel_loader_status_s status;
 				memcpy(&status, frame.payload, sizeof(status));
@@ -229,7 +247,7 @@ void UorbUartBridge::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::WHEEL_LOADER_STATUS_REAR: {
+		case distributed_uorb::UartMessageId::WHEEL_LOADER_STATUS_REAR: {
 			if (frame.header.length == sizeof(wheel_loader_status_s)) {
 				wheel_loader_status_s status;
 				memcpy(&status, frame.payload, sizeof(status));
@@ -241,11 +259,11 @@ void UorbUartBridge::processIncomingMessages()
 			break;
 		}
 
-		case UartMessageId::HEARTBEAT: {
+		case distributed_uorb::UartMessageId::HEARTBEAT: {
 			// Update board heartbeat tracking
-			if (frame.header.board_id == BOARD_ID_NXT_FRONT) {
+			if (frame.header.board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
 				_last_front_heartbeat = hrt_absolute_time();
-			} else if (frame.header.board_id == BOARD_ID_NXT_REAR) {
+			} else if (frame.header.board_id == distributed_uorb::BOARD_ID_NXT_REAR) {
 				_last_rear_heartbeat = hrt_absolute_time();
 			}
 			break;
@@ -261,15 +279,15 @@ void UorbUartBridge::processIncomingMessages()
 
 void UorbUartBridge::sendHeartbeat()
 {
-	UartFrame frame;
-	frame.header.sync = UART_SYNC_PATTERN;
-	frame.header.msg_id = static_cast<uint8_t>(UartMessageId::HEARTBEAT);
-	frame.header.board_id = BOARD_ID_X7_PLUS;
+	distributed_uorb::UartFrame frame;
+	frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+	frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HEARTBEAT);
+	frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
 	frame.header.length = 0;
 	frame.header.sequence = _tx_sequence++;
 	frame.header.timestamp = hrt_absolute_time();
 
-	if (_uart_transport->sendFrame(frame)) {
+	if (_uart_transport->sendFrame(frame) >= 0) {
 		_stats.tx_messages++;
 		_stats.tx_bytes += sizeof(frame.header) + sizeof(frame.crc);
 	} else {
@@ -319,15 +337,14 @@ int UorbUartBridge::print_status()
 {
 	PX4_INFO("UART Bridge Module Status");
 
-	if (_uart_transport) {
-		PX4_INFO("UART transport initialized");
+	if (_uart_transport && _uart_initialized) {
+		PX4_INFO("UART transport initialized and ready");
+		
+		// Print current statistics  
+		const_cast<UorbUartBridge*>(this)->printStatistics();
 	} else {
 		PX4_INFO("UART transport not initialized");
-		return PX4_OK;
 	}
-
-	// Print current statistics
-	const_cast<UorbUartBridge*>(this)->printStatistics();
 
 	return PX4_OK;
 }
