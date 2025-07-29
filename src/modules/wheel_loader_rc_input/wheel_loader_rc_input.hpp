@@ -80,8 +80,8 @@ private:
 	// RC channel mapping constants
 	static constexpr int RC_CHANNEL_THROTTLE = 2;      // Chassis forward/backward (axle control)
 	static constexpr int RC_CHANNEL_STEERING = 0;      // Chassis turn angle
-	static constexpr int RC_CHANNEL_BOOM = 4;          // Boom angle/height control (position-based)
-	static constexpr int RC_CHANNEL_BUCKET = 5;        // Bucket velocity control (rate-based)
+	static constexpr int RC_CHANNEL_BOOM = 4;          // Boom velocity control (rate-based)
+	static constexpr int RC_CHANNEL_BUCKET = 5;        // Bucket angle control (position-based)
 	static constexpr int RC_CHANNEL_ESTOP = 6;         // Emergency stop switch
 	static constexpr int RC_CHANNEL_MODE = 7;          // Control mode switch
 
@@ -94,8 +94,8 @@ private:
 	// Value limits
 	static constexpr float MAX_WHEEL_SPEED = 5.0f;     // rad/s (axle speed)
 	static constexpr float MAX_STEERING_ANGLE = 0.7f;  // rad (40 degrees)
-	static constexpr float MAX_BOOM_ANGLE = 0.5f;      // rad (boom angle/height)
-	static constexpr float MAX_BUCKET_VELOCITY = 1.0f; // rad/s (bucket velocity)
+	static constexpr float MAX_BOOM_VELOCITY = 1.0f;   // rad/s (boom velocity)
+	static constexpr float MAX_BUCKET_ANGLE = 0.5f;    // rad (bucket angle)
 
 	// Core processing functions
 	void processRcInput();
@@ -139,8 +139,8 @@ private:
 	DEFINE_PARAMETERS(
 		(ParamFloat<px4::params::WL_RC_MAX_SPEED>) _param_max_speed,
 		(ParamFloat<px4::params::WL_RC_MAX_STEER>) _param_max_steering,
-		(ParamFloat<px4::params::WL_RC_MAX_BOOM>) _param_max_boom_angle,
-		(ParamFloat<px4::params::WL_RC_MAX_BUCKET>) _param_max_bucket_velocity,
+		(ParamFloat<px4::params::WL_RC_MAX_BOOM>) _param_max_boom_velocity,
+		(ParamFloat<px4::params::WL_RC_MAX_BUCKET>) _param_max_bucket_angle,
 		(ParamFloat<px4::params::WL_RC_DEADZONE>) _param_rc_deadzone,
 		(ParamFloat<px4::params::WL_RC_TIMEOUT>) _param_rc_timeout,
 		(ParamInt<px4::params::WL_RC_ENABLE>) _param_rc_enable

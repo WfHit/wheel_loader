@@ -15,8 +15,8 @@ This document outlines the comprehensive message flow between the X7+ main board
 | `actuator_outputs` (rear) | NXT Rear | Rear axle + boom actuator commands | ✅ Implemented |
 | `vehicle_status` | Both NXT boards | System status information | ✅ Implemented |
 | `traction_control` | Both NXT boards | Traction control commands from main board | ✅ Implemented |
-| `boom_command` | NXT Rear | Boom hydraulic control commands (angle/height) | ✅ Implemented |
-| `bucket_command` | NXT Front | Bucket hydraulic control commands (velocity) | ✅ Implemented |
+| `boom_command` | NXT Rear | Boom hydraulic control commands (velocity) | ✅ Implemented |
+| `bucket_command` | NXT Front | Bucket hydraulic control commands (angle) | ✅ Implemented |
 | `steering_command` | NXT Rear | Steering control commands (ST2135 servo) | ✅ Implemented |
 | `vehicle_local_position` | Both NXT boards | EKF position data for slip calculation | ✅ Implemented |
 | `vehicle_attitude` | Both NXT boards | EKF attitude data for motion planning | ✅ Implemented |
@@ -47,20 +47,20 @@ This document outlines the comprehensive message flow between the X7+ main board
 ### Front NXT Board
 - **H-Bridge Device 1** (2 channels):
   - Channel 1: Front axle drive motor
-  - Channel 2: Bucket hydraulic control (velocity-based)
+  - Channel 2: Bucket hydraulic control (angle-based)
 - **Sensors**:
   - Quadrature encoder (front motor speed)
   - Wheel encoders (front axle speed measurement)
   - Limit sensors (bucket position limits)
 - **Control Systems**:
   - Front axle motor controller with PID and encoder feedback
-  - Bucket velocity controller with encoder position tracking
+  - Bucket angle controller with encoder position tracking
   - Slip estimation using encoder vs. EKF speed comparison
 
 ### Rear NXT Board  
 - **H-Bridge Device 2** (2 channels):
   - Channel 1: Rear axle drive motor
-  - Channel 2: Boom hydraulic control (angle/height-based)
+  - Channel 2: Boom hydraulic control (velocity-based)
 - **Servo Control**:
   - ST2135 servo for vehicle steering/articulation
 - **Sensors**:
@@ -69,7 +69,7 @@ This document outlines the comprehensive message flow between the X7+ main board
   - AS5600 angle sensor (boom position)
 - **Control Systems**:
   - Rear axle motor controller with PID and encoder feedback
-  - Boom position controller with AS5600 feedback and motion planning
+  - Boom velocity controller with AS5600 feedback and motion planning
   - Steering servo controller for vehicle articulation
   - Slip estimation using encoder vs. EKF speed comparison
 
@@ -85,12 +85,12 @@ This document outlines the comprehensive message flow between the X7+ main board
   - Uses AS5600 sensor for absolute angle measurement
   - Motion planner generates trajectory commands
   - PID controller ensures adherence to motion plan
-  - Position-based control (angle/height setpoints)
+  - Velocity-based control (rate setpoints)
 
 - **Bucket Control (NXT Front)**:
   - Uses motor encoder for relative position tracking
   - Requires zero action on init (limit switch calibration)
-  - Velocity-based control for smooth operation
+  - Angle-based control for precise positioning
   - Complex control modes (manual, auto-level, grading, transport)
 
 ### Motor Control Systems
@@ -140,7 +140,7 @@ The distributed uORB system now provides complete coverage for:
 1. **Command Distribution**: All control commands from X7+ reach appropriate NXT boards
 2. **Sensor Data Collection**: All sensor data from NXT boards reaches X7+ main
 3. **Slip-Aware Traction Control**: Distributed slip calculation with centralized traction control
-4. **Hydraulic Control**: Differentiated boom (position) and bucket (velocity) control
+4. **Hydraulic Control**: Differentiated boom (velocity) and bucket (angle) control
 5. **Steering Integration**: Servo-based steering control with feedback
 6. **Safety Monitoring**: Comprehensive heartbeat and status monitoring
 7. **Motion Planning**: EKF data available on NXT boards for local motion planning

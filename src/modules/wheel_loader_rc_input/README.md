@@ -28,8 +28,8 @@ The Wheel Loader RC Input module provides remote control capability for the whee
   - Front axle: Driven by front motor via front H-bridge
   - Rear axle: Driven by rear motor via rear H-bridge
 - **Hydraulic Controls**:
-  - **Boom**: Angle/height control (position-based)
-  - **Bucket**: Velocity speed control (rate-based)
+  - **Boom**: Velocity speed control (rate-based)
+  - **Bucket**: Angle control (position-based)
 
 ## RC Channel Mapping
 
@@ -37,8 +37,8 @@ The Wheel Loader RC Input module provides remote control capability for the whee
 |---------|----------|-------|-------------|
 | 0 | Steering | ±0.7 rad (±40°) | Front axle steering angle |
 | 2 | Throttle | ±5.0 rad/s | Forward/reverse chassis speed (front/rear axles) |
-| 4 | Boom | ±0.5 rad | Boom angle/height control (position-based) |
-| 5 | Bucket | ±1.0 rad/s | Bucket velocity control (rate-based) |
+| 4 | Boom | ±1.0 rad/s | Boom velocity control (rate-based) |
+| 5 | Bucket | ±0.5 rad | Bucket angle control (position-based) |
 | 6 | E-Stop | Digital | Emergency stop (active low <1400us) |
 | 7 | Mode | Digital | Control mode switch (future) |
 
@@ -110,8 +110,8 @@ The module integrates with the slip estimation system for enhanced safety:
 ```bash
 WL_RC_MAX_SPEED     # Maximum axle speed (rad/s) [0.5-10.0]
 WL_RC_MAX_STEER     # Maximum steering angle (rad) [0.1-1.5] 
-WL_RC_MAX_BOOM      # Maximum boom angle (rad) [0.1-2.0]
-WL_RC_MAX_BUCKET    # Maximum bucket velocity (rad/s) [0.1-3.0]
+WL_RC_MAX_BOOM      # Maximum boom velocity (rad/s) [0.1-2.0]
+WL_RC_MAX_BUCKET    # Maximum bucket angle (rad) [0.1-1.5]
 ```
 
 ### Input Processing

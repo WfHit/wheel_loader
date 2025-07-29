@@ -150,20 +150,20 @@ void WheelLoaderRcInput::processRcInput()
 		_current_command.rear_left_wheel_speed = chassis_speed * (1.0f - steering);
 		_current_command.rear_right_wheel_speed = chassis_speed * (1.0f + steering);
 
-		// Boom control (angle/height based - position control)
+		// Boom control (velocity based - rate control)
 		if (rc_input.channel_count > RC_CHANNEL_BOOM) {
 			float boom_input = mapRcChannel(rc_input.values[RC_CHANNEL_BOOM]);
 			boom_input = applyDeadzone(boom_input, _param_rc_deadzone.get());
-			// Boom uses angle/height control (position-based)
-			_current_command.boom_lift_cmd = boom_input * _param_max_boom_angle.get();
+			// Boom uses velocity control (rate-based)
+			_current_command.boom_lift_cmd = boom_input * _param_max_boom_velocity.get();
 		}
 
-		// Bucket control (velocity based - rate control)
+		// Bucket control (angle based - position control)
 		if (rc_input.channel_count > RC_CHANNEL_BUCKET) {
 			float bucket_input = mapRcChannel(rc_input.values[RC_CHANNEL_BUCKET]);
 			bucket_input = applyDeadzone(bucket_input, _param_rc_deadzone.get());
-			// Bucket uses velocity control (rate-based)
-			_current_command.bucket_angle_cmd = bucket_input * _param_max_bucket_velocity.get();
+			// Bucket uses angle control (position-based)
+			_current_command.bucket_angle_cmd = bucket_input * _param_max_bucket_angle.get();
 		}
 
 		// Steering angle command
@@ -215,10 +215,10 @@ void WheelLoaderRcInput::processManualControlInput()
 
 		// Hydraulic controls from aux channels
 		if (!isnan(manual_control.aux1)) {
-			_current_command.boom_lift_cmd = applyDeadzone(manual_control.aux1, _param_rc_deadzone.get()) * _param_max_boom_angle.get();
+			_current_command.boom_lift_cmd = applyDeadzone(manual_control.aux1, _param_rc_deadzone.get()) * _param_max_boom_velocity.get();
 		}
 		if (!isnan(manual_control.aux2)) {
-			_current_command.bucket_angle_cmd = applyDeadzone(manual_control.aux2, _param_rc_deadzone.get()) * _param_max_bucket_velocity.get();
+			_current_command.bucket_angle_cmd = applyDeadzone(manual_control.aux2, _param_rc_deadzone.get()) * _param_max_bucket_angle.get();
 		}
 
 		applySafetyLimits(_current_command);
@@ -307,9 +307,9 @@ void WheelLoaderRcInput::applySafetyLimits(wheel_loader_command_s &cmd)
 	cmd.steering_angle_cmd = math::constrain(cmd.steering_angle_cmd, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE);
 	cmd.articulation_angle_cmd = math::constrain(cmd.articulation_angle_cmd, -MAX_STEERING_ANGLE, MAX_STEERING_ANGLE);
 
-	// Limit hydraulic commands (boom: angle, bucket: velocity)
-	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -MAX_BOOM_ANGLE, MAX_BOOM_ANGLE);
-	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -MAX_BUCKET_VELOCITY, MAX_BUCKET_VELOCITY);
+	// Limit hydraulic commands (boom: velocity, bucket: angle)
+	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -MAX_BOOM_VELOCITY, MAX_BOOM_VELOCITY);
+	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -MAX_BUCKET_ANGLE, MAX_BUCKET_ANGLE);
 
 	// Set max limits
 	cmd.max_vehicle_speed = _param_max_speed.get();
