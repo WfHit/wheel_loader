@@ -46,7 +46,7 @@ extern "C" int as5600_main(int argc, char *argv[])
 {
 	using ThisDriver = AS5600;
 	BusCLIArguments cli{true, false};
-	cli.default_i2c_frequency = 400000;
+	cli.default_i2c_frequency = 1000000;
 	cli.i2c_address = AS5600_I2C_ADDR;
 
 	const char *verb = cli.parseDefaultArguments(argc, argv);

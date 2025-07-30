@@ -38,6 +38,8 @@ px4_add_module(
     SRCS
         steering_controller.cpp
 	steering_controller_main.cpp
+    MODULE_CONFIG
+        module.yaml
     DEPENDS
         px4_work_queue
         mathlib

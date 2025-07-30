@@ -27,29 +27,3 @@ parameters:
           4: I2C Bus 4
         default: 1
         reboot_required: true
-
-      AS5600_I2C_BAUD:
-        description:
-          short: AS5600 I2C baudrate
-          long: |
-            I2C communication baudrate for AS5600 magnetic encoder.
-            Higher rates provide faster updates but may be less reliable with long cables.
-        type: int32
-        unit: Hz
-        values:
-          100000: 100 kHz (Standard)
-          400000: 400 kHz (Fast)
-          1000000: 1 MHz (Fast Plus)
-        default: 400000
-        reboot_required: true
-
-      AS5600_OFFSET:
-        description:
-          short: AS5600 angle offset
-          long: Angular offset for AS5600 sensor in radians
-        type: float
-        unit: rad
-        min: -3.14159
-        max: 3.14159
-        decimal: 4
-        default: 0.0

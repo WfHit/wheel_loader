@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <drivers/device/i2c.h>
 #include <px4_platform_common/i2c_spi_buses.h>
+#include <px4_platform_common/px4_config.h>
 #include <uORB/topics/sensor_mag_encoder.h>
 #include <uORB/PublicationMulti.hpp>
 #include <lib/perf/perf_counter.h>
@@ -103,7 +104,7 @@ private:
 
 	uORB::PublicationMulti<sensor_mag_encoder_s> _sensor_mag_encoder_pub{ORB_ID(sensor_mag_encoder)};
 
-	static const hrt_abstime SAMPLE_INTERVAL{50_ms};
+	static const hrt_abstime SAMPLE_INTERVAL{10_ms};
 
 	sensor_mag_encoder_s _sensor_mag_encoder{};
 
