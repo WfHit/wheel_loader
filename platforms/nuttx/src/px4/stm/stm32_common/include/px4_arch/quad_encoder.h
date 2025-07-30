@@ -7,19 +7,17 @@
 #define ENCODER_MAX_INSTANCES 4
 
 // Simplified raw data structure from platform
+// Optimized for memory alignment and atomic operations
 typedef struct {
-	uint64_t timestamp;         // High-resolution timestamp
-	int64_t counter;           // Raw encoder counter value
-	bool direction_forward;    // Current rotation direction
-	bool counter_reset;        // True if counter was reset by resolution boundary
-	bool reset_direction_forward; // Direction when reset occurred (true=forward, false=reverse)
-} encoder_raw_data_t;
+	uint64_t timestamp;         // High-resolution timestamp (8 bytes, 8-byte aligned)
+	int64_t counter;           // Raw encoder counter value (8 bytes, 8-byte aligned)
+} __attribute__((packed, aligned(8))) encoder_raw_data_t;
 
 // Encoder hardware configuration
 typedef struct {
 	uint32_t gpio_a;                // GPIO pin for channel A
 	uint32_t gpio_b;                // GPIO pin for channel B
-	uint16_t pulses_per_revolution; // Encoder resolution (counter resets at this value)
+	uint16_t overflow_count;        // Counter overflow/wraparound value (0 = no auto-reset)
 } quad_encoder_config_t;
 
 #ifdef __cplusplus
@@ -68,6 +66,30 @@ int quad_encoder_stop(uint8_t encoder_id);
  * @return true if data was retrieved successfully, false otherwise
  */
 bool quad_encoder_get_raw_data(uint8_t encoder_id, encoder_raw_data_t *raw_data);
+
+/**
+ * @brief Set encoder overflow count
+ *
+ * Configures when the encoder counter automatically wraps around.
+ * When the counter reaches this value, it will reset to 0 (forward direction)
+ * or to (overflow_count - 1) for reverse direction.
+ *
+ * @param encoder_id Encoder instance ID
+ * @param overflow_count Counter overflow value (0 = no auto-reset)
+ * @return 0 on success, negative error code on failure
+ */
+int quad_encoder_set_overflow_count(uint8_t encoder_id, uint16_t overflow_count);
+
+/**
+ * @brief Get encoder overflow count
+ *
+ * Gets the current encoder overflow count setting.
+ *
+ * @param encoder_id Encoder instance ID
+ * @param overflow_count Pointer to store the current overflow count
+ * @return 0 on success, negative error code on failure
+ */
+int quad_encoder_get_overflow_count(uint8_t encoder_id, uint16_t *overflow_count);
 
 #ifdef __cplusplus
 }

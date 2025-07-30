@@ -78,7 +78,6 @@ struct encoder_state_t {
 	// Current state
 	uint8_t last_ab_state;
 	int64_t counter;
-	bool direction_forward;
 	uint64_t last_timestamp;
 
 	// Raw data for module
@@ -148,34 +147,24 @@ static void process_encoder_interrupt(uint8_t encoder_id)
 		break;
 	}
 
-	// Update position and direction
+	// Update position
 	if (direction != 0) {
 		encoder->counter += direction;
-		encoder->direction_forward = (direction > 0);
 		encoder->last_timestamp = timestamp;
 
-		bool counter_was_reset = false;
-		bool reset_direction = encoder->direction_forward;
-
-		// Handle counter wrap-around at resolution boundary
-		if (encoder->config.pulses_per_revolution > 0) {
-			if (encoder->counter >= encoder->config.pulses_per_revolution) {
+		// Handle counter wrap-around at overflow boundary
+		if (encoder->config.overflow_count > 0) {
+			if (encoder->counter >= encoder->config.overflow_count) {
 				encoder->counter = 0;
-				counter_was_reset = true;
-				reset_direction = true; // Forward direction reset
 			} else if (encoder->counter < 0) {
-				encoder->counter = encoder->config.pulses_per_revolution - 1;
-				counter_was_reset = true;
-				reset_direction = false; // Reverse direction reset
+				encoder->counter = encoder->config.overflow_count - 1;
 			}
 		}
 
 		// Update raw data for module access
 		encoder->raw_data.timestamp = timestamp;
 		encoder->raw_data.counter = encoder->counter;
-		encoder->raw_data.direction_forward = encoder->direction_forward;
-		encoder->raw_data.counter_reset = counter_was_reset;
-		encoder->raw_data.reset_direction_forward = reset_direction;
+
 		encoder->data_updated = true;
 	}
 
@@ -233,16 +222,12 @@ int quad_encoder_init(void)
 
 			// Initialize state
 			encoder->counter = 0;
-			encoder->direction_forward = true;
 			encoder->last_ab_state = 0;
 			encoder->data_updated = false;
 
 			// Initialize raw data
 			encoder->raw_data.timestamp = 0;
 			encoder->raw_data.counter = 0;
-			encoder->raw_data.direction_forward = true;
-			encoder->raw_data.counter_reset = false;
-			encoder->raw_data.reset_direction_forward = true;
 		}
 	}
 
@@ -339,12 +324,64 @@ bool quad_encoder_get_raw_data(uint8_t encoder_id, encoder_raw_data_t *raw_data)
 
 	// Copy raw data in a thread-safe manner
 	irqstate_t flags = enter_critical_section();
-	*raw_data = encoder->raw_data;
+	memcpy(raw_data, &encoder->raw_data, sizeof(encoder_raw_data_t));
 	bool data_valid = encoder->data_updated;
 	encoder->data_updated = false; // Clear update flag
 	leave_critical_section(flags);
 
 	return data_valid;
+}
+
+/**
+ * @brief Set encoder overflow count
+ */
+int quad_encoder_set_overflow_count(uint8_t encoder_id, uint16_t overflow_count)
+{
+	if (encoder_id >= ENCODER_MAX_INSTANCES) {
+		return -EINVAL;
+	}
+
+	if (!g_quad_encoder_initialized) {
+		return -ENOTCONN;
+	}
+
+	encoder_state_t *encoder = &g_encoders[encoder_id];
+	if (!encoder->is_initialized) {
+		return -ENOTCONN;
+	}
+
+	// Update overflow count in a thread-safe manner
+	irqstate_t flags = enter_critical_section();
+	encoder->config.overflow_count = overflow_count;
+	leave_critical_section(flags);
+
+	return 0;
+}
+
+/**
+ * @brief Get encoder overflow count
+ */
+int quad_encoder_get_overflow_count(uint8_t encoder_id, uint16_t *overflow_count)
+{
+	if (encoder_id >= ENCODER_MAX_INSTANCES || overflow_count == nullptr) {
+		return -EINVAL;
+	}
+
+	if (!g_quad_encoder_initialized) {
+		return -ENOTCONN;
+	}
+
+	encoder_state_t *encoder = &g_encoders[encoder_id];
+	if (!encoder->is_initialized) {
+		return -ENOTCONN;
+	}
+
+	// Read overflow count in a thread-safe manner
+	irqstate_t flags = enter_critical_section();
+	*overflow_count = encoder->config.overflow_count;
+	leave_critical_section(flags);
+
+	return 0;
 }
 
 /** @} */

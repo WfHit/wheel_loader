@@ -3,7 +3,6 @@ px4_add_module(
 	MAIN quadrature_encoder
 	STACK_MAIN 2048
 	SRCS
-		quadrature_encoder_main.cpp
 		quadrature_encoder.cpp
 	DEPENDS
 		px4_work_queue

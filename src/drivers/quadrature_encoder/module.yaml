@@ -27,24 +27,31 @@ parameters:
                   1: Enabled
           QENC0_PPR:
               description:
-                  short: Encoder 0 pulses per revolution
-                  long: Number of encoder pulses per complete revolution for encoder 0
-              type: int32
-              min: 100
-              max: 10000
-              default: 1024
-              increment: 1
-          QENC0_MODE:
-              description:
-                  short: Encoder 0 operating mode
-                  long: Encoder 0 operating mode selection
+                  short: Encoder 0 counter overflow value
+                  long: |
+                      Counter overflow value for encoder 0 - when the counter reaches this value,
+                      it will automatically reset to 0. Setting to 0 disables auto-reset behavior.
+                      This controls when counter wraparound occurs to prevent overflow.
               type: int32
               min: 0
-              max: 1
+              max: 65535
               default: 0
-              values:
-                  0: Relative mode
-                  1: Absolute mode
+              increment: 1
+          QENC0_RES:
+              description:
+                  short: Encoder 0 resolution (units per pulse)
+                  long: |
+                      Encoder 0 resolution - conversion factor from encoder pulses to output units.
+                      For rotational encoders: radians per pulse = 2π / (pulses per revolution).
+                      For linear encoders: distance per pulse (e.g., meters per pulse).
+                      This determines the scale of position and velocity outputs.
+              type: float
+              min: 0.000001
+              max: 1.0
+              default: 0.001
+              decimal: 6
+              increment: 0.000001
+              unit: units/pulse
           QENC0_VEL_FILT:
               description:
                   short: Encoder 0 velocity filter
@@ -55,6 +62,20 @@ parameters:
               default: 0.1
               decimal: 3
               increment: 0.01
+          QENC0_REV:
+              description:
+                  short: Encoder 0 direction reverse
+                  long: |
+                      Reverse encoder 0 direction - when enabled, positive movement will
+                      be interpreted as negative and vice versa. Useful for correcting
+                      encoder mounting orientation without hardware changes.
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+              values:
+                  0: Normal direction
+                  1: Reversed direction
     - group: Quadrature Encoder 1
       definitions:
           QENC1_EN:
@@ -70,24 +91,31 @@ parameters:
                   1: Enabled
           QENC1_PPR:
               description:
-                  short: Encoder 1 pulses per revolution
-                  long: Number of encoder pulses per complete revolution for encoder 1
-              type: int32
-              min: 100
-              max: 10000
-              default: 1024
-              increment: 1
-          QENC1_MODE:
-              description:
-                  short: Encoder 1 operating mode
-                  long: Encoder 1 operating mode selection
+                  short: Encoder 1 counter overflow value
+                  long: |
+                      Counter overflow value for encoder 1 - when the counter reaches this value,
+                      it will automatically reset to 0. Setting to 0 disables auto-reset behavior.
+                      This controls when counter wraparound occurs to prevent overflow.
               type: int32
               min: 0
-              max: 1
+              max: 65535
               default: 0
-              values:
-                  0: Relative mode
-                  1: Absolute mode
+              increment: 1
+          QENC1_RES:
+              description:
+                  short: Encoder 1 resolution (units per pulse)
+                  long: |
+                      Encoder 1 resolution - conversion factor from encoder pulses to output units.
+                      For rotational encoders: radians per pulse = 2π / (pulses per revolution).
+                      For linear encoders: distance per pulse (e.g., meters per pulse).
+                      This determines the scale of position and velocity outputs.
+              type: float
+              min: 0.000001
+              max: 1.0
+              default: 0.001
+              decimal: 6
+              increment: 0.000001
+              unit: units/pulse
           QENC1_VEL_FILT:
               description:
                   short: Encoder 1 velocity filter
@@ -98,3 +126,17 @@ parameters:
               default: 0.1
               decimal: 3
               increment: 0.01
+          QENC1_REV:
+              description:
+                  short: Encoder 1 direction reverse
+                  long: |
+                      Reverse encoder 1 direction - when enabled, positive movement will
+                      be interpreted as negative and vice versa. Useful for correcting
+                      encoder mounting orientation without hardware changes.
+              type: int32
+              min: 0
+              max: 1
+              default: 0
+              values:
+                  0: Normal direction
+                  1: Reversed direction
