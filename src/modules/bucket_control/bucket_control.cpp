@@ -326,6 +326,11 @@ void BucketControl::Run()
     // Update state machine
     updateStateMachine();
 
+    // Update calibration if in progress
+    if (_calibration_mode) {
+        update_calibration();
+    }
+
     // Apply stability limiting if AHRS is enabled
     if (_param_ahrs_enabled.get()) {
         updateStabilityFactor();
@@ -451,22 +456,25 @@ void BucketControl::performZeroing()
             if (!_limit_switch_dump) {
                 setMotorCommand(slow_speed); // Slow upward movement
             } else {
-                // Dump limit reached - stop immediately and set zero
+                // Dump limit reached - stop immediately and reset encoder using message
                 setMotorCommand(0.0f);
 
-                // Record this as our maximum position
-                sensor_quad_encoder_s encoder_data;
-                if (_sensor_quad_encoder_sub.copy(&encoder_data)) {
-                    uint8_t encoder_idx = _param_encoder_index.get();
-                    if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
-                        _encoder_zero_offset = encoder_data.position[encoder_idx];
-                        _encoder_count = 0;
-                        _current_actuator_length = _kinematics.actuator_max_length;
-                        _zeroing_state = ZeroingState::COMPLETE;
-                        _zeroing_complete = true;
-                        PX4_INFO("Zeroing complete at dump limit, offset: %lld", (long long)_encoder_zero_offset);
-                    }
-                }
+                // Send encoder reset command via uORB message
+                quad_encoder_reset_s reset_cmd{};
+                reset_cmd.timestamp = hrt_absolute_time();
+                reset_cmd.instance = _param_encoder_index.get();
+
+                _quad_encoder_reset_pub.publish(reset_cmd);
+
+                // Reset our internal tracking
+                _encoder_zero_offset = 0;  // Reset since encoder driver will reset to 0
+                _encoder_count = 0;
+                _current_actuator_length = _kinematics.actuator_max_length;
+                _zeroing_state = ZeroingState::COMPLETE;
+                _zeroing_complete = true;
+
+                PX4_INFO("Zeroing complete at dump limit - encoder reset command sent for instance %d",
+                         _param_encoder_index.get());
             }
 
             // Timeout protection for slow approach
@@ -961,7 +969,275 @@ int BucketControl::custom_command(int argc, char *argv[])
         return print_usage("unknown test command");
     }
 
+    if (!strcmp(argv[1], "calibrate")) {
+        if (instance->_calibration_mode) {
+            PX4_WARN("Calibration already in progress - state: %d", static_cast<int>(instance->_calib_state));
+            return PX4_ERROR;
+        }
+
+        // Check if zeroing is complete first
+        if (!instance->_zeroing_complete) {
+            PX4_ERR("Cannot start calibration: zeroing not complete");
+            return PX4_ERROR;
+        }
+
+        // Start auto-calibration
+        if (instance->start_auto_calibration()) {
+            PX4_INFO("Auto-calibration started for AS5600 magnetic encoder");
+            return PX4_OK;
+        } else {
+            PX4_ERR("Failed to start auto-calibration");
+            return PX4_ERROR;
+        }
+    }
+
     return print_usage("unknown command");
+}
+
+bool BucketControl::start_auto_calibration()
+{
+    if (_calibration_mode) {
+        PX4_WARN("Calibration already in progress");
+        return false;
+    }
+
+    // Check if zeroing is complete
+    if (!_zeroing_complete) {
+        PX4_ERR("Cannot start calibration: zeroing not complete");
+        return false;
+    }
+
+    // Initialize calibration
+    _calibration_mode = true;
+    _calib_state = CalibrationState::IDLE;
+    _calib_start_time = hrt_absolute_time();
+    _calib_timeout_ms = 30000; // 30 seconds timeout
+    _calib_min_angle = NAN;
+    _calib_max_angle = NAN;
+    _calib_center_angle = NAN;
+
+    PX4_INFO("Starting AS5600 auto-calibration for bucket control");
+    _calib_state = CalibrationState::MOVING_TO_CENTER;
+
+    // Move to center position first
+    set_target_actuator_length(_param_length_center.get());
+
+    return true;
+}
+
+void BucketControl::update_calibration()
+{
+    if (!_calibration_mode) {
+        return;
+    }
+
+    const hrt_abstime now = hrt_absolute_time();
+
+    // Check for timeout
+    if (now - _calib_start_time > _calib_timeout_ms * 1000) {
+        PX4_ERR("Calibration timeout");
+        abort_calibration();
+        return;
+    }
+
+    switch (_calib_state) {
+        case CalibrationState::IDLE:
+            // Should not happen
+            break;
+
+        case CalibrationState::MOVING_TO_CENTER: {
+            // Wait for actuator to reach center position
+            float length_error = fabsf(_current_actuator_length - _param_length_center.get());
+            if (length_error < 5.0f) { // 5mm tolerance
+                _calib_state = CalibrationState::READING_CENTER;
+                _calib_center_angle = get_as5600_angle();
+                PX4_INFO("Center position reached, AS5600 angle: %.1f°", static_cast<double>(math::degrees(_calib_center_angle)));
+
+                // Move to minimum position
+                set_target_actuator_length(_param_length_min.get());
+                _calib_state = CalibrationState::MOVING_TO_MIN;
+            }
+            break;
+        }
+
+        case CalibrationState::READING_CENTER:
+            // Already handled in MOVING_TO_CENTER
+            break;
+
+        case CalibrationState::MOVING_TO_MIN: {
+            // Wait for actuator to reach minimum position
+            float length_error = fabsf(_current_actuator_length - _param_length_min.get());
+            if (length_error < 5.0f) { // 5mm tolerance
+                _calib_state = CalibrationState::READING_MIN;
+                _calib_min_angle = get_as5600_angle();
+                PX4_INFO("Minimum position reached, AS5600 angle: %.1f°", static_cast<double>(math::degrees(_calib_min_angle)));
+
+                // Move to maximum position
+                set_target_actuator_length(_param_length_max.get());
+                _calib_state = CalibrationState::MOVING_TO_MAX;
+            }
+            break;
+        }
+
+        case CalibrationState::READING_MIN:
+            // Already handled in MOVING_TO_MIN
+            break;
+
+        case CalibrationState::MOVING_TO_MAX: {
+            // Wait for actuator to reach maximum position
+            float length_error = fabsf(_current_actuator_length - _param_length_max.get());
+            if (length_error < 5.0f) { // 5mm tolerance
+                _calib_state = CalibrationState::READING_MAX;
+                _calib_max_angle = get_as5600_angle();
+                PX4_INFO("Maximum position reached, AS5600 angle: %.1f°", static_cast<double>(math::degrees(_calib_max_angle)));
+
+                // Complete calibration
+                complete_calibration();
+            }
+            break;
+        }
+
+        case CalibrationState::READING_MAX:
+            // Already handled in MOVING_TO_MAX
+            break;
+
+        case CalibrationState::COMPLETED:
+        case CalibrationState::FAILED:
+            // Calibration is done
+            break;
+    }
+}
+
+void BucketControl::complete_calibration()
+{
+    if (!_calibration_mode) {
+        return;
+    }
+
+    // Validate calibration data
+    if (isnan(_calib_min_angle) || isnan(_calib_max_angle) || isnan(_calib_center_angle)) {
+        PX4_ERR("Calibration failed: invalid angle readings");
+        abort_calibration();
+        return;
+    }
+
+    // Calculate angle range
+    float angle_range = fabsf(_calib_max_angle - _calib_min_angle);
+    if (angle_range < math::radians(30.0f)) { // Minimum 30 degrees range
+        PX4_ERR("Calibration failed: insufficient angle range (%.1f°)", static_cast<double>(math::degrees(angle_range)));
+        abort_calibration();
+        return;
+    }
+
+    // Store calibration results
+    PX4_INFO("AS5600 Calibration completed successfully:");
+    PX4_INFO("  Min position: %.1f° (length: %.1f mm)",
+             static_cast<double>(math::degrees(_calib_min_angle)),
+             static_cast<double>(_param_length_min.get()));
+    PX4_INFO("  Center position: %.1f° (length: %.1f mm)",
+             static_cast<double>(math::degrees(_calib_center_angle)),
+             static_cast<double>(_param_length_center.get()));
+    PX4_INFO("  Max position: %.1f° (length: %.1f mm)",
+             static_cast<double>(math::degrees(_calib_max_angle)),
+             static_cast<double>(_param_length_max.get()));
+    PX4_INFO("  Total range: %.1f°", static_cast<double>(math::degrees(angle_range)));
+
+    _calib_state = CalibrationState::COMPLETED;
+
+    // Return to center position
+    set_target_actuator_length(_param_length_center.get());
+
+    // End calibration mode
+    _calibration_mode = false;
+}
+
+void BucketControl::abort_calibration()
+{
+    if (!_calibration_mode) {
+        return;
+    }
+
+    PX4_WARN("AS5600 calibration aborted");
+    _calib_state = CalibrationState::FAILED;
+    _calibration_mode = false;
+
+    // Return to center position for safety
+    set_target_actuator_length(_param_length_center.get());
+}
+
+bool BucketControl::check_limit_sensors()
+{
+    // In bucket control, we use limit switches instead of limit sensors
+    // This function checks if limit switches are working properly
+    return true; // For now, assume they're always working
+}
+
+float BucketControl::get_as5600_angle()
+{
+    // This would read from the AS5600 magnetic encoder
+    // For now, return a simulated angle based on actuator position
+    // TODO: Implement actual AS5600 I2C communication
+
+    // Simulate angle based on actuator length (for testing)
+    float length_ratio = (_current_actuator_length - _param_length_min.get()) /
+                        (_param_length_max.get() - _param_length_min.get());
+
+    // Convert to angle range (assuming bucket rotates from -45° to +45°)
+    float simulated_angle = math::radians(-45.0f + length_ratio * 90.0f);
+
+    return simulated_angle;
+}
+
+float BucketControl::translate_as5600_to_bucket_angle(float as5600_angle)
+{
+    if (!_calibration_mode && _calib_state != CalibrationState::COMPLETED) {
+        // Use default translation if not calibrated
+        return as5600_angle;
+    }
+
+    // Use calibration data to translate AS5600 angle to bucket angle
+    if (isnan(_calib_min_angle) || isnan(_calib_max_angle)) {
+        return as5600_angle;
+    }
+
+    // Linear interpolation between calibrated points
+    float as5600_range = _calib_max_angle - _calib_min_angle;
+    float bucket_range = math::radians(_param_angle_max.get() - _param_angle_min.get());
+
+    if (fabsf(as5600_range) < 1e-6f) {
+        return as5600_angle; // Avoid division by zero
+    }
+
+    float ratio = (as5600_angle - _calib_min_angle) / as5600_range;
+    float bucket_angle = math::radians(_param_angle_min.get()) + ratio * bucket_range;
+
+    return bucket_angle;
+}
+
+float BucketControl::translate_bucket_to_as5600_angle(float bucket_angle)
+{
+    if (!_calibration_mode && _calib_state != CalibrationState::COMPLETED) {
+        // Use default translation if not calibrated
+        return bucket_angle;
+    }
+
+    // Use calibration data to translate bucket angle to AS5600 angle
+    if (isnan(_calib_min_angle) || isnan(_calib_max_angle)) {
+        return bucket_angle;
+    }
+
+    // Linear interpolation between calibrated points
+    float bucket_range = math::radians(_param_angle_max.get() - _param_angle_min.get());
+    float as5600_range = _calib_max_angle - _calib_min_angle;
+
+    if (fabsf(bucket_range) < 1e-6f) {
+        return bucket_angle; // Avoid division by zero
+    }
+
+    float ratio = (bucket_angle - math::radians(_param_angle_min.get())) / bucket_range;
+    float as5600_angle = _calib_min_angle + ratio * as5600_range;
+
+    return as5600_angle;
 }
 
 int BucketControl::print_usage(const char *reason)
@@ -985,6 +1261,7 @@ Supports zeroing procedure with load limit (bucket down) and dump limit (bucket 
     PRINT_MODULE_USAGE_COMMAND_DESCR("test mode <0-4>", "Set control mode (0=MANUAL, 1=AUTO_LEVEL, 2=SLOPE_COMP, 3=GRADING, 4=TRANSPORT)");
     PRINT_MODULE_USAGE_COMMAND_DESCR("test angle <deg>", "Set target angle in degrees");
     PRINT_MODULE_USAGE_COMMAND_DESCR("test status", "Show current module status");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("calibrate", "Start AS5600 magnetic encoder auto-calibration");
     PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
     return 0;

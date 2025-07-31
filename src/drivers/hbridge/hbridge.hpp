@@ -31,114 +31,86 @@
  *
  ****************************************************************************/
 
+/**
+ * @file hbridge.hpp
+ *
+ * Multi-instance H-Bridge motor driver
+ */
+
 #pragma once
 
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
-#include <px4_platform_common/posix.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-
+#include <px4_platform_common/px4_config.h>
+#include <drivers/drv_hrt.h>
 #include <drivers/drv_motor_pwm.h>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
-#include <uORB/Publication.hpp>
+#include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
-#include <uORB/SubscriptionCallback.hpp>
 #include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/limit_sensor.h>
+#include <board_config.h>
+#include "hbridge_config.h"
 
 using namespace time_literals;
 
-/**
- * @brief H-Bridge motor driver with dual channels (left and right)
- *
- * Controls 2 H-bridge channels with PWM speed control and GPIO direction control.
- * Designed for DRV8701 H-bridge controllers.
- *
- * Channel mapping:
- * - Channel 0 = Left channel
- * - Channel 1 = Right channel
- */
+// Module configuration
+static constexpr char MODULE_NAME[] = "hbridge";
+static constexpr uint8_t MAX_INSTANCES = 4;
+static constexpr uint8_t MANAGER_INSTANCE = 255;
+
 class HBridge : public ModuleBase<HBridge>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-	HBridge();
+	HBridge(uint8_t instance);
 	~HBridge() override;
 
-	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
-
-	/** @see ModuleBase */
 	static int custom_command(int argc, char *argv[]);
-
-	/** @see ModuleBase */
 	static int print_usage(const char *reason = nullptr);
 
-	/** @see ModuleBase::print_status() */
-	int print_status() override;
-
-	/** @see ModuleBase::run_task() */
-	void Run() override;
-
 	bool init();
+	int print_status() override;
+	void Run() override;
 
 	static int test(int argc, char *argv[]);
 
+	// Multi-instance management
+	static HBridge *_instances[MAX_INSTANCES];
+	static px4::atomic<uint8_t> _num_instances;
+	static HBridge *_manager_instance;
+	static bool start_instance(int instance);
+	static void stop_all_instances();
+
 private:
-	// Channel definitions
 	enum ChannelId : int {
 		LEFT_CHANNEL = 0,
 		RIGHT_CHANNEL = 1
 	};
 
-	// Maximum number of channels per H-bridge
 	static constexpr int MAX_CHANNELS = 2;
-
-	// Update rate
 	static constexpr unsigned SCHEDULE_INTERVAL = 10_ms;
 
 	struct channel_data_s {
-		uint32_t dir_gpio{0};          // Direction control GPIO
-		int pwm_channel{-1};           // PWM channel number
-		uint32_t pwm_mask{0};          // PWM channel mask
-		float current_duty_cycle{0.0f}; // Current duty cycle
-		bool enabled{false};            // Channel enabled
-		bool initialized{false};        // Channel initialized
-		bool forward_limit_active{false}; // Forward direction limit sensor active
-		bool reverse_limit_active{false}; // Reverse direction limit sensor active
-		bool dir_reversed{false};      // Direction signal is reversed
+		float current_duty_cycle{0.0f};
+		bool enabled{false};
+		bool initialized{false};
+		bool forward_limit_active{false};
+		bool reverse_limit_active{false};
 	};
 
-	// Methods
-	void parameters_update();
-	void process_commands();
-	void process_limit_sensors();
-	void publish_status();
-	bool configure_channel(int channel);
-	void set_channel_speed(int channel, float duty_cycle);
-	void update_channel_direction(int channel, bool forward);
-	bool check_limit_sensor_for_direction(int channel, bool forward);
-
-	// Parameter getters
-	int get_pwm_channel(int ch) const;
-	int get_limit_sensor_function(int ch, bool forward) const;
-
-	// Convenience methods for left/right channel access
-	void set_left_channel_speed(float duty_cycle) { set_channel_speed(LEFT_CHANNEL, duty_cycle); }
-	void set_right_channel_speed(float duty_cycle) { set_channel_speed(RIGHT_CHANNEL, duty_cycle); }
-	int get_left_pwm_channel() const { return get_pwm_channel(LEFT_CHANNEL); }
-	int get_right_pwm_channel() const { return get_pwm_channel(RIGHT_CHANNEL); }
-
-	// Channel data
+	// Instance data
+	const uint8_t _instance;
+	const hbridge_config_t *_board_config{nullptr};
 	channel_data_s _channels[MAX_CHANNELS];
 
-	// Publications
-	orb_advert_t _status_pub{nullptr};
-
-	// Subscriptions
+	// Publications and subscriptions
+	uORB::PublicationMulti<hbridge_status_s> _status_pub{ORB_ID(hbridge_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _command_sub{ORB_ID(hbridge_command)};
 	uORB::SubscriptionMultiArray<limit_sensor_s, 4> _limit_sensor_sub{ORB_ID::limit_sensor};
@@ -154,13 +126,18 @@ private:
 	uint32_t _command_count{0};
 	uint32_t _error_count{0};
 
+	// Methods
+	void process_commands();
+	void process_limit_sensors();
+	void publish_status();
+	bool configure_channels();
+	void set_channel_speed(int channel, float duty_cycle);
+	void update_channel_direction(int channel, bool forward);
+	bool check_limit_sensor_for_direction(int channel, bool forward);
+	int get_limit_sensor_function(int ch, bool forward) const;
+
 	// Parameters
 	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::HBRIDGE_L_PWM>) _param_left_pwm,
-		(ParamInt<px4::params::HBRIDGE_R_PWM>) _param_right_pwm,
-		(ParamFloat<px4::params::HBRIDGE_PWM_FREQ>) _param_pwm_freq,
-		(ParamInt<px4::params::HBRIDGE_L_DREV>) _param_left_dir_rev,
-		(ParamInt<px4::params::HBRIDGE_R_DREV>) _param_right_dir_rev,
 		(ParamInt<px4::params::HBRIDGE_L_FLIM>) _param_left_fwd_limit,
 		(ParamInt<px4::params::HBRIDGE_L_RLIM>) _param_left_rev_limit,
 		(ParamInt<px4::params::HBRIDGE_R_FLIM>) _param_right_fwd_limit,

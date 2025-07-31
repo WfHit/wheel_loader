@@ -223,6 +223,16 @@
 #define BOARD_NUM_LIMIT_SENSORS            2
 #define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
 
+/* H-Bridge Configuration for Front Board */
+/* Single H-Bridge instance for front wheel drive */
+#define BOARD_NUM_HBRIDGES                 1
+#define BOARD_HAS_HBRIDGE_CONFIG           1
+
+/* H-Bridge GPIO mappings using existing DRV8701 definitions */
+#define GPIO_DRV8701_LEFT_DIR              DRV8701_LEFT_DIR_GPIO
+#define GPIO_DRV8701_RIGHT_DIR             DRV8701_RIGHT_DIR_GPIO
+#define GPIO_DRV8701_ENABLE                DRV8701_ENABLE_GPIO
+
 /* PWM5-8 - Limit switch inputs for bucket operations */
 #define BUCKET_DUMP_LIMIT_SW1_GPIO         /* PB10 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
 #define BUCKET_LOAD_LIMIT_SW1_GPIO         /* PB11 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */

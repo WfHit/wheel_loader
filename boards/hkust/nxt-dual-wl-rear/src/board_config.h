@@ -249,6 +249,10 @@
 #define BOARD_NUM_LIMIT_SENSORS            4
 #define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
 
+/* H-Bridge Configuration for Rear Board */
+#define BOARD_NUM_HBRIDGES                 1
+#define BOARD_HAS_HBRIDGE_CONFIG           1
+
 /* PWM5-8 - Limit switch inputs for boom and steering operations */
 #define STEERING_RIGHT_LIMIT_SW_GPIO       /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
 #define STEERING_LEFT_LIMIT_SW_GPIO        /* PB11 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */

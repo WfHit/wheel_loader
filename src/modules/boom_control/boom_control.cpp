@@ -94,6 +94,11 @@ void BoomControl::Run()
 	// Update sensor data from AS5600
 	update_sensor_data();
 
+	// Handle auto-calibration if active
+	if (_calibration_mode) {
+		update_calibration();
+	}
+
 	// Process boom command inputs
 	process_boom_command();
 
@@ -146,6 +151,11 @@ void BoomControl::update_sensor_data()
 
 		// Apply calibration
 		float calibrated_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
+
+		// Apply angle reverse if enabled
+		if (_param_angle_reverse.get()) {
+			calibrated_angle = -calibrated_angle;
+		}
 
 		// Ensure angle is in 0-360 range
 		while (calibrated_angle < 0.0f) {
@@ -489,6 +499,12 @@ int BoomControl::custom_command(int argc, char *argv[])
 		return 0;
 	}
 
+	if (!strcmp(argv[0], "calibrate")) {
+		PX4_INFO("Starting boom auto-calibration...");
+		get_instance()->start_auto_calibration();
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -524,6 +540,219 @@ $ boom_control preset carry
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
+}
+
+// Auto-calibration implementation
+void BoomControl::start_auto_calibration()
+{
+	if (_state != BoomState::IDLE) {
+		PX4_WARN("Cannot start calibration - boom not in IDLE state");
+		return;
+	}
+
+	_calibration_mode = true;
+	_calib_state = CalibrationState::MOVING_TO_MIN;
+	_calib_start_time = hrt_absolute_time();
+	_calib_limit_detected = false;
+
+	PX4_INFO("Starting boom calibration - moving to down limit");
+}
+
+void BoomControl::update_calibration()
+{
+	switch (_calib_state) {
+		case CalibrationState::MOVING_TO_MIN:
+		{
+			// Move down slowly until limit sensor is triggered
+			_motor_output = -0.3f; // 30% power downward
+
+			if (check_limit_sensors()) {
+				if (!_calib_limit_detected) {
+					_calib_limit_detected = true;
+					_calib_settle_time = hrt_absolute_time();
+				} else if (hrt_elapsed_time(&_calib_settle_time) > 500_ms) {
+					// Settled for 500ms, record minimum angle
+					_calib_state = CalibrationState::RECORDING_MIN;
+				}
+			} else {
+				_calib_limit_detected = false;
+			}
+
+			// Timeout protection
+			if (hrt_elapsed_time(&_calib_start_time) > 30_s) {
+				PX4_ERR("Calibration timeout moving to minimum");
+				abort_calibration();
+				return;
+			}
+			break;
+		}
+
+		case CalibrationState::RECORDING_MIN:
+		{
+			_motor_output = 0.0f; // Stop motor
+
+			// Read current AS5600 angle as minimum
+			sensor_mag_encoder_s mag_encoder_data;
+			if (_mag_encoder_sub.copy(&mag_encoder_data) &&
+			    mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
+
+				float raw_angle_deg = math::degrees(mag_encoder_data.angle);
+				_calib_min_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
+
+				PX4_INFO("Minimum angle recorded: %.1f degrees", static_cast<double>(_calib_min_angle));
+
+				_calib_state = CalibrationState::MOVING_TO_MAX;
+				_calib_limit_detected = false;
+				PX4_INFO("Moving to up limit");
+			}
+			break;
+		}
+
+		case CalibrationState::MOVING_TO_MAX:
+		{
+			// Move up slowly until limit sensor is triggered
+			_motor_output = 0.3f; // 30% power upward
+
+			if (check_limit_sensors()) {
+				if (!_calib_limit_detected) {
+					_calib_limit_detected = true;
+					_calib_settle_time = hrt_absolute_time();
+				} else if (hrt_elapsed_time(&_calib_settle_time) > 500_ms) {
+					// Settled for 500ms, record maximum angle
+					_calib_state = CalibrationState::RECORDING_MAX;
+				}
+			} else {
+				_calib_limit_detected = false;
+			}
+
+			// Timeout protection
+			if (hrt_elapsed_time(&_calib_start_time) > 60_s) {
+				PX4_ERR("Calibration timeout moving to maximum");
+				abort_calibration();
+				return;
+			}
+			break;
+		}
+
+		case CalibrationState::RECORDING_MAX:
+		{
+			_motor_output = 0.0f; // Stop motor
+
+			// Read current AS5600 angle as maximum
+			sensor_mag_encoder_s mag_encoder_data;
+			if (_mag_encoder_sub.copy(&mag_encoder_data) &&
+			    mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
+
+				float raw_angle_deg = math::degrees(mag_encoder_data.angle);
+				_calib_max_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
+
+				PX4_INFO("Maximum angle recorded: %.1f degrees", static_cast<double>(_calib_max_angle));
+
+				complete_calibration();
+			}
+			break;
+		}
+
+		case CalibrationState::COMPLETED:
+		case CalibrationState::FAILED:
+		default:
+			// Return to normal operation
+			_calibration_mode = false;
+			_motor_output = 0.0f;
+			break;
+	}
+}
+
+void BoomControl::complete_calibration()
+{
+	_calib_state = CalibrationState::COMPLETED;
+	_motor_output = 0.0f;
+
+	// Determine direction based on angle difference
+	float angle_diff = _calib_max_angle - _calib_min_angle;
+	_calib_direction = (angle_diff > 0) ? 1.0f : -1.0f;
+
+	// Display results
+	PX4_INFO("=== Boom Calibration Results ===");
+	PX4_INFO("Minimum AS5600 angle: %.1f degrees", static_cast<double>(_calib_min_angle));
+	PX4_INFO("Maximum AS5600 angle: %.1f degrees", static_cast<double>(_calib_max_angle));
+	PX4_INFO("Angle difference: %.1f degrees", static_cast<double>(fabsf(angle_diff)));
+	PX4_INFO("Direction: %s", (_calib_direction > 0) ? "Normal" : "Reversed");
+
+	// Suggest parameter values
+	PX4_INFO("=== Suggested Parameters ===");
+	PX4_INFO("BOOM_MAG_SCALE: %.3f", static_cast<double>(_calib_direction));
+	PX4_INFO("BOOM_MAG_OFFSET: %.1f", static_cast<double>(-_calib_min_angle * _calib_direction));
+	PX4_INFO("BOOM_ANGLE_REV: %d", (_calib_direction < 0) ? 1 : 0);
+
+	_calibration_mode = false;
+}
+
+void BoomControl::abort_calibration()
+{
+	_calib_state = CalibrationState::FAILED;
+	_motor_output = 0.0f;
+	_calibration_mode = false;
+	_state = BoomState::ERROR;
+
+	PX4_ERR("Boom calibration failed");
+}
+
+bool BoomControl::check_limit_sensors()
+{
+	hbridge_status_s hbridge_status;
+	bool limit_triggered = false;
+
+	// Check for hbridge status updates
+	if (_hbridge_status_sub.update(&hbridge_status) && hbridge_status.channel_limits_available) {
+		uint8_t up_index = _param_limit_up_index.get();
+		uint8_t down_index = _param_limit_down_index.get();
+
+		if (up_index < 4 && hbridge_status.channel_limit_state[up_index]) {
+			limit_triggered = true;
+		}
+		if (down_index < 4 && hbridge_status.channel_limit_state[down_index]) {
+			limit_triggered = true;
+		}
+	}
+
+	return limit_triggered;
+}
+
+float BoomControl::translate_as5600_to_boom_angle(float as5600_angle)
+{
+	if (_calib_state != CalibrationState::COMPLETED) {
+		PX4_WARN("Calibration not completed - using uncalibrated angle");
+		return as5600_angle;
+	}
+
+	// Normalize AS5600 angle to 0-1 range between calibrated limits
+	float normalized = (as5600_angle - _calib_min_angle) / (_calib_max_angle - _calib_min_angle);
+
+	// Map to boom angle range (assuming -10° to +75° boom range)
+	float boom_min = _param_boom_angle_min.get();
+	float boom_max = _param_boom_angle_max.get();
+	float boom_angle = boom_min + normalized * (boom_max - boom_min);
+
+	return boom_angle;
+}
+
+float BoomControl::translate_boom_to_as5600_angle(float boom_angle)
+{
+	if (_calib_state != CalibrationState::COMPLETED) {
+		PX4_WARN("Calibration not completed - using uncalibrated angle");
+		return boom_angle;
+	}
+
+	// Normalize boom angle to 0-1 range
+	float boom_min = _param_boom_angle_min.get();
+	float boom_max = _param_boom_angle_max.get();
+	float normalized = (boom_angle - boom_min) / (boom_max - boom_min);
+
+	// Map to AS5600 angle range
+	float as5600_angle = _calib_min_angle + normalized * (_calib_max_angle - _calib_min_angle);
+
+	return as5600_angle;
 }
 
 extern "C" __EXPORT int boom_control_main(int argc, char *argv[])

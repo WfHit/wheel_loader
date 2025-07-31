@@ -49,6 +49,7 @@
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/hbridge_command.h>
+#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_mag_encoder.h>
 
@@ -113,6 +114,10 @@ private:
 		(ParamFloat<px4::params::BOOM_ACCEL>) _param_boom_max_acc,
 		(ParamFloat<px4::params::BOOM_JERK>) _param_boom_max_jerk,
 
+		// Boom angle limits
+		(ParamFloat<px4::params::BOOM_ANGLE_MIN>) _param_boom_angle_min,
+		(ParamFloat<px4::params::BOOM_ANGLE_MAX>) _param_boom_angle_max,
+
 		// Preset positions
 		(ParamFloat<px4::params::BOOM_POS_GROUND>) _param_boom_pos_ground,
 		(ParamFloat<px4::params::BOOM_POS_CARRY>) _param_boom_pos_carry,
@@ -127,6 +132,7 @@ private:
 		(ParamInt<px4::params::BOOM_ANGLE_SENS>) _param_mag_encoder_instance_id,
 		(ParamFloat<px4::params::BOOM_MAG_SCALE>) _param_mag_encoder_scale,
 		(ParamFloat<px4::params::BOOM_MAG_OFFSET>) _param_mag_encoder_offset,
+		(ParamBool<px4::params::BOOM_ANGLE_REV>) _param_angle_reverse,
 
 		// H-bridge motor configuration
 		(ParamInt<px4::params::BOOM_HBRIDGE_CH>) _param_hbridge_channel,
@@ -144,6 +150,7 @@ private:
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
+	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
 
 	// uORB publications
 	uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
@@ -160,6 +167,7 @@ private:
 	float _current_actuator_length{0.0f};
 	float _target_actuator_length{0.0f};
 	float _motor_output{0.0f};
+	bool _calibration_mode{false};  // Calibration mode flag
 
 	// Trajectory setpoints
 	float _desired_position_m{0.0f};
@@ -185,6 +193,33 @@ private:
 	void run_position_control();
 	void publish_hbridge_command();
 	void publish_boom_status();
+
+	// Auto-calibration functionality
+	enum class CalibrationState : uint8_t {
+		IDLE = 0,
+		MOVING_TO_MIN = 1,
+		RECORDING_MIN = 2,
+		MOVING_TO_MAX = 3,
+		RECORDING_MAX = 4,
+		COMPLETED = 5,
+		FAILED = 6
+	};
+
+	CalibrationState _calib_state{CalibrationState::IDLE};
+	float _calib_min_angle{0.0f};
+	float _calib_max_angle{0.0f};
+	float _calib_direction{1.0f};  // 1.0 for normal, -1.0 for reversed
+	uint64_t _calib_start_time{0};
+	uint64_t _calib_settle_time{0};
+	bool _calib_limit_detected{false};
+
+	void start_auto_calibration();
+	void update_calibration();
+	void complete_calibration();
+	void abort_calibration();
+	bool check_limit_sensors();
+	float translate_as5600_to_boom_angle(float as5600_angle);
+	float translate_boom_to_as5600_angle(float boom_angle);
 
 	// Utility functions
 	void set_target_position(BoomPreset preset);

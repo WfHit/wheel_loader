@@ -8,4 +8,8 @@ float32[2] channel_current    # Current measurement (if available)
 float32 temperature          # Board temperature (if available)
 bool fault_detected          # Any fault detected
 
+# Channel limit sensor status (connected to H-bridge driver)
+bool[4] channel_limit_state    # State of channel limit sensors 0-3
+bool channel_limits_available  # True if channel limit sensors are connected
+
 uint8 ORB_QUEUE_LENGTH = 2

@@ -21,8 +21,9 @@
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/hbridge_command.h>
-#include <uORB/topics/limit_sensor.h>
+#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/quad_encoder_reset.h>
 #include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/vehicle_acceleration.h>
 #include <uORB/topics/vehicle_angular_velocity.h>
@@ -197,7 +198,7 @@ private:
     uORB::Subscription _bucket_cmd_sub{ORB_ID(bucket_command)};
     uORB::Subscription _sensor_mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
     uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
-    uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
+    uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
@@ -206,6 +207,7 @@ private:
     // uORB publications
     uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
     uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+    uORB::Publication<quad_encoder_reset_s> _quad_encoder_reset_pub{ORB_ID(quad_encoder_reset)};
 
     // Motor and sensor indices
     uint8_t _motor_index{0};
@@ -269,4 +271,32 @@ private:
         (ParamFloat<px4::params::BCT_STAB_THR>) _param_stability_threshold,
         (ParamFloat<px4::params::BCT_SPILL_THR>) _param_spill_threshold
     )
+
+    // Auto-calibration functionality
+    enum class CalibrationState : uint8_t {
+        IDLE = 0,
+        MOVING_TO_MIN = 1,
+        RECORDING_MIN = 2,
+        MOVING_TO_MAX = 3,
+        RECORDING_MAX = 4,
+        COMPLETED = 5,
+        FAILED = 6
+    };
+
+    bool _calibration_mode{false};
+    CalibrationState _calib_state{CalibrationState::IDLE};
+    float _calib_min_angle{0.0f};
+    float _calib_max_angle{0.0f};
+    float _calib_direction{1.0f};  // 1.0 for normal, -1.0 for reversed
+    uint64_t _calib_start_time{0};
+    uint64_t _calib_settle_time{0};
+    bool _calib_limit_detected{false};
+
+    void start_auto_calibration();
+    void update_calibration();
+    void complete_calibration();
+    void abort_calibration();
+    bool check_limit_sensors();
+    float translate_as5600_to_bucket_angle(float as5600_angle);
+    float translate_bucket_to_as5600_angle(float bucket_angle);
 };

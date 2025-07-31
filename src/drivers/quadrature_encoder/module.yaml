@@ -52,16 +52,6 @@ parameters:
               decimal: 6
               increment: 0.000001
               unit: units/pulse
-          QENC0_VEL_FILT:
-              description:
-                  short: Encoder 0 velocity filter
-                  long: Encoder 0 velocity filtering coefficient (low-pass)
-              type: float
-              min: 0.01
-              max: 1.0
-              default: 0.1
-              decimal: 3
-              increment: 0.01
           QENC0_REV:
               description:
                   short: Encoder 0 direction reverse
@@ -116,16 +106,6 @@ parameters:
               decimal: 6
               increment: 0.000001
               unit: units/pulse
-          QENC1_VEL_FILT:
-              description:
-                  short: Encoder 1 velocity filter
-                  long: Encoder 1 velocity filtering coefficient (low-pass)
-              type: float
-              min: 0.01
-              max: 1.0
-              default: 0.1
-              decimal: 3
-              increment: 0.01
           QENC1_REV:
               description:
                   short: Encoder 1 direction reverse

@@ -161,13 +161,7 @@ Note: Large scale value compensates for low resolution, providing
 - **Important**: Prefer resolution values ≥ 100 when possible
 - If hardware resolution < 100, consider using gear ratios or optical multiplication
 
-### Step 2: Calculate Scale Parameter
-- **For rotary encoders (micro-radians)**: `Scale = (2π / Resolution) × 1,000,000`
-- **For linear encoders (millimeters)**: `Scale = 1.0 / pulses_per_mm`
-- **For custom units**: `Scale = desired_units_per_revolution / Resolution`
-- **Low resolution compensation**: Use larger scale values to maintain output precision
-
-### Step 3: Verify Units
+### Step 2: Verify Units
 - Check that `position` values are reasonable for your application
 - Verify `velocity` calculations match expected ranges
 - Test with known movements to validate scaling
@@ -175,22 +169,12 @@ Note: Large scale value compensates for low resolution, providing
 
 ## Advanced Configuration
 
-### Direction Reverse (`QE_X_REVERSE`)
-- Applied after scale calculation
-- Inverts sign of position and velocity
-- Useful for correcting installation direction
-
 ### Counter Overflow Handling
 - Automatic wraparound at resolution boundary
 - Delta calculation handles overflow transparently
 - Position accumulates continuously beyond single revolution
 
 ## Troubleshooting
-
-### Position Values Too Large/Small
-- **Too Large**: Reduce scale parameter
-- **Too Small**: Increase scale parameter
-- **Wrong Sign**: Enable/disable reverse parameter
 
 ### Velocity Seems Incorrect
 - Check scale parameter calculation

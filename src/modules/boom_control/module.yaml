@@ -62,6 +62,43 @@ parameters:
         decimal: 1
         default: 75.0
 
+      BOOM_ANGLE_REV:
+        description:
+          short: Boom angle reverse mode
+          long: |
+            Reverse boom angle direction - when enabled, positive sensor readings will
+            be interpreted as negative angles and vice versa. Useful for correcting
+            sensor mounting orientation without hardware changes.
+        type: int32
+        min: 0
+        max: 1
+        default: 0
+        values:
+          0: Normal direction
+          1: Reversed direction
+
+      BOOM_LIMIT_UP:
+        description:
+          short: Boom up limit sensor index
+          long: |
+            Limit sensor index for boom up position limit.
+            Used during auto-calibration to determine maximum boom angle.
+        type: int32
+        min: 0
+        max: 3
+        default: 0
+
+      BOOM_LIMIT_DOWN:
+        description:
+          short: Boom down limit sensor index
+          long: |
+            Limit sensor index for boom down position limit.
+            Used during auto-calibration to determine minimum boom angle.
+        type: int32
+        min: 0
+        max: 3
+        default: 1
+
       BOOM_POS_GROUND:
         description:
           short: Boom ground position angle

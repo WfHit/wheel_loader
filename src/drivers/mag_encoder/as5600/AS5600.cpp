@@ -149,6 +149,7 @@ void AS5600::print_status()
 
 	double angle_deg = (_raw_angle * 360.0) / 4095.0;
 	PX4_INFO("Angle: %.2f deg (raw: %u)", angle_deg, _raw_angle);
+	PX4_INFO("Angle (rad): %.8f", _sensor_mag_encoder.angle);
 	PX4_INFO("Magnitude: %u", _magnitude);
 	PX4_INFO("AGC: %u", _agc);
 	PX4_INFO("Status: 0x%02x", _status);
