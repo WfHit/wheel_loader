@@ -32,15 +32,19 @@
 ############################################################################
 
 px4_add_module(
-    MODULE modules__articulated_chassis__steering_controller
-    MAIN steering_controller
-    STACK_MAIN 2048
-    SRCS
-        steering_controller.cpp
-	steering_controller_main.cpp
-    MODULE_CONFIG
-        module.yaml
-    DEPENDS
-        px4_work_queue
-        mathlib
-    )
+	MODULE modules__articulated_chassis__steering_controller
+	MAIN steering_controller
+	STACK_MAIN 2048
+	SRCS
+		steering_controller.cpp
+		steering_controller_main.cpp
+		steering_servo_controller.cpp
+		steering_slip_compensator.cpp
+		steering_limit_sensor.cpp
+		steering_safety_manager.cpp
+	MODULE_CONFIG
+		module.yaml
+	DEPENDS
+		px4_work_queue
+		mathlib
+	)
