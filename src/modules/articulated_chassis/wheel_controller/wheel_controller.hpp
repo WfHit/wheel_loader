@@ -1,179 +1,150 @@
+/****************************************************************************
+ *
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name PX4 nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
+
 #pragma once
 
+#include <drivers/drv_hrt.h>
+#include <lib/mathlib/mathlib.h>
+#include <lib/mathlib/math/filter/LowPassFilter2p.hpp>
+#include <lib/perf/perf_counter.h>
+#include <lib/pid/PID.hpp>
+#include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <px4_platform_common/px4_config.h>
-#include <drivers/drv_hrt.h>
-#include <lib/perf/perf_counter.h>
-#include <lib/pid/PID.hpp>
-#include <lib/mathlib/mathlib.h>
-#include <lib/mathlib/math/filter/LowPassFilter2p.hpp>
-#include <uORB/Subscription.hpp>
 #include <uORB/PublicationMulti.hpp>
-
-// uORB message includes - matching existing system
+#include <uORB/Subscription.hpp>
+#include <uORB/topics/hbridge_command.h>
+#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/hbridge_command.h>
-#include <uORB/topics/wheel_speeds_setpoint.h>
-#include <uORB/topics/traction_control.h>
-#include <uORB/topics/wheel_status.h>
-#include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/actuator_outputs.h>
+#include <uORB/topics/wheel_loader_setpoint.h>
 
 using namespace time_literals;
 
 /**
- * @brief Unified Wheel Controller for articulated wheel loader
+ * @brief Individual wheel controller for articulated wheel loader
  *
- * Controls front or rear wheel motor via DRV8701 H-bridge with:
- * - PID speed control using quad encoder feedback
- * - Integration with existing traction control system
+ * Implements closed-loop speed control using quadrature encoder feedback
+ * and DRV8701 H-bridge motor driver interface.
+ *
+ * Features:
+ * - PID speed control with configurable gains
+ * - Low-pass filtering for noise reduction
  * - Safety monitoring and emergency stop
- * - Controller health reporting
+ * - Instance-based multi-wheel support
+ * - Performance monitoring
  */
 class WheelController : public ModuleBase<WheelController>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-    WheelController(uint8_t instance, bool is_front);
-    ~WheelController() override;
+	WheelController();
+	~WheelController() override;
 
-    /** @see ModuleBase */
-    static int task_spawn(int argc, char *argv[]);
-    static int custom_command(int argc, char *argv[]);
-    static int print_usage(const char *reason = nullptr);
+	/** @see ModuleBase */
+	static int task_spawn(int argc, char *argv[]);
+	static int custom_command(int argc, char *argv[]);
+	static int print_usage(const char *reason = nullptr);
 
-    bool init();
-    int print_status() override;
+	bool init();
+	int print_status() override;
 
 private:
-    static constexpr float CONTROL_RATE_HZ = 100.0f;
-    static constexpr uint64_t CONTROL_INTERVAL_US = 1_s / CONTROL_RATE_HZ;
+	static constexpr uint32_t SCHEDULE_INTERVAL{10_ms};	// 100Hz control loop
+	static constexpr float CONTROL_DT{0.01f};		// 100Hz = 0.01s
+	static constexpr float MAX_PWM_VALUE{1.0f};
+	static constexpr float MIN_PWM_VALUE{-1.0f};
+	static constexpr uint64_t SETPOINT_TIMEOUT_US{500_ms};
+	static constexpr uint64_t ENCODER_TIMEOUT_US{100_ms};
+	static constexpr float DEFAULT_FILTER_FREQ{10.0f};	// Hz
 
-    // Hardware limits (matching existing RearWheelController)
-    static constexpr float MAX_WHEEL_SPEED_RPM = 200.0f;
-    static constexpr float MIN_WHEEL_SPEED_RPM = -200.0f;
-    static constexpr float MAX_PWM_OUTPUT = 1000.0f;
-    static constexpr float ENCODER_RESOLUTION = 2048.0f; // quad encoder
-    static constexpr float GEAR_RATIO = 50.0f;
+	void Run() override;
 
-    // Safety thresholds
-    static constexpr float MAX_SPEED_ERROR_RPM = 50.0f;
-    static constexpr float MAX_CURRENT_AMPS = 15.0f;
-    static constexpr uint64_t WATCHDOG_TIMEOUT_US = 500_ms;
+	// Core control functions
+	bool update_speed_setpoint();
+	void update_encoder_feedback();
+	void run_speed_controller();
+	void publish_motor_command();
+	void update_hbridge_status();
+	void check_safety_conditions();
 
-    void Run() override;
+	// Parameter and utility functions
+	void parameters_update();
+	float constrain_pwm(float value) const;
+	bool is_setpoint_valid() const;
 
-    /**
-     * Control functions - matching existing interface
-     */
-    void update_speed_control();
-    void apply_traction_control();
-    void update_controller_status();
-    void check_safety_limits();
-    void communicate_with_hbridge();
-    void publish_wheel_status();
+	// uORB subscriptions
+	uORB::Subscription _param_update_sub{ORB_ID(parameter_update)};
+	uORB::Subscription _setpoint_sub{ORB_ID(wheel_loader_setpoint)};
 
-    /**
-     * Encoder processing
-     */
-    void process_encoder_data();
-    float calculate_wheel_speed_rpm();
+	// Instance-specific subscriptions - initialized in init()
+	uORB::Subscription _encoder_sub;
+	uORB::Subscription _hbridge_status_sub;
 
-    /**
-     * Utility functions
-     */
-    float saturate_pwm(float pwm_value);
-    bool is_emergency_stop_active();
-    void update_performance_metrics();
-    void calculate_health_score();
+	// uORB publications
+	uORB::PublicationMulti<hbridge_command_s> _motor_cmd_pub;
 
-    // Instance identification
-    const uint8_t _instance;
-    const bool _is_front_wheel;
+	// Control system
+	PID _speed_controller;
+	math::LowPassFilter2p<float> _speed_filter;
 
-    // uORB subscriptions - matching existing system
-    uORB::Subscription _wheel_speeds_setpoint_sub{ORB_ID(wheel_speeds_setpoint)};
-    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder), _instance};
-    uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
-    uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
-    uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
+	// State tracking
+	struct {
+		float speed_rad_s{0.0f};		// Current measured speed
+		float setpoint_rad_s{0.0f};		// Target speed
+		float pwm_output{0.0f};			// Motor PWM command
+		uint64_t last_setpoint_us{0};		// Last valid setpoint timestamp
+		uint64_t last_encoder_us{0};		// Last encoder update
+		bool motor_enabled{false};		// Motor enable state
+		bool emergency_stop{false};		// Emergency stop active
+		bool initialized{false};		// Initialization complete
+	} _state;
 
-    // uORB publications
-    uORB::PublicationMulti<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
-    uORB::PublicationMulti<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
-    uORB::Publication<wheel_status_s> _wheel_status_pub{ORB_ID(wheel_status)};
+	// Performance monitoring
+	perf_counter_t _loop_perf{nullptr};
+	perf_counter_t _control_perf{nullptr};
 
-    // Control system
-    PID _speed_pid;
-
-    // State variables - matching existing RearWheelController
-    float _current_speed_rpm{0.0f};
-    float _target_speed_rpm{0.0f};
-    float _pwm_output{0.0f};
-    int32_t _encoder_count{0};
-    int32_t _encoder_count_prev{0};
-    uint64_t _last_encoder_time{0};
-
-    // Traction control state
-    float _traction_limit_factor{1.0f};
-    bool _slip_detected{false};
-    float _slip_ratio{0.0f};
-    uint64_t _slip_start_time{0};
-
-    // Safety state
-    bool _emergency_stop{false};
-    bool _controller_healthy{true};
-    float _motor_current{0.0f};
-    uint64_t _last_command_time{0};
-    bool _armed{false};
-
-    // Status reporting via wheel_status message
-    wheel_status_s _wheel_status{};
-    float _health_score{100.0f}; // Local health score calculation
-
-    // Performance monitoring - matching existing structure
-    struct {
-        float speed_error_rms{0.0f};
-        float control_effort_avg{0.0f};
-        uint32_t slip_events{0};
-        uint32_t safety_violations{0};
-
-        // Additional health metrics
-        uint32_t missed_updates{0};
-        uint32_t encoder_errors{0};
-        float max_speed_error{0.0f};
-        hrt_abstime last_health_check{0};
-    } _performance;
-
-    // Filters for signal processing
-    math::LowPassFilter2p<float> _speed_filter{CONTROL_RATE_HZ, 10.0f};
-    math::LowPassFilter2p<float> _current_filter{CONTROL_RATE_HZ, 5.0f};
-
-    // Performance counters
-    perf_counter_t _loop_perf;
-    perf_counter_t _control_latency_perf;
-    perf_counter_t _encoder_timeout_perf;
-
-    // Parameters - instance specific, matching existing naming convention
-    DEFINE_PARAMETERS(
-        (ParamFloat<px4::params::WC_P_GAIN>) _speed_p_gain,
-        (ParamFloat<px4::params::WC_I_GAIN>) _speed_i_gain,
-        (ParamFloat<px4::params::WC_D_GAIN>) _speed_d_gain,
-        (ParamFloat<px4::params::WC_I_MAX>) _speed_i_max,
-        (ParamFloat<px4::params::WC_MAX_SPEED>) _max_wheel_speed,
-        (ParamFloat<px4::params::WC_RAMP_RATE>) _speed_ramp_rate,
-        (ParamInt<px4::params::WC_TRACT_EN>) _traction_control_enable,
-        (ParamFloat<px4::params::WC_SLIP_THRS>) _slip_threshold,
-        (ParamFloat<px4::params::WC_CURR_LIM>) _current_limit,
-        (ParamFloat<px4::params::WC_GEAR_RAT>) _gear_ratio,
-        (ParamInt<px4::params::WC_ENC_CPR>) _encoder_cpr
-    )
-
-    // Helper methods
-    void parameters_update();
-    void publish_actuator_outputs();
-    void reset_emergency_stop();
-    float calculate_slip_ratio(float wheel_speed, float reference_speed);
+	// Module parameters (PX4 naming: ≤16 chars)
+	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::WC_ENC_ID>) _param_encoder_id,
+		(ParamInt<px4::params::WC_MOTOR_CH>) _param_motor_channel,
+		(ParamFloat<px4::params::WC_P>) _param_speed_p,
+		(ParamFloat<px4::params::WC_I>) _param_speed_i,
+		(ParamFloat<px4::params::WC_D>) _param_speed_d,
+		(ParamFloat<px4::params::WC_I_MAX>) _param_integrator_max,
+		(ParamFloat<px4::params::WC_MAX_SPD>) _param_max_speed,
+		(ParamFloat<px4::params::WC_FILT_HZ>) _param_filter_freq,
+		(ParamInt<px4::params::WC_FRONT>) _param_is_front_wheel,
+		(ParamFloat<px4::params::WC_TIMEOUT>) _param_setpoint_timeout
+	)
 };

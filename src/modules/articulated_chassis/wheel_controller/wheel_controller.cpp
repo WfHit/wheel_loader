@@ -1,500 +1,366 @@
+/****************************************************************************
+ *
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name PX4 nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
+
 #include "wheel_controller.hpp"
-#include <mathlib/mathlib.h>
-#include <drivers/drv_hrt.h>
+
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 
-#define MODULE_NAME "wheel_controller"
-
-WheelController::WheelController(uint8_t instance, bool is_front) :
-    ModuleParams(nullptr),
-    ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl),
-    _instance(instance),
-    _is_front_wheel(is_front),
-    _loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")),
-    _control_latency_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": latency")),
-    _encoder_timeout_perf(perf_alloc(PC_COUNT, MODULE_NAME": enc_timeout"))
+WheelController::WheelController() :
+	ModuleBase(MODULE_NAME),
+	ModuleParams(nullptr),
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
+	_speed_controller(0.0f, 0.0f, 0.0f, 0.0f, MAX_PWM_VALUE, 0.0f, CONTROL_DT),
+	_speed_filter(CONTROL_DT, DEFAULT_FILTER_FREQ)
 {
-    // Initialize wheel status
-    _wheel_status.wheel_id = _instance;
-    _wheel_status.is_front_wheel = _is_front_wheel;
-    _wheel_status.controller_healthy = true;
-    _wheel_status.armed = false;
 }
 
 WheelController::~WheelController()
 {
-    perf_free(_loop_perf);
-    perf_free(_control_latency_perf);
-    perf_free(_encoder_timeout_perf);
+	perf_free(_loop_perf);
+	perf_free(_control_perf);
 }
 
 bool WheelController::init()
 {
-    // Initialize PID controller - PX4 PID uses object-oriented approach
-    // Set initial gains (will be updated from parameters)
-    _speed_pid.setGains(1.0f, 0.0f, 0.0f);
-    _speed_pid.setOutputLimit(100.0f);  // Set reasonable output limit
-    _speed_pid.setIntegralLimit(10.0f); // Set reasonable integral limit
+	// Update parameters first to get instance information
+	updateParams();
 
-    // Update parameters
-    parameters_update();
+	// Initialize instance-specific subscriptions based on parameters
+	uint8_t encoder_instance = static_cast<uint8_t>(_param_encoder_id.get());
+	uint8_t motor_channel = static_cast<uint8_t>(_param_motor_channel.get());
 
-    // Schedule at 100Hz (matching existing rear wheel controller)
-    ScheduleOnInterval(CONTROL_INTERVAL_US);
+	// Initialize encoder subscription with specific instance
+	_encoder_sub = uORB::Subscription{ORB_ID(sensor_quad_encoder), encoder_instance};
 
-    _wheel_status.controller_healthy = true;
-    _wheel_status.armed = true;
-    _performance.last_health_check = hrt_absolute_time();
+	if (!_encoder_sub.subscribe()) {
+		PX4_ERR("Failed to subscribe to sensor_quad_encoder instance %d", encoder_instance);
+		return false;
+	}
 
-    return true;
+	// Initialize H-bridge status subscription with specific instance
+	_hbridge_status_sub = uORB::Subscription{ORB_ID(hbridge_status), motor_channel};
+
+	if (!_hbridge_status_sub.subscribe()) {
+		PX4_ERR("Failed to subscribe to hbridge_status instance %d", motor_channel);
+		return false;
+	}
+
+	// Initialize H-bridge command publication with specific instance
+	_motor_cmd_pub = uORB::PublicationMulti<hbridge_command_s>{ORB_ID(hbridge_command), motor_channel};
+
+	// Initialize other subscriptions
+	if (!_setpoint_sub.subscribe()) {
+		PX4_ERR("Failed to subscribe to wheel_loader_setpoint");
+		return false;
+	}
+
+	if (!_param_update_sub.subscribe()) {
+		PX4_ERR("Failed to subscribe to parameter_update");
+		return false;
+	}
+
+	// Initialize performance counters
+	_loop_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": cycle");
+	_control_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": control");
+
+	// Configure PID controller with initial parameters
+	_speed_controller.setGains(_param_speed_p.get(),
+				   _param_speed_i.get(),
+				   _param_speed_d.get());
+	_speed_controller.setIntegratorLimits(-_param_integrator_max.get(),
+					      _param_integrator_max.get());
+	_speed_controller.setOutputLimits(MIN_PWM_VALUE, MAX_PWM_VALUE);
+
+	// Initialize speed filter
+	_speed_filter.set_cutoff_frequency(CONTROL_DT, _param_filter_freq.get());
+
+	// Mark as initialized
+	_state.initialized = true;
+
+	// Start the work queue
+	ScheduleOnInterval(SCHEDULE_INTERVAL);
+
+	PX4_INFO("Wheel controller initialized - Encoder: %d, Motor: %d, Front: %s",
+		 encoder_instance, motor_channel,
+		 (_param_is_front_wheel.get() == 1) ? "YES" : "NO");
+
+	return true;
 }
 
 void WheelController::Run()
 {
-    if (should_exit()) {
-        ScheduleClear();
-        exit_and_cleanup();
-        return;
-    }
+	if (should_exit()) {
+		ScheduleClear();
+		return;
+	}
 
-    perf_begin(_loop_perf);
+	perf_begin(_loop_perf);
 
-    // Check for parameter updates
-    if (_parameter_update_sub.updated()) {
-        parameter_update_s param_update;
-        _parameter_update_sub.copy(&param_update);
-        parameters_update();
-    }
+	// Check for parameter updates
+	if (_param_update_sub.updated()) {
+		parameter_update_s param_update;
+		_param_update_sub.copy(&param_update);
+		parameters_update();
+	}
 
-    // Update vehicle status for arming state
-    vehicle_status_s vehicle_status;
-    if (_vehicle_status_sub.copy(&vehicle_status)) {
-        _armed = vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_ARMED;
-    }
+	// Update sensor data
+	update_encoder_feedback();
+	update_hbridge_status();
 
-    // Process encoder data
-    process_encoder_data();
+	// Safety checks first
+	check_safety_conditions();
 
-    // Update wheel speed
-    _current_speed_rpm = calculate_wheel_speed_rpm();
+	if (!_state.emergency_stop) {
+		// Update setpoint and run control
+		if (update_speed_setpoint()) {
+			perf_begin(_control_perf);
+			run_speed_controller();
+			perf_end(_control_perf);
+		} else {
+			// No valid setpoint - stop motor
+			_state.setpoint_rad_s = 0.0f;
+			_state.pwm_output = 0.0f;
+		}
 
-    // Apply speed filtering
-    _current_speed_rpm = _speed_filter.apply(_current_speed_rpm);
+	} else {
+		// Emergency stop active
+		_state.setpoint_rad_s = 0.0f;
+		_state.pwm_output = 0.0f;
+	}
 
-    // Update speed control
-    perf_begin(_control_latency_perf);
-    update_speed_control();
-    perf_end(_control_latency_perf);
+	// Publish motor command
+	publish_motor_command();
 
-    // Apply traction control
-    apply_traction_control();
-
-    // Check safety limits
-    check_safety_limits();
-
-    // Communicate with H-bridge
-    communicate_with_hbridge();
-
-    // Update controller status
-    update_controller_status();
-
-    // Update performance metrics
-    update_performance_metrics();
-
-    perf_end(_loop_perf);
+	perf_end(_loop_perf);
 }
 
-void WheelController::process_encoder_data()
+bool WheelController::update_speed_setpoint()
 {
-    sensor_quad_encoder_s encoder_data;
+	wheel_loader_setpoint_s setpoint;
 
-    if (_sensor_quad_encoder_sub.update(&encoder_data)) {
-        // Verify this is the correct instance
-        if (encoder_data.instance == _instance) {
-            // Get encoder position and velocity from sensor_quad_encoder
-            // Position is in 1/million rad, velocity is in 1/million rad/s
-            const float position_rad = encoder_data.position * 1e-6f;
-            const float velocity_rad_s = encoder_data.velocity * 1e-6f;
+	if (_setpoint_sub.update(&setpoint)) {
+		// Check if setpoint is for this wheel instance
+		bool is_for_this_wheel = (_param_is_front_wheel.get() == 1) ?
+					 setpoint.front_wheel_active :
+					 setpoint.rear_wheel_active;
 
-            // Update encoder counts (convert rad to counts using resolution)
-            _encoder_count_prev = _encoder_count;
-            _encoder_count = static_cast<int32_t>(position_rad / (2.0f * M_PI) * _param_encoder_resolution.get());
+		if (is_for_this_wheel) {
+			float target_speed = (_param_is_front_wheel.get() == 1) ?
+					     setpoint.front_wheel_speed_rad_s :
+					     setpoint.rear_wheel_speed_rad_s;
 
-            // Convert rad/s to RPM for internal calculations
-            _current_speed_rpm = velocity_rad_s * 60.0f / (2.0f * M_PI_F);
+			// Limit speed to maximum
+			_state.setpoint_rad_s = math::constrain(target_speed,
+								-_param_max_speed.get(),
+								_param_max_speed.get());
+			_state.last_setpoint_us = hrt_absolute_time();
+			return true;
+		}
+	}
 
-            _last_encoder_time = encoder_data.timestamp;
-            _controller_healthy = true; // No explicit health field, assume healthy if data received
-        } else {
-            perf_count(_encoder_timeout_perf);
-            _performance.encoder_errors++;
-        }
-    } else {
-        // Check for encoder timeout
-        if (hrt_elapsed_time(&_last_encoder_time) > WATCHDOG_TIMEOUT_US) {
-            perf_count(_encoder_timeout_perf);
-            _controller_healthy = false;
-            _emergency_stop = true;
-        }
-    }
+	return is_setpoint_valid();
 }
 
-float WheelController::calculate_wheel_speed_rpm()
+void WheelController::update_encoder_feedback()
 {
-    if (_last_encoder_time == 0) {
-        return 0.0f;
-    }
+	sensor_quad_encoder_s encoder;
 
-    const hrt_abstime now = hrt_absolute_time();
-    const float dt = (now - _last_encoder_time) * 1e-6f; // Convert to seconds
+	if (_encoder_sub.update(&encoder)) {
+		// Check if encoder data is from correct instance
+		if (encoder.device_id == (uint32_t)_param_encoder_id.get()) {
+			// Convert encoder data to rad/s (implementation depends on encoder specifics)
+			float raw_speed = encoder.speed; // Assuming speed is already in rad/s
 
-    if (dt <= 0.0f || dt > 1.0f) {
-        return _current_speed_rpm; // Return last known speed
-    }
-
-    // Calculate speed from encoder counts
-    const int32_t delta_counts = _encoder_count - _encoder_count_prev;
-    const float motor_revolutions = static_cast<float>(delta_counts) / _encoder_cpr.get();
-    const float wheel_revolutions = motor_revolutions / _gear_ratio.get();
-    const float wheel_rpm = (wheel_revolutions / dt) * 60.0f;
-
-    return wheel_rpm;
+			// Apply low-pass filtering
+			_state.speed_rad_s = _speed_filter.apply(raw_speed);
+			_state.last_encoder_us = encoder.timestamp;
+		}
+	}
 }
 
-void WheelController::update_speed_control()
+void WheelController::run_speed_controller()
 {
-    // Get speed setpoint
-    wheel_speeds_setpoint_s setpoint;
-    if (_wheel_speeds_setpoint_sub.update(&setpoint)) {
-        // Convert rad/s to RPM for internal calculations
-        _target_speed_rpm = _is_front_wheel ?
-            setpoint.front_wheel_speed_rad_s * 60.0f / (2.0f * M_PI_F) :
-            setpoint.rear_wheel_speed_rad_s * 60.0f / (2.0f * M_PI_F);
-        _last_command_time = setpoint.timestamp;
-    }
+	// PID control
+	float speed_error = _state.setpoint_rad_s - _state.speed_rad_s;
+	float pid_output = _speed_controller.update(speed_error, CONTROL_DT);
 
-    // Apply rate limiting to setpoint
-    const float rate_limit = _speed_ramp_rate.get() * 0.01f; // Convert to RPM per control cycle
-    _target_speed_rpm = math::constrain(_target_speed_rpm,
-                                       _current_speed_rpm - rate_limit,
-                                       _current_speed_rpm + rate_limit);
-
-    // Limit to max speed
-    _target_speed_rpm = math::constrain(_target_speed_rpm,
-                                       -_max_wheel_speed.get(),
-                                       _max_wheel_speed.get());
-
-    // PID control
-    const float speed_error = _target_speed_rpm - _current_speed_rpm;
-
-    // Update PID parameters
-    _speed_pid.setGains(_speed_p_gain.get(),
-                       _speed_i_gain.get(),
-                       _speed_d_gain.get());
-    _speed_pid.setIntegralLimit(_speed_i_max.get());
-    _speed_pid.setOutputLimit(MAX_PWM_OUTPUT);
-    _speed_pid.setSetpoint(_target_speed_rpm);
-
-    // Calculate control output using PX4 PID
-    const float dt = 0.01f; // 10ms control interval
-    _pwm_output = _speed_pid.update(_current_speed_rpm, dt);
-
-    // Apply traction limit
-    _pwm_output *= _traction_limit_factor;
-
-    // Update performance metrics
-    _performance.speed_error_rms = sqrtf(0.95f * _performance.speed_error_rms * _performance.speed_error_rms +
-                                        0.05f * speed_error * speed_error);
+	// Apply output constraints
+	_state.pwm_output = constrain_pwm(pid_output);
 }
 
-void WheelController::apply_traction_control()
+void WheelController::publish_motor_command()
 {
-    if (!_traction_control_enable.get()) {
-        _traction_limit_factor = 1.0f;
-        return;
-    }
+	hbridge_command_s cmd{};
+	cmd.timestamp = hrt_absolute_time();
+	cmd.channel = static_cast<uint8_t>(_param_motor_channel.get());
+	cmd.duty_cycle = _state.pwm_output;
+	cmd.enabled = _state.motor_enabled && !_state.emergency_stop;
 
-    // Subscribe to traction control commands
-    traction_control_s traction_cmd;
-    if (_traction_control_sub.update(&traction_cmd)) {
-        _slip_detected = traction_cmd.slip_detected;
-
-        // Apply torque reduction based on wheel instance
-        if (_is_front_wheel) {
-            _traction_limit_factor = 1.0f - traction_cmd.torque_reduction_front;
-        } else {
-            _traction_limit_factor = 1.0f - traction_cmd.torque_reduction_rear;
-        }
-
-        if (_slip_detected && _slip_start_time == 0) {
-            _slip_start_time = hrt_absolute_time();
-            _performance.slip_events++;
-        } else if (!_slip_detected) {
-            _slip_start_time = 0;
-        }
-    }
-
-    // Local slip detection based on acceleration
-    const float acceleration = (_current_speed_rpm - _encoder_count_prev) / 0.01f; // RPM/s
-    if (fabsf(acceleration) > _slip_threshold.get() * 100.0f) {
-        _slip_detected = true;
-        _performance.slip_events++;
-
-        // Reduce traction limit
-        _traction_limit_factor = math::max(0.5f, _traction_limit_factor - 0.1f);
-    } else if (_traction_limit_factor < 1.0f) {
-        // Slowly restore traction
-        _traction_limit_factor = math::min(1.0f, _traction_limit_factor + 0.01f);
-    }
+	_motor_cmd_pub.publish(cmd);
 }
 
-void WheelController::check_safety_limits()
+void WheelController::update_hbridge_status()
 {
-    const hrt_abstime now = hrt_absolute_time();
+	hbridge_status_s status;
 
-    // Check command timeout
-    if ((now - _last_command_time) > WATCHDOG_TIMEOUT_US) {
-        _emergency_stop = true;
-        _performance.safety_violations++;
-    }
+	if (_hbridge_status_sub.update(&status)) {
+		if (status.channel == static_cast<uint8_t>(_param_motor_channel.get())) {
+			_state.motor_enabled = status.enabled;
 
-    // Check speed error
-    const float speed_error = fabsf(_target_speed_rpm - _current_speed_rpm);
-    if (speed_error > MAX_SPEED_ERROR_RPM) {
-        _performance.max_speed_error = math::max(_performance.max_speed_error, speed_error);
-        if (speed_error > MAX_SPEED_ERROR_RPM * 2.0f) {
-            _emergency_stop = true;
-            _performance.safety_violations++;
-        }
-    }
-
-    // Check encoder health
-    if ((now - _last_encoder_time) > WATCHDOG_TIMEOUT_US) {
-        _emergency_stop = true;
-        _controller_healthy = false;
-    }
-
-    // Simulate current monitoring (would come from actual sensor)
-    _motor_current = _current_filter.apply(fabsf(_pwm_output) * 0.015f); // Rough estimate
-    if (_motor_current > _current_limit.get()) {
-        _emergency_stop = true;
-        _performance.safety_violations++;
-    }
-
-    // Reset emergency stop if conditions clear
-    if (_emergency_stop && !is_emergency_stop_active()) {
-        reset_emergency_stop();
-    }
+			// Check for faults
+			if (status.fault) {
+				PX4_WARN("Motor channel %d fault detected", _param_motor_channel.get());
+				_state.emergency_stop = true;
+			}
+		}
+	}
 }
 
-bool WheelController::is_emergency_stop_active()
+void WheelController::check_safety_conditions()
 {
-    const hrt_abstime now = hrt_absolute_time();
+	const uint64_t now = hrt_absolute_time();
 
-    // Check all emergency conditions
-    if ((now - _last_command_time) > WATCHDOG_TIMEOUT_US) return true;
-    if ((now - _last_encoder_time) > WATCHDOG_TIMEOUT_US) return true;
-    if (fabsf(_target_speed_rpm - _current_speed_rpm) > MAX_SPEED_ERROR_RPM * 2.0f) return true;
-    if (_motor_current > _current_limit.get()) return true;
-    if (!_controller_healthy) return true;
+	// Check setpoint timeout
+	if (!isSetpointValid()) {
+		if (!_state.emergency_stop) {
+			PX4_WARN("Setpoint timeout");
+		}
 
-    return false;
-}
+		_state.emergency_stop = true;
 
-void WheelController::reset_emergency_stop()
-{
-    _emergency_stop = false;
-    // Reset PID integrator
-    _speed_pid.resetIntegral();
-}
+	} else {
+		_state.emergency_stop = false;
+	}
 
-void WheelController::communicate_with_hbridge()
-{
-    if (!_armed || _emergency_stop) {
-        _pwm_output = 0.0f;
-    }
-
-    // Saturate PWM output
-    _pwm_output = saturate_pwm(_pwm_output);
-
-    // Publish to H-bridge driver using hbridge_command
-    hbridge_command_s cmd{};
-    cmd.timestamp = hrt_absolute_time();
-    cmd.instance = _instance; // 0 for front, 1 for rear (use instance instead of channel)
-
-    // Convert normalized PWM to H-bridge format
-    float normalized_output = _pwm_output / MAX_PWM_OUTPUT; // Normalize to [-1, 1]
-    cmd.duty_cycle = normalized_output;  // Use duty_cycle directly (-1.0 to 1.0)
-    cmd.enable = _armed && !_emergency_stop;
-
-    // Publish to specific message instance for this wheel
-    _hbridge_command_pub.publish(cmd, _instance);
-
-    // Also publish actuator_outputs for compatibility
-    publish_actuator_outputs();
-}
-
-void WheelController::publish_actuator_outputs()
-{
-    actuator_outputs_s outputs{};
-    outputs.timestamp = hrt_absolute_time();
-    outputs.noutputs = actuator_outputs_s::NUM_ACTUATOR_OUTPUTS;
-
-    for (int i = 0; i < actuator_outputs_s::NUM_ACTUATOR_OUTPUTS; i++) {
-        outputs.output[i] = 0.0f;
-    }
-
-    if (_instance < actuator_outputs_s::NUM_ACTUATOR_OUTPUTS) {
-        outputs.output[_instance] = _pwm_output;
-    }
-
-    _actuator_outputs_pub.publish(outputs);
-}
-
-float WheelController::saturate_pwm(float pwm_value)
-{
-    return math::constrain(pwm_value, -MAX_PWM_OUTPUT, MAX_PWM_OUTPUT);
-}
-
-void WheelController::update_controller_status()
-{
-    // Update wheel status for health reporting
-    _wheel_status.timestamp = hrt_absolute_time();
-    _wheel_status.controller_healthy = _controller_healthy && !_emergency_stop;
-    _wheel_status.armed = _armed;
-    _wheel_status.emergency_stop_active = _emergency_stop;
-
-    // Calculate health score
-    calculate_health_score();
-    _wheel_status.health_score = _health_score;
-
-    // Update speed control status
-    _wheel_status.current_speed_rpm = _current_speed_rpm;
-    _wheel_status.target_speed_rpm = _target_speed_rpm;
-    _wheel_status.speed_error_rpm = _target_speed_rpm - _current_speed_rpm;
-    _wheel_status.pwm_output = _pwm_output;
-
-    // Update encoder data
-    _wheel_status.encoder_count = _encoder_count;
-    _wheel_status.encoder_delta = _encoder_count - _encoder_count_prev;
-    _wheel_status.encoder_speed_rpm = _current_speed_rpm;
-    _wheel_status.encoder_healthy = (hrt_absolute_time() - _last_encoder_time) < WATCHDOG_TIMEOUT_US;
-
-    // Update traction control status
-    _wheel_status.slip_detected = _slip_detected;
-    _wheel_status.slip_ratio = _slip_ratio;
-    _wheel_status.traction_limit_factor = _traction_limit_factor;
-    _wheel_status.slip_events_count = _performance.slip_events;
-
-    // Update motor status
-    _wheel_status.motor_current_amps = _motor_current;
-    _wheel_status.motor_temperature_c = 25.0f; // Would come from actual sensor
-    _wheel_status.supply_voltage_v = 12.0f; // Would come from actual measurement
-    _wheel_status.current_limit_active = _motor_current > _current_limit.get();
-
-    // Update performance metrics
-    _wheel_status.speed_error_rms = _performance.speed_error_rms;
-    _wheel_status.control_effort_avg = _performance.control_effort_avg;
-    _wheel_status.missed_updates_count = _performance.missed_updates;
-    _wheel_status.safety_violations_count = _performance.safety_violations;
-    _wheel_status.max_speed_error_rpm = _performance.max_speed_error;
-
-    // Update control configuration
-    _wheel_status.control_mode = 0; // Speed control mode
-    _wheel_status.traction_control_enabled = _traction_control_enable.get();
-    _wheel_status.speed_limit_rpm = _max_wheel_speed.get();
-    _wheel_status.last_command_time = _last_command_time;
-
-    // Additional encoder health check
-    _wheel_status.encoder_healthy = (_performance.encoder_errors == 0) &&
-                                   ((hrt_absolute_time() - _last_encoder_time) < WATCHDOG_TIMEOUT_US);
-
-    // Publish wheel status
-    _wheel_status_pub.publish(_wheel_status);
-}
-
-void WheelController::update_performance_metrics()
-{
-    // Update control effort average
-    _performance.control_effort_avg = 0.95f * _performance.control_effort_avg +
-                                     0.05f * fabsf(_pwm_output / MAX_PWM_OUTPUT);
-
-    // Check if we missed any control cycles
-    const hrt_abstime now = hrt_absolute_time();
-    if ((now - _performance.last_health_check) > 2 * CONTROL_INTERVAL_US) {
-        _performance.missed_updates++;
-    }
-    _performance.last_health_check = now;
-}
-
-void WheelController::calculate_health_score()
-{
-    float health = 100.0f;
-
-    // Deduct points for various issues
-    health -= _performance.safety_violations * 5.0f;
-    health -= _performance.encoder_errors * 2.0f;
-    health -= _performance.missed_updates * 1.0f;
-    health -= _performance.slip_events * 0.5f;
-
-    // Deduct for high RMS error
-    if (_performance.speed_error_rms > 10.0f) {
-        health -= (_performance.speed_error_rms - 10.0f) * 2.0f;
-    }
-
-    // Ensure health score is in valid range
-    _health_score = math::constrain(health, 0.0f, 100.0f);
+	// Check encoder timeout
+	if (now - _state.last_encoder_us > ENCODER_TIMEOUT_US) {
+		PX4_WARN("Encoder timeout");
+		_state.emergency_stop = true;
+	}
 }
 
 void WheelController::parameters_update()
 {
-    // Update local parameter cache
-    _speed_p_gain.update();
-    _speed_i_gain.update();
-    _speed_d_gain.update();
-    _speed_i_max.update();
-    _max_wheel_speed.update();
-    _speed_ramp_rate.update();
-    _traction_control_enable.update();
-    _slip_threshold.update();
-    _current_limit.update();
-    _gear_ratio.update();
-    _encoder_cpr.update();
+	updateParams();
+
+	// Update PID gains
+	_speed_controller.setGains(_param_speed_p.get(),
+				   _param_speed_i.get(),
+				   _param_speed_d.get());
+
+	// Update filter frequency
+	_speed_filter.set_cutoff_frequency(CONTROL_DT, _param_filter_freq.get());
 }
 
-float WheelController::calculate_slip_ratio(float wheel_speed, float reference_speed)
+float WheelController::constrain_pwm(float value) const
 {
-    if (fabsf(reference_speed) < 0.1f) {
-        return 0.0f; // Avoid division by zero
-    }
+	return math::constrain(value, MIN_PWM_VALUE, MAX_PWM_VALUE);
+}
 
-    return (wheel_speed - reference_speed) / fabsf(reference_speed);
+bool WheelController::is_setpoint_valid() const
+{
+	const uint64_t timeout_us = static_cast<uint64_t>(_param_setpoint_timeout.get() * 1e6f);
+	return (hrt_absolute_time() - _state.last_setpoint_us) < timeout_us;
 }
 
 int WheelController::print_status()
 {
-    PX4_INFO("Wheel Controller %s (Instance %d)", _is_front_wheel ? "FRONT" : "REAR", _instance);
-    PX4_INFO("  Status: %s, Health: %.1f%%",
-             _controller_healthy ? "OK" : "ERROR",
-             (double)_health_score);
-    PX4_INFO("  Speed: %.1f RPM (Target: %.1f RPM)",
-             (double)_current_speed_rpm,
-             (double)_target_speed_rpm);
-    PX4_INFO("  PWM Output: %.1f", (double)_pwm_output);
-    PX4_INFO("  Emergency Stop: %s", _emergency_stop ? "ACTIVE" : "inactive");
-    PX4_INFO("  Traction Control: %s (Limit: %.2f)",
-             _traction_control_enable.get() ? "enabled" : "disabled",
-             (double)_traction_limit_factor);
-    PX4_INFO("  Performance:");
-    PX4_INFO("    Speed Error RMS: %.2f RPM", (double)_performance.speed_error_rms);
-    PX4_INFO("    Control Effort: %.1f%%", (double)(_performance.control_effort_avg * 100.0f));
-    PX4_INFO("    Slip Events: %lu", (unsigned long)_performance.slip_events);
-    PX4_INFO("    Safety Violations: %lu", (unsigned long)_performance.safety_violations);
+	PX4_INFO("=== Wheel Controller Status ===");
+	PX4_INFO("Speed: %.2f rad/s (target: %.2f)",
+		 (double)_state.speed_rad_s, (double)_state.setpoint_rad_s);
+	PX4_INFO("PWM: %.3f", (double)_state.pwm_output);
+	PX4_INFO("Motor enabled: %s", _state.motor_enabled ? "YES" : "NO");
+	PX4_INFO("Emergency stop: %s", _state.emergency_stop ? "YES" : "NO");
+	PX4_INFO("Initialized: %s", _state.initialized ? "YES" : "NO");
 
-    perf_print_counter(_loop_perf);
-    perf_print_counter(_control_latency_perf);
-    perf_print_counter(_encoder_timeout_perf);
+	perf_print_counter(_loop_perf);
+	perf_print_counter(_control_perf);
 
-    return 0;
+	return 0;
+}
+
+int WheelController::task_spawn(int argc, char *argv[])
+{
+	WheelController *instance = new WheelController();
+
+	if (instance == nullptr) {
+		PX4_ERR("alloc failed");
+		return PX4_ERROR;
+	}
+
+	if (!instance->init()) {
+		delete instance;
+		return PX4_ERROR;
+	}
+
+	_object.store(instance);
+	_task_id = task_id_is_work_queue;
+
+	return PX4_OK;
+}
+
+int WheelController::print_usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
+
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Wheel controller for articulated wheel loader.
+
+Implements closed-loop speed control using quadrature encoder feedback
+and DRV8701 H-bridge motor driver interface.
+
+### Features
+- PID speed control with configurable gains
+- Low-pass filtering for noise reduction
+- Safety monitoring and emergency stop
+- Instance-based multi-wheel support
+- Performance monitoring
+
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("wheel_controller", "driver");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+
+	return 0;
+}
+
+int WheelController::custom_command(int argc, char *argv[])
+{
+	return print_usage("unknown command");
 }
