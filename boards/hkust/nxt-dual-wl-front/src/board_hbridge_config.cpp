@@ -48,18 +48,18 @@ hbridge_config_t hbridge_configs[HBRIDGE_MAX_INSTANCES] = {
     // Channel 0 - Boom control via PWM 0
     {
         .instance_id = 0,
-        .name = "boom_motor",
+        .name = "bucket_motor",
         .enabled = true,
         .pwm_ch = 0,
-        .dir_gpio = GPIO_DRV8701_LEFT_DIR   // PE14 - Boom direction
+        .dir_gpio = GPIO_DRV8701_LEFT_DIR   // PE14 - Bucket direction
     },
     // Channel 1 - Bucket control via PWM 1
     {
         .instance_id = 1,
-        .name = "bucket_motor",
+        .name = "front_wheel",
         .enabled = true,
         .pwm_ch = 1,
-        .dir_gpio = GPIO_DRV8701_RIGHT_DIR  // PE13 - Bucket direction
+        .dir_gpio = GPIO_DRV8701_RIGHT_DIR  // PE13 - Front wheel direction
     }
 };
 
