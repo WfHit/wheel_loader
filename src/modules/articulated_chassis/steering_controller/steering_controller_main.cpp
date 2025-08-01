@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file main.cpp
+ * @file steering_controller_main.cpp
  * Steering controller main entry point for articulated wheel loader.
  *
  * @author PX4 Development Team
@@ -47,11 +47,8 @@ extern "C" __EXPORT int steering_controller_main(int argc, char *argv[]);
  *
  * Controls the steering servo via ST3125 servo controller with:
  * - Direct position commands (ST3125 handles internal PID)
- * - Slip compensation based on PredictiveTraction data
- * - Rate limiting and safety monitoring
- * - Feedforward control for improved dynamic response
  * - Limit sensor integration for safety
- * - Comprehensive safety management
+ * - Comprehensive safety management and monitoring
  *
  * Usage examples:
  * $ steering_controller start
@@ -61,5 +58,5 @@ extern "C" __EXPORT int steering_controller_main(int argc, char *argv[]);
 
 int steering_controller_main(int argc, char *argv[])
 {
-    return SteeringController::main(argc, argv);
+	return SteeringController::main(argc, argv);
 }
