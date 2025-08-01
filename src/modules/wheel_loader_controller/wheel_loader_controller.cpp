@@ -215,11 +215,11 @@ void WheelLoaderController::processSlipEstimation()
 		if (_slip_estimation_sub.copy(&slip_data)) {
 			_current_slip_data = slip_data;
 			_last_slip_estimation_time = hrt_absolute_time();
-			
+
 			// Update slip detection flags
 			_slip_detected = slip_data.slip_detected;
 			_critical_slip = slip_data.critical_slip;
-			
+
 			// Calculate traction reduction factor based on slip
 			if (_critical_slip) {
 				// Reduce power significantly for critical slip
@@ -237,7 +237,7 @@ void WheelLoaderController::processSlipEstimation()
 				// Gradually restore full traction when no slip
 				_traction_reduction_factor = math::min(_traction_reduction_factor + 0.05f, 1.0f);
 			}
-			
+
 			// Apply additional safety measures for wheel speed variance
 			if (slip_data.wheel_speed_variance > 0.5f) {
 				_traction_reduction_factor *= 0.8f; // Further reduce for high variance
@@ -360,8 +360,8 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	// Generate front wheel controller command
 	wheel_speeds_setpoint_s front_wheel_cmd{};
 	front_wheel_cmd.timestamp = now;
-	front_wheel_cmd.front_wheel_speed_rad_s = (front_left_speed + front_right_speed) * 0.5f;
-	front_wheel_cmd.rear_wheel_speed_rad_s = front_wheel_cmd.front_wheel_speed_rad_s; // Synchronized
+	const float wheel_radius_m = 0.25f; // Should be parameterized
+	front_wheel_cmd.wheel_speed_m_s = (front_left_speed + front_right_speed) * 0.5f * wheel_radius_m;
 	front_wheel_cmd.max_acceleration = _max_accel.get();
 	front_wheel_cmd.synchronized = true;
 	front_wheel_cmd.differential_enable = false;
@@ -369,8 +369,7 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	// Generate rear wheel controller command
 	wheel_speeds_setpoint_s rear_wheel_cmd{};
 	rear_wheel_cmd.timestamp = now;
-	rear_wheel_cmd.front_wheel_speed_rad_s = (rear_left_speed + rear_right_speed) * 0.5f;
-	rear_wheel_cmd.rear_wheel_speed_rad_s = rear_wheel_cmd.front_wheel_speed_rad_s; // Synchronized
+	rear_wheel_cmd.wheel_speed_m_s = (rear_left_speed + rear_right_speed) * 0.5f * wheel_radius_m;
 	rear_wheel_cmd.max_acceleration = _max_accel.get();
 	rear_wheel_cmd.synchronized = true;
 	rear_wheel_cmd.differential_enable = false;
@@ -404,10 +403,8 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 
 	// Apply emergency stop overrides
 	if (cmd.emergency_stop || _emergency_stop_active) {
-		front_wheel_cmd.front_wheel_speed_rad_s = 0.0f;
-		front_wheel_cmd.rear_wheel_speed_rad_s = 0.0f;
-		rear_wheel_cmd.front_wheel_speed_rad_s = 0.0f;
-		rear_wheel_cmd.rear_wheel_speed_rad_s = 0.0f;
+		front_wheel_cmd.wheel_speed_m_s = 0.0f;
+		rear_wheel_cmd.wheel_speed_m_s = 0.0f;
 	}
 
 	// Publish commands

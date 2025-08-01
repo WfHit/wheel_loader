@@ -106,24 +106,6 @@ bool is_slipping                 # Traction control active flag
 - **Format**: `PREFIX_NAME`
 - **Prefix**: 2-4 letter module identifier
 
-### Parameter Types
-- **Float parameters**: `PARAM_DEFINE_FLOAT(NAME, value)`
-- **Integer parameters**: `PARAM_DEFINE_INT32(NAME, value)` (Note: Use `ParamInt` in class definitions, not `ParamInt32`)
-- **Boolean parameters**: Use `PARAM_DEFINE_INT32` with 0/1 values
-
-### Examples
-```c
-// GOOD - 16 characters or less
-PARAM_DEFINE_FLOAT(LAT_MIN_FRONT, 0.2f);      // 13 chars ✓
-PARAM_DEFINE_FLOAT(LAT_RATE_LIM, 1.0f);       // 12 chars ✓
-PARAM_DEFINE_INT32(LAT_ADAPT_EN, 1);          // 12 chars ✓
-
-// BAD - Too long (>16 chars)
-PARAM_DEFINE_FLOAT(LAT_MIN_FRONT_RATIO, 0.2f);    // 19 chars ✗
-PARAM_DEFINE_FLOAT(LAT_EFFICIENCY_WEIGHT, 0.4f);  // 21 chars ✗
-PARAM_DEFINE_FLOAT(LAT_TRACTION_WEIGHT, 0.6f);    // 19 chars ✗
-```
-
 ### Parameter Usage in Class Definitions
 ```cpp
 // Use ParamInt (not ParamInt32) for integer parameters
@@ -235,7 +217,7 @@ module_name/
 ├── module_name_main.cpp        # Entry point
 ├── module_name_class.hpp       # Main class header
 ├── module_name_class.cpp       # Main class implementation
-└── module_name_params.c        # Parameters (NOT in CMakeLists.txt)
+└── module.yaml                 # Parameters (add to CMakeLists.txt)
 ```
 
 ### CMakeLists.txt Format
@@ -251,6 +233,8 @@ px4_add_module(
 	DEPENDS
 		mathlib
 		# other dependencies
+	MODULE_CONFIG
+		module.yaml
 )
 ```
 
@@ -262,15 +246,6 @@ menuconfig ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
 	---help---
 		Enable support for load aware torque distribution
 
-if ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
-
-config ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE_DEBUG
-	bool "Enable debug output"
-	default n
-	---help---
-		Enable additional debug output
-
-endif # ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
 ```
 
 ## Formatting Rules
@@ -364,8 +339,7 @@ To keep parameter names under 16 characters, use these abbreviations:
 - Parameter names: ≤16 chars (`LAT_MIN_FRONT` not `LAT_MINIMUM_FRONT_RATIO`)
 - uORB topics: lowercase (`load_aware_torque` not `LoadAwareTorque`)
 - Tab width: 4 spaces
-- NO `module.yaml`, YES `Kconfig`
-- `params.c` NOT in CMakeLists.txt SRCS
+- Using `module.yaml`, Adding `Kconfig`
 - Check existing uORB messages before creating new ones
 - Always specify units in parameter documentation
 
@@ -376,7 +350,7 @@ To keep parameter names under 16 characters, use these abbreviations:
 - [ ] Checked for existing uORB messages?
 - [ ] Units specified in parameter docs?
 - [ ] Kconfig file created?
-- [ ] params.c NOT in CMakeLists.txt?
+- [ ] module.yaml NOT in CMakeLists.txt?
 - [ ] Tab indentation (4 spaces)?
 
 This style guide ensures consistency with PX4 standards while adhering to the specific requirements for the wheel loader project.

@@ -66,7 +66,7 @@ void SlipEstimator::updateVehicleState()
             // Verify this is the correct instance
             if (encoder_data.instance == front_idx) {
                 // Convert 1/million rad/s to linear speed (m/s) using wheel radius parameter
-                _vehicle_state.wheel_speed_front = encoder_data.velocity * 1e-6f * _param_wheel_radius.get();
+                _vehicle_state.wheel_speed_front = static_cast<float>(encoder_data.velocity * 1e-6) * _param_wheel_radius.get();
             }
         }
     }
@@ -78,7 +78,7 @@ void SlipEstimator::updateVehicleState()
             // Verify this is the correct instance
             if (encoder_data.instance == rear_idx) {
                 // Convert 1/million rad/s to linear speed (m/s) using wheel radius parameter
-                _vehicle_state.wheel_speed_rear = encoder_data.velocity * 1e-6f * _param_wheel_radius.get();
+                _vehicle_state.wheel_speed_rear = static_cast<float>(encoder_data.velocity * 1e-6) * _param_wheel_radius.get();
                 _vehicle_state.last_update = encoder_data.timestamp;
             }
         }

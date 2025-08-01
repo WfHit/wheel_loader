@@ -38,7 +38,7 @@
 #include <px4_platform_common/i2c_spi_buses.h>
 #include <px4_platform_common/px4_config.h>
 #include <uORB/topics/sensor_mag_encoder.h>
-#include <uORB/PublicationMulti.hpp>
+#include <uORB/Publication.hpp>
 #include <lib/perf/perf_counter.h>
 #include <drivers/drv_hrt.h>
 
@@ -102,7 +102,7 @@ protected:
 
 private:
 
-	uORB::PublicationMulti<sensor_mag_encoder_s> _sensor_mag_encoder_pub{ORB_ID(sensor_mag_encoder)};
+	uORB::Publication<sensor_mag_encoder_s> _sensor_mag_encoder_pub{ORB_ID(sensor_mag_encoder)};
 
 	static const hrt_abstime SAMPLE_INTERVAL{10_ms};
 
@@ -123,9 +123,16 @@ private:
 	bool readAngle();
 	bool readStatus();
 	bool readMagnitude();
+	bool readSensorData();
+
+	void processSensorData();
+	void publishSensorData();
+	void updateReadyCounter(bool success);
+
+	float normalizeAngle(float angle);
+	void printMagnetStatus();
 
 	int readReg(uint8_t addr, uint8_t *buf, size_t len);
-
 	int writeReg(uint8_t addr, uint8_t *buf, size_t len);
 
 };
