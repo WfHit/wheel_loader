@@ -55,7 +55,7 @@ UorbUartBridge::~UorbUartBridge()
 {
 	// Stop work queue
 	ScheduledWorkItem::deinit();
-	
+
 	// Clean up UART transport
 	if (_uart_transport) {
 		delete _uart_transport;
@@ -312,6 +312,28 @@ void UorbUartBridge::processOutgoingMessages()
 			PX4_WARN("Failed to send steering command");
 		}
 	}
+
+	// Process load lamp command (X7+ -> NXT rear)
+	load_lamp_command_s load_lamp_command;
+	if (_load_lamp_command_sub.update(&load_lamp_command)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+		frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::LOAD_LAMP_COMMAND);
+		frame.header.board_id = distributed_uorb::BOARD_ID_X7_PLUS;
+		frame.header.length = sizeof(load_lamp_command);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &load_lamp_command, sizeof(load_lamp_command));
+
+		if (_uart_transport->sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send load lamp command");
+		}
+	}
 }
 
 void UorbUartBridge::processIncomingMessages()
@@ -405,6 +427,54 @@ void UorbUartBridge::processIncomingMessages()
 			break;
 		}
 
+		case distributed_uorb::UartMessageId::HBRIDGE_STATUS_FRONT_0: {
+			if (frame.header.length == sizeof(hbridge_status_s)) {
+				hbridge_status_s status;
+				memcpy(&status, frame.payload, sizeof(status));
+				_hbridge_status_front_0_pub.publish(status);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid HBridge front 0 status length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::HBRIDGE_STATUS_FRONT_1: {
+			if (frame.header.length == sizeof(hbridge_status_s)) {
+				hbridge_status_s status;
+				memcpy(&status, frame.payload, sizeof(status));
+				_hbridge_status_front_1_pub.publish(status);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid HBridge front 1 status length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::HBRIDGE_STATUS_REAR_0: {
+			if (frame.header.length == sizeof(hbridge_status_s)) {
+				hbridge_status_s status;
+				memcpy(&status, frame.payload, sizeof(status));
+				_hbridge_status_rear_0_pub.publish(status);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid HBridge rear 0 status length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::HBRIDGE_STATUS_REAR_1: {
+			if (frame.header.length == sizeof(hbridge_status_s)) {
+				hbridge_status_s status;
+				memcpy(&status, frame.payload, sizeof(status));
+				_hbridge_status_rear_1_pub.publish(status);
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid HBridge rear 1 status length: %d", frame.header.length);
+			}
+			break;
+		}
+
 		default:
 			_stats.rx_errors++;
 			PX4_WARN("Unknown message ID: %d", frame.header.msg_id);
@@ -475,8 +545,8 @@ int UorbUartBridge::print_status()
 
 	if (_uart_transport && _uart_initialized) {
 		PX4_INFO("UART transport initialized and ready");
-		
-		// Print current statistics  
+
+		// Print current statistics
 		const_cast<UorbUartBridge*>(this)->printStatistics();
 	} else {
 		PX4_INFO("UART transport not initialized");

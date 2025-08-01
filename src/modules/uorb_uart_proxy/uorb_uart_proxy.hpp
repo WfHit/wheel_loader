@@ -51,6 +51,8 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/steering_command.h>
 #include <uORB/topics/steering_status.h>
+#include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/load_lamp_command.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/uart_protocol/uart_protocol.hpp>
@@ -129,6 +131,10 @@ private:
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
 	uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
 
+	// HBridge status subscriptions (multi-instance, NXT → X7+)
+	uORB::Subscription _hbridge_status_sub_0{ORB_ID(hbridge_status), 0};
+	uORB::Subscription _hbridge_status_sub_1{ORB_ID(hbridge_status), 1};
+
 	// uORB publications (incoming from main board)
 	uORB::Publication<wheel_loader_setpoint_s> _wheel_loader_setpoint_pub{ORB_ID(wheel_loader_setpoint)};
 	uORB::Publication<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
@@ -137,6 +143,7 @@ private:
 	uORB::Publication<boom_command_s> _boom_command_pub{ORB_ID(boom_command)};
 	uORB::Publication<bucket_command_s> _bucket_command_pub{ORB_ID(bucket_command)};
 	uORB::Publication<steering_command_s> _steering_command_pub{ORB_ID(steering_command)};
+	uORB::Publication<load_lamp_command_s> _load_lamp_command_pub{ORB_ID(load_lamp_command)};
 
 	// Communication statistics
 	struct {

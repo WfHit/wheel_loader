@@ -20,6 +20,8 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/steering_command.h>
 #include <uORB/topics/steering_status.h>
+#include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/load_lamp_command.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/topic_registry/topic_registry.hpp>
@@ -52,7 +54,7 @@ private:
 
 	// Constants
 	static constexpr uint32_t MAIN_LOOP_INTERVAL_US = 10000;  // 10ms
-	static constexpr uint32_t HEARTBEAT_INTERVAL_US = 1000000; // 1s  
+	static constexpr uint32_t HEARTBEAT_INTERVAL_US = 1000000; // 1s
 	static constexpr uint32_t STATISTICS_INTERVAL_US = 5000000; // 5s
 	static constexpr uint32_t HEARTBEAT_TIMEOUT_US = 2000000;  // 2s
 
@@ -80,6 +82,7 @@ private:
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _bucket_command_sub{ORB_ID(bucket_command)};
 	uORB::Subscription _steering_command_sub{ORB_ID(steering_command)};
+	uORB::Subscription _load_lamp_command_sub{ORB_ID(load_lamp_command)};
 
 	// Publications for incoming topics (NXT → X7+)
 	uORB::Publication<limit_sensor_s> _limit_sensor_bucket_pub{ORB_ID(limit_sensor)};
@@ -88,6 +91,12 @@ private:
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 	uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
 	uORB::Publication<steering_status_s> _steering_status_pub{ORB_ID(steering_status)};
+
+	// HBridge status publications (multi-instance, NXT → X7+)
+	uORB::Publication<hbridge_status_s> _hbridge_status_front_0_pub{ORB_ID(hbridge_status), 0};
+	uORB::Publication<hbridge_status_s> _hbridge_status_front_1_pub{ORB_ID(hbridge_status), 1};
+	uORB::Publication<hbridge_status_s> _hbridge_status_rear_0_pub{ORB_ID(hbridge_status), 2};
+	uORB::Publication<hbridge_status_s> _hbridge_status_rear_1_pub{ORB_ID(hbridge_status), 3};
 
 	// Statistics structure
 	struct {

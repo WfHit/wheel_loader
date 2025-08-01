@@ -252,6 +252,21 @@ void UorbUartProxy::processIncomingMessages()
 			break;
 		}
 
+		case distributed_uorb::UartMessageId::LOAD_LAMP_COMMAND: {
+			// Only process if this is the rear board (load lamp control)
+			if (_board_id == distributed_uorb::BOARD_ID_NXT_REAR && frame.header.length == sizeof(load_lamp_command_s)) {
+				load_lamp_command_s load_lamp_command;
+				memcpy(&load_lamp_command, frame.payload, sizeof(load_lamp_command));
+				_load_lamp_command_pub.publish(load_lamp_command);
+			} else if (_board_id != distributed_uorb::BOARD_ID_NXT_REAR) {
+				// Ignore messages not intended for this board
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid load lamp command length: %d", frame.header.length);
+			}
+			break;
+		}
+
 		default:
 			_stats.rx_errors++;
 			PX4_WARN("Unknown message ID: %d", frame.header.msg_id);
@@ -384,6 +399,65 @@ void UorbUartProxy::processOutgoingMessages()
 				_stats.tx_errors++;
 				PX4_WARN("Failed to send steering status");
 			}
+		}
+	}
+
+	// Send HBridge status (multi-instance, NXT → X7+)
+	hbridge_status_s hbridge_status;
+
+	// Send HBridge status instance 0
+	if (_hbridge_status_sub_0.update(&hbridge_status)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type and instance
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HBRIDGE_STATUS_FRONT_0);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HBRIDGE_STATUS_REAR_0);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(hbridge_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &hbridge_status, sizeof(hbridge_status));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send HBridge status instance 0");
+		}
+	}
+
+	// Send HBridge status instance 1
+	if (_hbridge_status_sub_1.update(&hbridge_status)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type and instance
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HBRIDGE_STATUS_FRONT_1);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::HBRIDGE_STATUS_REAR_1);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(hbridge_status);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &hbridge_status, sizeof(hbridge_status));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send HBridge status instance 1");
 		}
 	}
 }
