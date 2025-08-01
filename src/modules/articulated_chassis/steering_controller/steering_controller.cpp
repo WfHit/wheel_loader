@@ -183,17 +183,19 @@ void SteeringController::process_limit_sensors()
 {
 	limit_sensor_s sensor_data;
 
-	while (_limit_sensor_sub.update(&sensor_data)) {
-		// Update limit sensor states based on instance
-		if (sensor_data.instance == _limit_left_instance.get()) {
-			_left_limit_active = sensor_data.state;
+	// Process all limit sensor instances
+	for (auto &sensor_sub : _limit_sensor_subs) {
+		while (sensor_sub.update(&sensor_data)) {
+			// Update limit sensor states based on configured instances
+			if (sensor_data.instance == _limit_left_instance.get()) {
+				_left_limit_active = sensor_data.state;
+				_limit_sensors_healthy = !sensor_data.redundancy_fault;
 
-		} else if (sensor_data.instance == _limit_right_instance.get()) {
-			_right_limit_active = sensor_data.state;
+			} else if (sensor_data.instance == _limit_right_instance.get()) {
+				_right_limit_active = sensor_data.state;
+				_limit_sensors_healthy = !sensor_data.redundancy_fault;
+			}
 		}
-
-		// Update sensor health
-		_limit_sensors_healthy = !sensor_data.redundancy_fault;
 	}
 }
 
