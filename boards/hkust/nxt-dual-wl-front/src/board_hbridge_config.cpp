@@ -35,6 +35,7 @@
  * @file board_hbridge_config.cpp
  *
  * Board-specific H-Bridge configuration for NXT-Dual-WL-Front
+ * This board manages boom and bucket operations
  */
 
 #include <board_config.h>
@@ -42,43 +43,29 @@
 
 #ifdef BOARD_HAS_HBRIDGE_CONFIG
 
-// Define H-Bridge instances with their hardware mappings for front board
-const hbridge_config_t g_hbridge_config[BOARD_NUM_HBRIDGES] = {
-    // Instance 0: Front Wheel Drive H-Bridge
+// Channel configurations for front board (boom and bucket)
+hbridge_config_t hbridge_configs[HBRIDGE_MAX_INSTANCES] = {
+    // Channel 0 - Boom control via PWM 0
     {
         .instance_id = 0,
-        .name = "front_wheel_drive",
-
-        // PWM Configuration
-        .left_pwm_channel = 0,          // Timer channel for left wheel
-        .right_pwm_channel = 1,         // Timer channel for right wheel
-        .pwm_frequency = 25000,         // 25 kHz PWM frequency
-
-        // Direction Control GPIOs
-        .left_dir_gpio = GPIO_DRV8701_LEFT_DIR,    // PE14 - Left wheel direction
-        .right_dir_gpio = GPIO_DRV8701_RIGHT_DIR,  // PE13 - Right wheel direction
-        .left_dir_inverted = false,     // Normal direction logic
-        .right_dir_inverted = false,    // Normal direction logic
-
-        // Enable GPIO
-        .enable_gpio = GPIO_DRV8701_ENABLE,        // Enable pin for H-Bridge
-
-        // Limit Sensor Integration (not used for wheel drive)
-        .left_fwd_limit_function = 255,  // Disabled
-        .left_rev_limit_function = 255,  // Disabled
-        .right_fwd_limit_function = 255, // Disabled
-        .right_rev_limit_function = 255, // Disabled
-
-        // Current Sensing (future expansion)
-        .current_sensing_enabled = false,
-        .left_current_adc_channel = 255,  // Disabled
-        .right_current_adc_channel = 255, // Disabled
-        .current_scale_factor = 0.0f,
-
-        // Fault Detection (future expansion)
-        .fault_gpio = 0,                 // Not used
-        .fault_inverted = false
+        .name = "boom_motor",
+        .enabled = true,
+        .pwm_ch = 0,
+        .dir_gpio = GPIO_DRV8701_LEFT_DIR   // PE14 - Boom direction
+    },
+    // Channel 1 - Bucket control via PWM 1
+    {
+        .instance_id = 1,
+        .name = "bucket_motor",
+        .enabled = true,
+        .pwm_ch = 1,
+        .dir_gpio = GPIO_DRV8701_RIGHT_DIR  // PE13 - Bucket direction
     }
+};
+
+// Manager configuration for shared resources
+hbridge_manager_config_t hbridge_manager_config = {
+    .enable_gpio = GPIO_DRV8701_ENABLE  // Shared enable GPIO for all channels
 };
 
 #endif // BOARD_HAS_HBRIDGE_CONFIG

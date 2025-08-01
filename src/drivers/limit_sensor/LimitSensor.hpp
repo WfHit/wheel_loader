@@ -55,6 +55,7 @@ public:
 
 private:
     void Run() override;
+	void updateParams() override;
 
     // Static storage for multiple instances
     static LimitSensor *_instances[MAX_INSTANCES];
@@ -137,6 +138,4 @@ private:
         (ParamBool<px4::params::LS_3_ENABLE>) _param_ls3_enable,
         (ParamInt<px4::params::LS_3_FUNCTION>) _param_ls3_function
     )
-
-    void updateParams() override;
 };

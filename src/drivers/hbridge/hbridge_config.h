@@ -8,15 +8,27 @@
 
 #include <stdint.h>
 
+#define HBRIDGE_MAX_INSTANCES 2
+
 /**
- * @brief Board-specific H-Bridge configuration
+ * @brief Per-instance H-Bridge configuration
+ * Each instance controls one H-bridge channel
  */
 struct hbridge_config_t {
     uint8_t instance_id;        ///< Instance identifier (0, 1, etc.)
     const char *name;           ///< Human readable name
-    uint32_t left_dir_gpio;     ///< Left channel direction GPIO
-    uint32_t right_dir_gpio;    ///< Right channel direction GPIO
-    uint32_t enable_gpio;       ///< H-bridge enable GPIO (0 = not used)
-    int left_pwm_channel;       ///< Left channel PWM channel number
-    int right_pwm_channel;      ///< Right channel PWM channel number
+    bool enabled;               ///< Whether this channel is enabled
+    int pwm_ch;                 ///< PWM channel number
+    uint32_t dir_gpio;          ///< Direction control GPIO
 };
+
+/**
+ * @brief Manager configuration for shared resources
+ */
+struct hbridge_manager_config_t {
+    uint32_t enable_gpio;       ///< Shared enable GPIO (0 = not used)
+};
+
+// Board-specific configurations (defined in board files)
+extern hbridge_config_t hbridge_configs[HBRIDGE_MAX_INSTANCES];
+extern hbridge_manager_config_t hbridge_manager_config;

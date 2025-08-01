@@ -80,6 +80,12 @@ QuadratureEncoder::QuadratureEncoder(uint8_t instance) :
     // Set manager instance if this is the manager
     if (_instance == MANAGER_INSTANCE) {
         _manager_instance = this;
+    } else {
+        // Register regular instances
+        if (_instance < MAX_INSTANCES) {
+            _instances[_instance] = this;
+            _num_instances.fetch_add(1);
+        }
     }
 }
 
@@ -553,8 +559,6 @@ bool QuadratureEncoder::start_instance(int instance)
 
     // Initialize instance
     if (obj->init()) {
-        _instances[instance] = obj;
-        _num_instances.fetch_add(1);
         PX4_INFO("Started encoder instance %d", instance);
         return true;
     } else {

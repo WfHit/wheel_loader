@@ -35,14 +35,16 @@
  * @file hbridge.hpp
  *
  * Multi-instance H-Bridge motor driver
+ * Each instance controls one H-bridge channel with shared enable control
  */
 
 #pragma once
 
+#include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/atomic.h>
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_motor_pwm.h>
 #include <lib/mathlib/mathlib.h>
@@ -57,90 +59,92 @@
 #include <board_config.h>
 #include "hbridge_config.h"
 
-using namespace time_literals;
-
-// Module configuration
-static constexpr char MODULE_NAME[] = "hbridge";
-static constexpr uint8_t MAX_INSTANCES = 4;
-static constexpr uint8_t MANAGER_INSTANCE = 255;
-
 class HBridge : public ModuleBase<HBridge>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
+	// Module configuration
+	static constexpr uint8_t MAX_INSTANCES = 2;  // Support 2 H-bridge channels
+	static constexpr unsigned SCHEDULE_INTERVAL = 10000;  // 10ms = 100Hz update rate
+	static constexpr uint8_t MANAGER_INSTANCE = 255;        // Instance 255 manages shared enable
+
 	HBridge(uint8_t instance);
 	~HBridge() override;
 
+	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
 	static int custom_command(int argc, char *argv[]);
 	static int print_usage(const char *reason = nullptr);
 
 	bool init();
 	int print_status() override;
-	void Run() override;
 
-	static int test(int argc, char *argv[]);
+private:
+    void Run() override;
+	void updateParams() override;
 
 	// Multi-instance management
 	static HBridge *_instances[MAX_INSTANCES];
 	static px4::atomic<uint8_t> _num_instances;
-	static HBridge *_manager_instance;
+	static HBridge *_manager_instance; // Special manager instance
+
+	// Instance details
+	const uint8_t _instance;
+	const hbridge_config_t* _board_config{nullptr};
+
+	// Current state
+	float _current_duty_cycle{0.0f};
+	bool _forward_limit_active{false};
+	bool _reverse_limit_active{false};
+	bool _initialized{false};
+
+	// Publications
+    orb_advert_t _pub_handle{nullptr};
+
+	// Subscriptions (instance-specific command subscription)
+	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
+	uORB::SubscriptionMultiArray _command_sub{ORB_ID(hbridge_command)};
+	uORB::SubscriptionMultiArray _limit_sensor_sub{ORB_ID(limit_sensor)};
+
+	// Performance counters
+	perf_counter_t _loop_perf{nullptr};
+	perf_counter_t _command_perf{nullptr};
+
+	// Hardware control
+	bool configure_hardware();
+	void output_pwm();
+	void set_direction(bool forward);
+	void control_enable(bool enable);
+
+	// Command processing
+	void process_commands();
+	void process_limit_sensors();
+
+	// Safety and limits
+	void apply_safety_limits();
+
+	// Utilities
+	bool is_manager_instance() const { return _instance == MANAGER_INSTANCE; }
+	int get_msg_instance() const { return _instance == 0 ? _param_msg_instance_0.get() : _param_msg_instance_1.get(); }
+	int get_fwd_limit() const { return _instance == 0 ? _param_0_fwd_limit.get() : _param_1_fwd_limit.get(); }
+	int get_rev_limit() const { return _instance == 0 ? _param_0_rev_limit.get() : _param_1_rev_limit.get(); }
+	bool get_dir_reverse() const { return _instance == 0 ? (_param_dir_reverse_0.get() != 0) : (_param_dir_reverse_1.get() != 0); }
+	void publish_status();
+
+	// Board configuration
+	static const hbridge_config_t* get_board_config(uint8_t instance);
+	static const hbridge_manager_config_t* get_manager_config();
 	static bool start_instance(int instance);
 	static void stop_all_instances();
 
-private:
-	enum ChannelId : int {
-		LEFT_CHANNEL = 0,
-		RIGHT_CHANNEL = 1
-	};
-
-	static constexpr int MAX_CHANNELS = 2;
-	static constexpr unsigned SCHEDULE_INTERVAL = 10_ms;
-
-	struct channel_data_s {
-		float current_duty_cycle{0.0f};
-		bool enabled{false};
-		bool initialized{false};
-		bool forward_limit_active{false};
-		bool reverse_limit_active{false};
-	};
-
-	// Instance data
-	const uint8_t _instance;
-	const hbridge_config_t *_board_config{nullptr};
-	channel_data_s _channels[MAX_CHANNELS];
-
-	// Publications and subscriptions
-	uORB::PublicationMulti<hbridge_status_s> _status_pub{ORB_ID(hbridge_status)};
-	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _command_sub{ORB_ID(hbridge_command)};
-	uORB::SubscriptionMultiArray<limit_sensor_s, 4> _limit_sensor_sub{ORB_ID::limit_sensor};
-
-	// Performance counters
-	perf_counter_t _loop_perf;
-	perf_counter_t _command_perf;
-
-	// State
-	bool _is_running{false};
-	static bool _pwm_initialized;
-	hrt_abstime _last_command_time{0};
-	uint32_t _command_count{0};
-	uint32_t _error_count{0};
-
-	// Methods
-	void process_commands();
-	void process_limit_sensors();
-	void publish_status();
-	bool configure_channels();
-	void set_channel_speed(int channel, float duty_cycle);
-	void update_channel_direction(int channel, bool forward);
-	bool check_limit_sensor_for_direction(int channel, bool forward);
-	int get_limit_sensor_function(int ch, bool forward) const;
-
-	// Parameters
+	// Parameters (instance-specific)
 	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::HBRIDGE_L_FLIM>) _param_left_fwd_limit,
-		(ParamInt<px4::params::HBRIDGE_L_RLIM>) _param_left_rev_limit,
-		(ParamInt<px4::params::HBRIDGE_R_FLIM>) _param_right_fwd_limit,
-		(ParamInt<px4::params::HBRIDGE_R_RLIM>) _param_right_rev_limit
+		(ParamInt<px4::params::HBRIDGE_MSG_INST0>) _param_msg_instance_0,
+		(ParamInt<px4::params::HBRIDGE_MSG_INST1>) _param_msg_instance_1,
+		(ParamInt<px4::params::HBRIDGE_DIR_REV0>) _param_dir_reverse_0,
+		(ParamInt<px4::params::HBRIDGE_DIR_REV1>) _param_dir_reverse_1,
+		(ParamInt<px4::params::HBRIDGE_0_FLIM>) _param_0_fwd_limit,
+		(ParamInt<px4::params::HBRIDGE_0_RLIM>) _param_0_rev_limit,
+		(ParamInt<px4::params::HBRIDGE_1_FLIM>) _param_1_fwd_limit,
+		(ParamInt<px4::params::HBRIDGE_1_RLIM>) _param_1_rev_limit
 	)
 };

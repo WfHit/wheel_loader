@@ -36,143 +36,180 @@
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_arch/io_timer.h>
+#include <px4_arch/gpio.h>
+#include <drivers/drv_hrt.h>
+#include <drivers/drv_motor_pwm.h>
+#include <lib/mathlib/mathlib.h>
+#include <lib/perf/perf_counter.h>
+#include <uORB/topics/parameter_update.h>
+#include <uORB/topics/hbridge_command.h>
+#include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/limit_sensor.h>
 #include <board_config.h>
+#include <drivers/hbridge/hbridge_config.h>
 
 // External declaration of board configuration
 #ifdef BOARD_HAS_HBRIDGE_CONFIG
-extern const hbridge_config_t g_hbridge_config[];
+extern hbridge_config_t hbridge_configs[];
+extern hbridge_manager_config_t hbridge_manager_config;
 #endif
 
-// Static storage for multiple instances
+// Static member initialization
 HBridge *HBridge::_instances[MAX_INSTANCES] = {};
 px4::atomic<uint8_t> HBridge::_num_instances{0};
 HBridge *HBridge::_manager_instance = nullptr;
-bool HBridge::_pwm_initialized = false;
 
 HBridge::HBridge(uint8_t instance) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	_instance(instance),
+	_parameter_update_sub(ORB_ID(parameter_update)),
+	_command_sub(ORB_ID(hbridge_command)),
+	_limit_sensor_sub(ORB_ID(limit_sensor)),
 	_loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")),
 	_command_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": command"))
 {
-	// Initialize channel data
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		_channels[i] = {};
-	}
+	// Initialize state
+	_current_duty_cycle = 0.0f;
+	_forward_limit_active = false;
+	_reverse_limit_active = false;
+	_initialized = false;
 
 	// Set manager instance if this is the manager
 	if (_instance == MANAGER_INSTANCE) {
 		_manager_instance = this;
+	} else {
+		// Register regular instances
+		if (_instance < MAX_INSTANCES) {
+			_instances[_instance] = this;
+			_num_instances.fetch_add(1);
+		}
 	}
 }
 
 HBridge::~HBridge()
 {
-	// Disable all channels
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		if (_channels[i].initialized) {
-			set_channel_speed(i, 0.0f);
-		}
+	// Stop the work queue
+	ScheduleClear();
+
+	// Manager instance cleanup
+	if (_instance == MANAGER_INSTANCE) {
+		// Disable H-bridge before stopping instances
+		control_enable(false);
+		stop_all_instances();
+		_manager_instance = nullptr;
+	} else {
+		// Stop motor before cleanup for regular instances
+		_current_duty_cycle = 0.0f;
+		output_pwm();
 	}
 
-	// Disable H-bridge if configured
-	if (_board_config && _board_config->enable_gpio != 0) {
-		px4_arch_gpiowrite(_board_config->enable_gpio, 0);
+	// Unadvertise publication
+	if (_pub_handle != nullptr) {
+		orb_unadvertise(_pub_handle);
 	}
 
+	// Unregister this instance
+	if (_instance < MAX_INSTANCES && _instances[_instance] == this) {
+		_instances[_instance] = nullptr;
+		_num_instances.fetch_sub(1);
+	}
+
+	// Free performance counters
 	perf_free(_loop_perf);
 	perf_free(_command_perf);
 }
 
-bool HBridge::init()
+const hbridge_config_t* HBridge::get_board_config(uint8_t instance)
 {
 #ifdef BOARD_HAS_HBRIDGE_CONFIG
-	// Get board configuration
-	if (_instance < BOARD_NUM_HBRIDGES) {
-		_board_config = &g_hbridge_config[_instance];
-	} else {
-		PX4_ERR("Instance %d exceeds board configuration", _instance);
+	if (instance < HBRIDGE_MAX_INSTANCES && hbridge_configs[instance].enabled) {
+		return &hbridge_configs[instance];
+	}
+#endif
+	return nullptr;
+}
+
+const hbridge_manager_config_t* HBridge::get_manager_config()
+{
+#ifdef BOARD_HAS_HBRIDGE_CONFIG
+	return &hbridge_manager_config;
+#endif
+	return nullptr;
+}
+
+bool HBridge::init()
+{
+	// Configure enable GPIO and PWM system (manager instance only)
+	if (is_manager_instance()) {
+		const hbridge_manager_config_t* manager_config = get_manager_config();
+		if (manager_config != nullptr && manager_config->enable_gpio != 0) {
+			px4_arch_configgpio(manager_config->enable_gpio);
+			px4_arch_gpiowrite(manager_config->enable_gpio, 0); // Start disabled
+		} else {
+			PX4_ERR("No shared enable GPIO configured");
+			return false;
+		}
+	}
+
+	// Get board configuration for this instance
+	_board_config = get_board_config(_instance);
+	if (_board_config == nullptr) {
+		PX4_ERR("No board configuration for instance %d", _instance);
 		return false;
 	}
-#else
-	PX4_ERR("No HBridge configuration for this board");
-	return false;
-#endif
 
 	// Load parameters
 	updateParams();
 
-	// Configure GPIOs
-	if (_board_config->left_dir_gpio != 0) {
-		px4_arch_configgpio(_board_config->left_dir_gpio);
-		px4_arch_gpiowrite(_board_config->left_dir_gpio, 0);
-	}
-
-	if (_board_config->right_dir_gpio != 0) {
-		px4_arch_configgpio(_board_config->right_dir_gpio);
-		px4_arch_gpiowrite(_board_config->right_dir_gpio, 0);
-	}
-
-	if (_board_config->enable_gpio != 0) {
-		px4_arch_configgpio(_board_config->enable_gpio);
-		px4_arch_gpiowrite(_board_config->enable_gpio, 0); // Disabled during init
-	}
-
-	// Initialize PWM system if needed
-	if (!_pwm_initialized) {
-		uint32_t required_channels = 0;
-		required_channels |= (1 << _board_config->left_pwm_channel);
-		required_channels |= (1 << _board_config->right_pwm_channel);
-
-		int ret = up_motor_pwm_init(required_channels);
-		if (ret < 0) {
-			PX4_ERR("Motor PWM init failed: %d", ret);
-			return false;
-		}
-
-		up_motor_pwm_set_rate(MOTOR_PWM_FREQ_25KHZ);
-		up_motor_pwm_arm(true, required_channels);
-		_pwm_initialized = true;
-		PX4_INFO("Motor PWM initialized");
-	}
-
-	// Configure channels
-	if (!configure_channels()) {
-		PX4_ERR("Failed to configure channels");
+	// Configure hardware
+	if (!configure_hardware()) {
+		PX4_ERR("Failed to configure hardware for instance %d", _instance);
 		return false;
 	}
 
-	// Initialize status publication
+	// Initialize uORB publication
 	hbridge_status_s status{};
 	status.timestamp = hrt_absolute_time();
 	status.instance = _instance;
-	_status_pub.advertise(status);
 
-	// Start periodic updates
+	int instance_copy = _instance;
+	_pub_handle = orb_advertise_multi(ORB_ID(hbridge_status), &status, &instance_copy);
+
+	_initialized = true;
+
+	// Start work queue
 	ScheduleOnInterval(SCHEDULE_INTERVAL);
-	_is_running = true;
 
-	// Enable H-bridge
-	if (_board_config->enable_gpio != 0) {
-		px4_arch_gpiowrite(_board_config->enable_gpio, 1);
-	}
-
-	PX4_INFO("HBridge instance %d (%s) initialized", _instance, _board_config->name);
+	PX4_INFO("HBridge instance %d (%s) initialized (msg_inst: %d)",
+		 _instance, _board_config->name, get_msg_instance());
 	return true;
 }
 
-bool HBridge::configure_channels()
+bool HBridge::configure_hardware()
 {
-	// Set initial duty cycle to zero
-	up_motor_pwm_set_duty_cycle(_board_config->left_pwm_channel, 0.0f);
-	up_motor_pwm_set_duty_cycle(_board_config->right_pwm_channel, 0.0f);
+	if (_board_config == nullptr) {
+		return false;
+	}
 
-	_channels[LEFT_CHANNEL].initialized = true;
-	_channels[RIGHT_CHANNEL].initialized = true;
+	// Configure direction GPIO
+	if (_board_config->dir_gpio != 0) {
+		px4_arch_configgpio(_board_config->dir_gpio);
+		px4_arch_gpiowrite(_board_config->dir_gpio, 0); // Default to reverse
+	}
 
-	PX4_INFO("Channels configured: Left PWM%d, Right PWM%d",
-		_board_config->left_pwm_channel, _board_config->right_pwm_channel);
+	// Initialize PWM system for this channel only
+	uint32_t channel_mask = (1 << _board_config->pwm_ch);
+
+	int ret = up_motor_pwm_init(channel_mask);
+	if (ret < 0) {
+		PX4_ERR("Motor PWM init failed for channel %d: %d", _board_config->pwm_ch, ret);
+		return false;
+	}
+
+	up_motor_pwm_set_rate(MOTOR_PWM_FREQ_25KHZ);
+	up_motor_pwm_arm(true, channel_mask);
+	PX4_INFO("Motor PWM channel %d initialized", _board_config->pwm_ch);
 
 	return true;
 }
@@ -181,7 +218,6 @@ void HBridge::Run()
 {
 	if (should_exit()) {
 		ScheduleClear();
-		_is_running = false;
 		return;
 	}
 
@@ -205,6 +241,12 @@ void HBridge::Run()
 	// Process limit sensors
 	process_limit_sensors();
 
+	// Apply safety limits
+	apply_safety_limits();
+
+	// Apply final output
+	output_pwm();
+
 	// Publish status
 	publish_status();
 
@@ -216,27 +258,15 @@ void HBridge::process_commands()
 	perf_begin(_command_perf);
 
 	hbridge_command_s cmd;
-	while (_command_sub.update(&cmd)) {
-		// Check if command is for this instance
-		if (cmd.instance != _instance) {
-			continue;
-		}
-
-		// Validate channel
-		if (cmd.channel < MAX_CHANNELS) {
-			if (cmd.enable) {
-				set_channel_speed(cmd.channel, cmd.duty_cycle);
-				_channels[cmd.channel].enabled = true;
-			} else {
-				set_channel_speed(cmd.channel, 0.0f);
-				_channels[cmd.channel].enabled = false;
-			}
-
-			_command_count++;
-			_last_command_time = cmd.timestamp;
+	if (_command_sub.update(get_msg_instance(), &cmd)) {
+		// Process duty cycle command for this instance
+		if (cmd.enable) {
+			float duty_cycle = math::constrain(cmd.duty_cycle, -1.0f, 1.0f);
+			// Store the commanded duty cycle - don't output immediately
+			_current_duty_cycle = duty_cycle;
 		} else {
-			PX4_WARN("Instance %d: Invalid channel %d", _instance, cmd.channel);
-			_error_count++;
+			// Disable command - stop the motor
+			_current_duty_cycle = 0.0f;
 		}
 	}
 
@@ -246,98 +276,79 @@ void HBridge::process_commands()
 void HBridge::process_limit_sensors()
 {
 	limit_sensor_s limit_msg;
-	for (uint8_t instance = 0; instance < _limit_sensor_sub.size(); instance++) {
-		while (_limit_sensor_sub[instance].update(&limit_msg)) {
-			// Check if this limit sensor affects any channel
-			for (int ch = 0; ch < MAX_CHANNELS; ch++) {
-				// Check forward limit
-				int fwd_limit_function = get_limit_sensor_function(ch, true);
-				if (fwd_limit_function != 255 && limit_msg.function == fwd_limit_function) {
-					_channels[ch].forward_limit_active = limit_msg.state;
-					if (limit_msg.state && _channels[ch].current_duty_cycle > 0.0f) {
-						set_channel_speed(ch, 0.0f);
-					}
-				}
 
-				// Check reverse limit
-				int rev_limit_function = get_limit_sensor_function(ch, false);
-				if (rev_limit_function != 255 && limit_msg.function == rev_limit_function) {
-					_channels[ch].reverse_limit_active = limit_msg.state;
-					if (limit_msg.state && _channels[ch].current_duty_cycle < 0.0f) {
-						set_channel_speed(ch, 0.0f);
-					}
-				}
-			}
-		}
+	// Check forward limit sensor for this instance
+	uint8_t forward_limit_id = get_fwd_limit();
+	if (forward_limit_id != 255 && _limit_sensor_sub.update(forward_limit_id, &limit_msg)) {
+		_forward_limit_active = limit_msg.state;
+	}
+
+	// Check reverse limit sensor for this instance
+	uint8_t reverse_limit_id = get_rev_limit();
+	if (reverse_limit_id != 255 && _limit_sensor_sub.update(reverse_limit_id, &limit_msg)) {
+		_reverse_limit_active = limit_msg.state;
 	}
 }
 
-void HBridge::set_channel_speed(int channel, float duty_cycle)
+void HBridge::output_pwm()
 {
-	if (channel >= MAX_CHANNELS || !_channels[channel].initialized) {
+	if (!_initialized || _board_config == nullptr) {
 		return;
 	}
 
-	// Clamp duty cycle
-	duty_cycle = math::constrain(duty_cycle, -1.0f, 1.0f);
+	// Set direction based on current duty cycle and direction reverse parameter
+	bool forward = _current_duty_cycle >= 0.0f;
+	set_direction(forward);
 
-	// Check limit sensors
-	bool forward = duty_cycle >= 0.0f;
-	if (!check_limit_sensor_for_direction(channel, forward)) {
-		duty_cycle = 0.0f;
-	}
-
-	// Update direction
-	update_channel_direction(channel, forward);
-
-	// Set PWM
-	float abs_duty = fabsf(duty_cycle);
+	// Calculate PWM value
+	float abs_duty = fabsf(_current_duty_cycle);
 	if (abs_duty < 0.001f) {
 		abs_duty = 0.0f;
 	}
 
-	int pwm_channel = (channel == LEFT_CHANNEL) ?
-		_board_config->left_pwm_channel : _board_config->right_pwm_channel;
-
-	up_motor_pwm_set_duty_cycle(pwm_channel, abs_duty);
-	_channels[channel].current_duty_cycle = duty_cycle;
+	// Convert to PWM range and output
+	up_motor_pwm_set_duty_cycle(_board_config->pwm_ch, abs_duty);
 }
 
-void HBridge::update_channel_direction(int channel, bool forward)
+void HBridge::set_direction(bool forward)
 {
-	uint32_t dir_gpio = (channel == LEFT_CHANNEL) ?
-		_board_config->left_dir_gpio : _board_config->right_dir_gpio;
-
-	if (dir_gpio != 0) {
-		px4_arch_gpiowrite(dir_gpio, forward ? 1 : 0);
+	if (_board_config != nullptr && _board_config->dir_gpio != 0) {
+		// Apply direction reverse parameter
+		bool actual_direction = forward;
+		if (get_dir_reverse()) {
+			actual_direction = !forward;  // Invert direction if reverse parameter is set
+		}
+		px4_arch_gpiowrite(_board_config->dir_gpio, actual_direction ? 1 : 0);
 	}
 }
 
-bool HBridge::check_limit_sensor_for_direction(int channel, bool forward)
+void HBridge::control_enable(bool enable)
 {
-	if (channel >= MAX_CHANNELS) {
-		return true;
+	// Only manager instance controls shared enable pin
+	if (!is_manager_instance()) {
+		return;
 	}
 
-	if (forward && _channels[channel].forward_limit_active) {
-		return false;
+	const hbridge_manager_config_t* manager_config = get_manager_config();
+	if (manager_config != nullptr && manager_config->enable_gpio != 0) {
+		px4_arch_gpiowrite(manager_config->enable_gpio, enable ? 1 : 0);
+		PX4_INFO("H-Bridge enable: %s", enable ? "ON" : "OFF");
 	}
-
-	if (!forward && _channels[channel].reverse_limit_active) {
-		return false;
-	}
-
-	return true;
 }
 
-int HBridge::get_limit_sensor_function(int ch, bool forward) const
+void HBridge::apply_safety_limits()
 {
-	if (ch == LEFT_CHANNEL) {
-		return forward ? _param_left_fwd_limit.get() : _param_left_rev_limit.get();
-	} else if (ch == RIGHT_CHANNEL) {
-		return forward ? _param_right_fwd_limit.get() : _param_right_rev_limit.get();
+	// Apply forward limit
+	if (_forward_limit_active && _current_duty_cycle > 0.0f) {
+		PX4_DEBUG("Forward limit active, blocking forward motion");
+		_current_duty_cycle = 0.0f;
 	}
-	return 255;
+
+	// Apply reverse limit
+	if (_reverse_limit_active && _current_duty_cycle < 0.0f) {
+		PX4_DEBUG("Reverse limit active, blocking reverse motion");
+		_current_duty_cycle = 0.0f;
+	}
 }
 
 void HBridge::publish_status()
@@ -345,28 +356,15 @@ void HBridge::publish_status()
 	hbridge_status_s status{};
 	status.timestamp = hrt_absolute_time();
 	status.instance = _instance;
+	status.duty_cycle = _current_duty_cycle;
+	status.forward_limit = _forward_limit_active;
+	status.reverse_limit = _reverse_limit_active;
+	status.enabled = _initialized;
 
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		status.channel_enabled[i] = _channels[i].enabled;
-		status.channel_duty_cycle[i] = _channels[i].current_duty_cycle;
-		status.channel_current[i] = 0.0f; // TODO: Add current sensing
+	// Publish using orb_publish if we have a handle
+	if (_pub_handle != nullptr) {
+		orb_publish(ORB_ID(hbridge_status), _pub_handle, &status);
 	}
-
-	status.temperature = 0.0f; // TODO: Add temperature sensing
-	status.fault_detected = false;
-
-	// Channel limit status
-	status.channel_limit_state[0] = _channels[LEFT_CHANNEL].forward_limit_active;
-	status.channel_limit_state[1] = _channels[LEFT_CHANNEL].reverse_limit_active;
-	status.channel_limit_state[2] = _channels[RIGHT_CHANNEL].forward_limit_active;
-	status.channel_limit_state[3] = _channels[RIGHT_CHANNEL].reverse_limit_active;
-
-	status.channel_limits_available = (get_limit_sensor_function(LEFT_CHANNEL, true) != 255) ||
-					  (get_limit_sensor_function(LEFT_CHANNEL, false) != 255) ||
-					  (get_limit_sensor_function(RIGHT_CHANNEL, true) != 255) ||
-					  (get_limit_sensor_function(RIGHT_CHANNEL, false) != 255);
-
-	_status_pub.publish(status);
 }
 
 int HBridge::task_spawn(int argc, char *argv[])
@@ -375,7 +373,7 @@ int HBridge::task_spawn(int argc, char *argv[])
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
-	int target_instance = -1;
+	int target_instance = -1; // -1 means start all enabled instances
 
 	while ((ch = px4_getopt(argc, argv, "i:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
@@ -386,6 +384,7 @@ int HBridge::task_spawn(int argc, char *argv[])
 				return PX4_ERROR;
 			}
 			break;
+
 		default:
 			return print_usage("unknown option");
 		}
@@ -395,12 +394,14 @@ int HBridge::task_spawn(int argc, char *argv[])
 	if (_manager_instance == nullptr) {
 		HBridge *manager = new HBridge(MANAGER_INSTANCE);
 		if (manager == nullptr) {
-			PX4_ERR("Failed to allocate HBridge manager");
+			PX4_ERR("Failed to allocate manager instance");
 			return PX4_ERROR;
 		}
 
+		// Store manager as the primary object
 		_object.store(manager);
 		_task_id = task_id_is_work_queue;
+
 		PX4_INFO("HBridge manager started");
 	}
 
@@ -408,52 +409,67 @@ int HBridge::task_spawn(int argc, char *argv[])
 	bool any_started = false;
 
 	if (target_instance >= 0) {
+		// Start specific instance
 		any_started = start_instance(target_instance);
 	} else {
-		for (int i = 0; i < BOARD_NUM_HBRIDGES; i++) {
+		// Start all configured instances
+		for (int i = 0; i < MAX_INSTANCES; i++) {
 			if (start_instance(i)) {
 				any_started = true;
 			}
 		}
 	}
 
-	return any_started ? PX4_OK : PX4_ERROR;
+	if (any_started) {
+		// Set the first instance as the primary object for status
+		for (int i = 0; i < MAX_INSTANCES; i++) {
+			if (_instances[i] != nullptr) {
+				_object.store(_instances[i]);
+				_task_id = task_id_is_work_queue;
+				break;
+			}
+		}
+		return PX4_OK;
+	} else {
+		PX4_ERR("No HBridge instances could be started");
+		return PX4_ERROR;
+	}
 #else
-	PX4_ERR("No HBridge configured for this board");
+	PX4_ERR("No HBridge controllers configured for this board");
 	return PX4_ERROR;
 #endif
 }
 
 bool HBridge::start_instance(int instance)
 {
+	// Check if already running
 	if (_instances[instance] != nullptr) {
-		PX4_INFO("HBridge instance %d already running", instance);
+		PX4_INFO("Instance %d already running", instance);
 		return true;
 	}
 
+	// Create new instance
 	HBridge *obj = new HBridge(instance);
 	if (obj == nullptr) {
 		PX4_ERR("Failed to allocate HBridge instance %d", instance);
 		return false;
 	}
 
-	if (!obj->init()) {
-		PX4_ERR("Failed to initialize HBridge instance %d", instance);
+	// Initialize instance
+	if (obj->init()) {
+		PX4_INFO("Started HBridge instance %d", instance);
+		return true;
+	} else {
 		delete obj;
 		return false;
 	}
-
-	_instances[instance] = obj;
-	_num_instances.fetch_add(1);
-	obj->ScheduleNow();
-
-	return true;
 }
 
 void HBridge::stop_all_instances()
 {
 	for (int i = 0; i < MAX_INSTANCES; i++) {
 		if (_instances[i] != nullptr) {
+			PX4_INFO("Stopping HBridge instance %d", i);
 			delete _instances[i];
 			_instances[i] = nullptr;
 		}
@@ -463,78 +479,65 @@ void HBridge::stop_all_instances()
 
 int HBridge::custom_command(int argc, char *argv[])
 {
-	if (!strcmp(argv[0], "test")) {
-		return test(argc, argv);
+	if (argc < 2) {
+		return print_usage("too few arguments");
 	}
+
+	if (!strcmp(argv[1], "manual")) {
+		if (argc < 4) {
+			PX4_ERR("Usage: hbridge manual <instance> <duty_cycle>");
+			return PX4_ERROR;
+		}
+
+		int instance = atoi(argv[2]);
+		float duty_cycle = atof(argv[3]);
+
+		if (instance < 0 || instance >= MAX_INSTANCES) {
+			PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
+			return PX4_ERROR;
+		}
+
+		if (duty_cycle < -1.0f || duty_cycle > 1.0f) {
+			PX4_ERR("Invalid duty cycle %.3f, must be -1.0 to 1.0", (double)duty_cycle);
+			return PX4_ERROR;
+		}
+
+		if (_instances[instance] == nullptr) {
+			PX4_ERR("Instance %d not running", instance);
+			return PX4_ERROR;
+		}
+
+		// Manually set duty cycle and output
+		_instances[instance]->_current_duty_cycle = duty_cycle;
+		_instances[instance]->output_pwm();
+
+		PX4_INFO("Manual PWM output: Instance %d, Duty cycle %.3f", instance, (double)duty_cycle);
+		return PX4_OK;
+	}
+
+	if (!strcmp(argv[1], "enable")) {
+		if (_manager_instance != nullptr) {
+			_manager_instance->control_enable(true);
+			PX4_INFO("H-Bridge enabled");
+			return PX4_OK;
+		} else {
+			PX4_ERR("Manager instance not running");
+			return PX4_ERROR;
+		}
+	}
+
+	if (!strcmp(argv[1], "disable")) {
+		if (_manager_instance != nullptr) {
+			_manager_instance->control_enable(false);
+			PX4_INFO("H-Bridge disabled");
+			return PX4_OK;
+		} else {
+			PX4_ERR("Manager instance not running");
+			return PX4_ERROR;
+		}
+	}
+
 	return print_usage("unknown command");
-}
-
-int HBridge::print_status()
-{
-	if (_instance == MANAGER_INSTANCE) {
-		PX4_INFO("HBridge Manager Status");
-		PX4_INFO("  Active instances: %d", _num_instances.load());
-		for (int i = 0; i < MAX_INSTANCES; i++) {
-			if (_instances[i] != nullptr) {
-				_instances[i]->print_status();
-			}
-		}
-		return 0;
-	}
-
-	PX4_INFO("HBridge Instance %d (%s):", _instance, _board_config ? _board_config->name : "unknown");
-	PX4_INFO("  Running: %s", _is_running ? "yes" : "no");
-	PX4_INFO("  Commands: %lu, Errors: %lu", _command_count, _error_count);
-
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		const char* channel_name = (i == LEFT_CHANNEL) ? "Left" : "Right";
-		PX4_INFO("  %s: duty=%.2f%%, enabled=%s",
-			channel_name,
-			(double)(_channels[i].current_duty_cycle * 100.0f),
-			_channels[i].enabled ? "yes" : "no");
-	}
-
-	return 0;
-}
-
-int HBridge::test(int argc, char *argv[])
-{
-	uint8_t instance = 0;
-	int channel = 0;
-	float duty_cycle = 0.0f;
-	int myoptind = 1;
-	int ch;
-	const char *myoptarg = nullptr;
-
-	while ((ch = px4_getopt(argc, argv, "i:c:d:", &myoptind, &myoptarg)) != EOF) {
-		switch (ch) {
-		case 'i':
-			instance = (uint8_t)atoi(myoptarg);
-			break;
-		case 'c':
-			channel = atoi(myoptarg);
-			break;
-		case 'd':
-			duty_cycle = atof(myoptarg);
-			break;
-		default:
-			return print_usage("unrecognized flag");
-		}
-	}
-
-	if (instance >= MAX_INSTANCES || _instances[instance] == nullptr) {
-		PX4_ERR("Instance %d not running", instance);
-		return 1;
-	}
-
-	if (channel < 0 || channel >= MAX_CHANNELS) {
-		PX4_ERR("Invalid channel %d", channel);
-		return 1;
-	}
-
-	_instances[instance]->set_channel_speed(channel, duty_cycle);
-	PX4_INFO("Instance %d: Set channel %d to %.2f", instance, channel, (double)duty_cycle);
-	return 0;
 }
 
 int HBridge::print_usage(const char *reason)
@@ -546,30 +549,77 @@ int HBridge::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Multi-instance H-Bridge motor driver.
+Multi-instance H-Bridge motor driver for wheel loader operations.
 
-Controls H-bridge channels with PWM speed and GPIO direction control.
-Configuration is board-specific via hbridge_config.
+Each instance controls one H-bridge channel with PWM speed control and GPIO
+direction control. Instance 0 acts as the manager and controls the shared
+enable pin. All instances can subscribe to different command message instances
+for independent control.
+
+The driver integrates with limit sensors to prevent motion in restricted
+directions. Forward limits stop forward motion, reverse limits stop reverse motion.
+
+Direction reversal can be configured per channel using HBRIDGE_DIR_REV0/1 parameters.
+PWM output uses direct duty cycle control (0.0 to 1.0 range).
+
+### Implementation
+- Supports 2 instances (0 and 1) for dual H-bridge channels
+- Instance 0 is the manager and controls shared enable pin
+- Each instance subscribes to instance-specific command messages
+- Multi-instance status publishing with limit sensor states
+- PWM output with configurable direction reversal
+- Safety integration with limit sensors
 
 ### Examples
-Start driver:
+Start all H-Bridge instances:
 $ hbridge start
 
-Test channel:
-$ hbridge test -i 0 -c 0 -d 0.5
+Start specific instance:
+$ hbridge start -i 0
 
-Check status:
-$ hbridge status
+Configure direction reversal:
+$ param set HBRIDGE_DIR_REV0 1  # Reverse direction for channel 0
+$ param set HBRIDGE_DIR_REV1 0  # Normal direction for channel 1
+
+Configure message instances:
+$ param set HBRIDGE_MSG_INST0 0  # Channel 0 listens to command instance 0
+$ param set HBRIDGE_MSG_INST1 1  # Channel 1 listens to command instance 1
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("hbridge", "driver");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Start driver");
-	PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, MAX_INSTANCES-1, "Instance", false);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Test channel");
-	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, MAX_INSTANCES-1, "Instance", true);
-	PRINT_MODULE_USAGE_PARAM_INT('c', 0, 0, MAX_CHANNELS-1, "Channel", true);
-	PRINT_MODULE_USAGE_PARAM_FLOAT('d', 0.0, -1.0, 1.0, "Duty cycle", true);
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, MAX_INSTANCES-1,
+				     "Start specific instance (0-1), default: start all", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("manual", "Manual PWM output control");
+	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
+	PRINT_MODULE_USAGE_ARG("<duty_cycle>", "Duty cycle (-1.0 to 1.0)", false);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("enable", "Enable H-bridge power");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("disable", "Disable H-bridge power");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+
+	return 0;
+}
+
+int HBridge::print_status()
+{
+	PX4_INFO("HBridge Status:");
+	PX4_INFO("  Active instances: %d", _num_instances.load());
+
+	for (int i = 0; i < MAX_INSTANCES; i++) {
+		if (_instances[i] != nullptr) {
+			PX4_INFO("  Instance %d: %s", i,
+				 _instances[i]->_board_config ? _instances[i]->_board_config->name : "unknown");
+			PX4_INFO("    Message Instance: %d", _instances[i]->get_msg_instance());
+			PX4_INFO("    Current Speed: %.3f", static_cast<double>(_instances[i]->_current_duty_cycle));
+			PX4_INFO("    Direction Reverse: %s", _instances[i]->get_dir_reverse() ? "YES" : "NO");
+			PX4_INFO("    Forward Limit: %s", _instances[i]->_forward_limit_active ? "ACTIVE" : "inactive");
+			PX4_INFO("    Reverse Limit: %s", _instances[i]->_reverse_limit_active ? "ACTIVE" : "inactive");
+			PX4_INFO("    Manager: %s", _instances[i]->is_manager_instance() ? "YES" : "NO");
+
+			perf_print_counter(_instances[i]->_loop_perf);
+			perf_print_counter(_instances[i]->_command_perf);
+		}
+	}
 
 	return 0;
 }

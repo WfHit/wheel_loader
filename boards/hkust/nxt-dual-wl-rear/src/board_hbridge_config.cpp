@@ -35,6 +35,7 @@
  * @file board_hbridge_config.cpp
  *
  * Board-specific H-Bridge configuration for NXT-Dual-WL-Rear
+ * This board manages left and right wheel drive
  */
 
 #include <board_config.h>
@@ -42,18 +43,30 @@
 
 #ifdef BOARD_HAS_HBRIDGE_CONFIG
 
-// Define H-Bridge instance for wheel drive
-const hbridge_config_t g_hbridge_config[BOARD_NUM_HBRIDGES] = {
-    // Instance 0: Wheel Drive H-Bridge
+
+// Channel configurations for rear board (left and right wheels)
+hbridge_config_t hbridge_configs[HBRIDGE_MAX_INSTANCES] = {
+    // Channel 0 - Left wheel control via PWM 2
     {
         .instance_id = 0,
-        .name = "wheel_drive",
-        .left_dir_gpio = DRV8701_LEFT_DIR_GPIO,     // PE14
-        .right_dir_gpio = DRV8701_RIGHT_DIR_GPIO,   // PE13
-        .enable_gpio = DRV8701_ENABLE_GPIO,         // PE7
-        .left_pwm_channel = 2,                      // PWM2
-        .right_pwm_channel = 3                      // PWM3
+        .name = "left_wheel",
+        .enabled = true,
+        .pwm_ch = 2,
+        .dir_gpio = DRV8701_LEFT_DIR_GPIO   // PE14 - Left wheel direction
+    },
+    // Channel 1 - Right wheel control via PWM 3
+    {
+        .instance_id = 1,
+        .name = "right_wheel",
+        .enabled = true,
+        .pwm_ch = 3,
+        .dir_gpio = DRV8701_RIGHT_DIR_GPIO  // PE13 - Right wheel direction
     }
+};
+
+// Manager configuration for shared resources
+hbridge_manager_config_t hbridge_manager_config = {
+    .enable_gpio = DRV8701_ENABLE_GPIO  // PE7 - Shared enable GPIO for all channels
 };
 
 #endif // BOARD_HAS_HBRIDGE_CONFIG
