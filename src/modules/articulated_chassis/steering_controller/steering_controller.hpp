@@ -49,6 +49,7 @@
 
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/steering_setpoint.h>
 #include <uORB/topics/robotic_servo_command.h>
 #include <uORB/topics/robotic_servo_feedback.h>
@@ -96,7 +97,7 @@ private:
 	// uORB subscriptions
 	uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
 	uORB::Subscription _servo_feedback_sub{ORB_ID(robotic_servo_feedback)};
-	uORB::Subscription _limit_sensor_sub{ORB_ID(limit_sensor)};
+	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_subs{ORB_ID(limit_sensor)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	// uORB publications
