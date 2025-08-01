@@ -233,6 +233,7 @@ void BucketControl::Run()
     // Read sensors
     readEncoderFeedback();
     checkLimitSwitches();
+    checkHBridgeStatus();
 
     // Get current boom angle from AS5600 magnetic encoder
     sensor_mag_encoder_s mag_encoder_data;
@@ -566,11 +567,13 @@ void BucketControl::setMotorCommand(float command)
     // Publish HBridge command for bucket motor
     hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
-    cmd.channel = _motor_index;
-    cmd.duty_cycle = command;  // Use command directly as duty_cycle (-1.0 to 1.0)
+    cmd.instance = _motor_index;  // Use instance instead of channel
+    cmd.duty_cycle = command;     // Use command directly as duty_cycle (-1.0 to 1.0)
     cmd.enable = true;
 
-    _hbridge_command_pub.publish(cmd);
+    // Publish to specific message instance for this motor
+    int instance_to_publish = _motor_index;
+    _hbridge_command_pub.publish(cmd, instance_to_publish);
 }
 
 void BucketControl::readEncoderFeedback()
@@ -621,6 +624,22 @@ bool BucketControl::checkLimitSwitches()
     }
 
     return _limit_switch_load || _limit_switch_dump;
+}
+
+bool BucketControl::checkHBridgeStatus()
+{
+    // Check hbridge status for our motor instance
+    hbridge_status_s hbridge_status;
+    for (auto &sub : _hbridge_status_sub) {
+        if (sub.update(&hbridge_status)) {
+            if (hbridge_status.instance == _motor_index) {
+                // Update our status based on hbridge feedback
+                // Could use this for fault detection, current monitoring, etc.
+                return hbridge_status.enabled;
+            }
+        }
+    }
+    return false;  // No status received or not enabled
 }
 
 // AHRS Integration Methods

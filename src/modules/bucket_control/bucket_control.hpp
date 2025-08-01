@@ -16,7 +16,9 @@
 
 // uORB includes
 #include <uORB/Publication.hpp>
+#include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/sensor_mag_encoder.h>
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
@@ -132,6 +134,7 @@ private:
     void setMotorCommand(float command);
     void readEncoderFeedback();
     bool checkLimitSwitches();
+    bool checkHBridgeStatus();  // Check hbridge status for our motor instance
 
     // AHRS Integration methods
     void updateAHRSData();
@@ -194,11 +197,10 @@ private:
     float _max_acceleration{200.0f};         // mm/s²
     float _jerk_limit{1000.0f};              // mm/s³
 
-    // uORB subscriptions
-    uORB::Subscription _bucket_cmd_sub{ORB_ID(bucket_command)};
-    uORB::Subscription _sensor_mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
+        // uORB subscriptions
+    uORB::Subscription _bucket_command_sub{ORB_ID(bucket_command)};
     uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
-    uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+    uORB::SubscriptionMultiArray _hbridge_status_sub{ORB_ID(hbridge_status)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
@@ -206,7 +208,7 @@ private:
 
     // uORB publications
     uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
-    uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+    uORB::PublicationMulti<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
     uORB::Publication<quad_encoder_reset_s> _quad_encoder_reset_pub{ORB_ID(quad_encoder_reset)};
 
     // Motor and sensor indices

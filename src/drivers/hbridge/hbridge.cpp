@@ -477,6 +477,37 @@ void HBridge::stop_all_instances()
 	_num_instances.store(0);
 }
 
+void HBridge::print_instance_status(uint8_t instance)
+{
+	if (instance >= MAX_INSTANCES) {
+		PX4_ERR("Invalid instance %d (max: %d)", instance, MAX_INSTANCES - 1);
+		return;
+	}
+
+	HBridge *inst = _instances[instance];
+	if (inst == nullptr) {
+		PX4_INFO("HBridge instance %d: NOT RUNNING", instance);
+		return;
+	}
+
+	const hbridge_config_t *config = inst->_board_config;
+	if (config == nullptr) {
+		PX4_ERR("HBridge instance %d: No board configuration", instance);
+		return;
+	}
+
+	PX4_INFO("HBridge instance %d (%s):", instance, config->name);
+	PX4_INFO("  Enabled: %s", config->enabled ? "YES" : "NO");
+	PX4_INFO("  PWM Channel: %d", config->pwm_ch);
+	PX4_INFO("  Direction GPIO: 0x%08x", config->dir_gpio);
+	PX4_INFO("  Message Instance: %d", inst->get_msg_instance());
+	PX4_INFO("  Direction Reversed: %s", inst->get_dir_reverse() ? "YES" : "NO");
+	PX4_INFO("  Current Duty Cycle: %.2f", (double)inst->_current_duty_cycle);
+	PX4_INFO("  Forward Limit: %s", inst->_forward_limit_active ? "ACTIVE" : "inactive");
+	PX4_INFO("  Reverse Limit: %s", inst->_reverse_limit_active ? "ACTIVE" : "inactive");
+	PX4_INFO("  Initialized: %s", inst->_initialized ? "YES" : "NO");
+}
+
 int HBridge::custom_command(int argc, char *argv[])
 {
 	if (argc < 2) {
@@ -537,6 +568,25 @@ int HBridge::custom_command(int argc, char *argv[])
 		}
 	}
 
+	if (!strcmp(argv[1], "status")) {
+		if (argc >= 3) {
+			// Print specific instance status
+			int instance = atoi(argv[2]);
+			if (instance < 0 || instance >= MAX_INSTANCES) {
+				PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
+				return PX4_ERROR;
+			}
+			print_instance_status(static_cast<uint8_t>(instance));
+		} else {
+			// Print all instance status
+			for (int i = 0; i < MAX_INSTANCES; i++) {
+				print_instance_status(static_cast<uint8_t>(i));
+				if (i < MAX_INSTANCES - 1) PX4_INFO(""); // Blank line between instances
+			}
+		}
+		return PX4_OK;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -595,6 +645,8 @@ $ param set HBRIDGE_MSG_INST1 1  # Channel 1 listens to command instance 1
 	PRINT_MODULE_USAGE_ARG("<duty_cycle>", "Duty cycle (-1.0 to 1.0)", false);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("enable", "Enable H-bridge power");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("disable", "Disable H-bridge power");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print instance status information");
+	PRINT_MODULE_USAGE_ARG("[instance]", "Specific instance (0 or 1), default: all", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;

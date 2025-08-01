@@ -100,7 +100,7 @@ private:
 
     // uORB publications
     uORB::PublicationMulti<actuator_outputs_s> _actuator_outputs_pub{ORB_ID(actuator_outputs)};
-    uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+    uORB::PublicationMulti<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
     uORB::Publication<wheel_status_s> _wheel_status_pub{ORB_ID(wheel_status)};
 
     // Control system

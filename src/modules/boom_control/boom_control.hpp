@@ -46,6 +46,7 @@
 #include <uORB/Publication.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/hbridge_command.h>
@@ -150,10 +151,10 @@ private:
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
-	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::SubscriptionMultiArray _hbridge_status_sub{ORB_ID(hbridge_status)};
 
 	// uORB publications
-	uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+	uORB::PublicationMulti<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 
 	// Performance counters
@@ -193,6 +194,7 @@ private:
 	void run_position_control();
 	void publish_hbridge_command();
 	void publish_boom_status();
+	bool check_hbridge_status();  // Check hbridge status for our motor instance
 
 	// Auto-calibration functionality
 	enum class CalibrationState : uint8_t {

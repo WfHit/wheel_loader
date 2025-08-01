@@ -48,7 +48,6 @@
 using namespace time_literals;
 
 // Module configuration
-static constexpr char MODULE_NAME[] = "quadrature_encoder";
 static constexpr uint8_t MAX_INSTANCES = 2;
 static constexpr uint8_t MANAGER_INSTANCE = 255; // Special instance for lifecycle management
 

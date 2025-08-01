@@ -70,44 +70,19 @@ void LoadLampController::update_load()
 		return;
 	}
 
-	hbridge_status_s status;
+	// Check for load lamp commands from the main board (X7+)
+	load_lamp_command_s cmd;
+	if (_load_lamp_command_sub.update(&cmd)) {
+		// Update current load value and blink interval from command
+		_current_load = cmd.load_value;
+		_blink_interval_us = cmd.blink_interval_us;
 
-	if (_hbridge_status_sub.update(&status)) {
-		float total_average_load = 0.0f;
-		int active_channels = 0;
-
-		// Update each channel's load history and calculate its average
-		for (int i = 0; i < MAX_CHANNELS && i < (int)sizeof(status.channel_enabled); i++) {
-			if (status.channel_enabled[i]) {
-				float current_duty = fabsf(status.channel_duty_cycle[i]);
-
-				// Add current duty cycle to this channel's history
-				_channel_load_history[i][_channel_history_index[i]] = current_duty;
-				_channel_history_index[i] = (_channel_history_index[i] + 1) % LOAD_HISTORY_SIZE;
-				_channel_has_data[i] = true;
-
-				// Calculate average for this channel
-				float channel_sum = 0.0f;
-				for (int j = 0; j < LOAD_HISTORY_SIZE; j++) {
-					channel_sum += _channel_load_history[i][j];
-				}
-				_channel_average_load[i] = channel_sum / LOAD_HISTORY_SIZE;
-
-				// Add this channel's average to the total
-				total_average_load += _channel_average_load[i];
-				active_channels++;
-			} else {
-				_channel_has_data[i] = false;
-				_channel_average_load[i] = 0.0f;
-			}
+		// Handle special case for lamp off
+		if (cmd.load_level == load_lamp_command_s::LOAD_OFF) {
+			_lamps_on = false;
+			set_lamps(false);
 		}
-
-		// Calculate overall average from channel averages
-		if (active_channels > 0) {
-			_current_load = total_average_load / active_channels;
-		} else {
-			_current_load = 0.0f;
-		}
+		// Note: Blinking is handled in the main run loop
 	}
 
 	perf_end(_load_update_perf);
@@ -197,10 +172,9 @@ void LoadLampController::run()
 
 		parameters_update();
 
-		update_load();
-		update_blink_rate(_current_load);
+		update_load();  // Check for load lamp commands
 
-		// Handle blinking
+		// Handle blinking (skip if in test mode with manual blink rate)
 		uint64_t now = hrt_absolute_time();
 
 		if (now - _last_toggle >= _blink_interval_us) {
@@ -222,21 +196,14 @@ void LoadLampController::run()
 int LoadLampController::print_status()
 {
 	PX4_INFO("Load Lamp Controller");
-	PX4_INFO("  Overall motor load: %.2f", (double)_current_load);
+	PX4_INFO("  Current load value: %.2f", (double)_current_load);
 	PX4_INFO("  Test mode: %s", _test_mode_active ? "active" : "inactive");
 	PX4_INFO("  Blink interval: %lu us", _blink_interval_us);
 	PX4_INFO("  Load thresholds: %.2f / %.2f / %.2f",
 		 (double)_param_threshold_low.get(),
 		 (double)_param_threshold_med.get(),
 		 (double)_param_threshold_high.get());
-
-	// Show individual channel averages
-	PX4_INFO("  Channel load averages:");
-	for (int i = 0; i < MAX_CHANNELS; i++) {
-		if (_channel_has_data[i]) {
-			PX4_INFO("    Channel %d: %.3f", i, (double)_channel_average_load[i]);
-		}
-	}
+	PX4_INFO("  Lamp state: %s", _lamps_on ? "ON" : "OFF");
 
 #ifdef BOARD_HAS_LOAD_LAMP
 	PX4_INFO("  GPIO Configuration:");
@@ -370,24 +337,35 @@ int LoadLampController::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Load lamp controller that monitors motor load and adjusts lamp blink rate accordingly.
+Load lamp controller for the wheel loader rear board that responds to load lamp commands.
 
-The module subscribes to hbridge_status topic to get motor load information
-and controls two lamps (PA4, PC1) with PC0 as ground.
+The module subscribes to load_lamp_command topic sent from the main board (X7+)
+which aggregates motor load data from both front and rear boards via uORB proxy.
+The main board processes all hbridge_status data and sends appropriate lamp commands.
 
-Blink rates based on motor load:
-- 0.0-0.1: Very slow blink (0.5 Hz)
-- 0.1-0.2: Slow blink (1 Hz)
-- 0.2-0.3: Medium-slow blink (2 Hz)
-- 0.3-0.6: Medium blink (5 Hz)
-- 0.6-0.8: Fast blink (10 Hz)
-- 0.8-1.0: Very fast blink (20 Hz)
+Controls two lamps (PA4, PC1) with PC0 as ground based on received commands.
+
+Load levels and blink rates:
+- LOAD_VERY_LOW (0-10%): Very slow blink (0.5 Hz)
+- LOAD_LOW (10-20%): Slow blink (1 Hz)
+- LOAD_MED_LOW (20-30%): Medium-slow blink (2 Hz)
+- LOAD_MEDIUM (30-60%): Medium blink (5 Hz)
+- LOAD_HIGH (60-80%): Fast blink (10 Hz)
+- LOAD_VERY_HIGH (80-100%): Very fast blink (20 Hz)
+- LOAD_OFF: Turn off lamps
+
+### Architecture
+Main Board (X7+) → uORB Proxy → Front/Rear Boards
+  ↓ (aggregates hbridge_status from both boards)
+Load Analysis & Command Generation
+  ↓ (sends load_lamp_command to rear board)
+Rear Board LoadLampController → Physical Lamps
 
 ### Examples
 To start the module:
 $ load_lamp_controller start
 
-To test with different motor load values:
+To test with different load levels:
 $ load_lamp_controller test 0.1    # Test low load (slow blink)
 $ load_lamp_controller test 0.5    # Test medium load (medium blink)
 $ load_lamp_controller test 0.9    # Test high load (very fast blink)

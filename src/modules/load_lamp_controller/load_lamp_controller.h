@@ -36,7 +36,7 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <uORB/Subscription.hpp>
-#include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/load_lamp_command.h>
 #include <uORB/topics/parameter_update.h>
 #include <drivers/drv_hrt.h>
 #include <lib/perf/perf_counter.h>
@@ -63,7 +63,7 @@ public:
 
 private:
 	// Subscriptions
-	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::Subscription _load_lamp_command_sub{ORB_ID(load_lamp_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	// Performance counters
@@ -75,14 +75,6 @@ private:
 	float _current_load{0.0f};
 	uint64_t _last_toggle{0};
 	uint32_t _blink_interval_us{500000}; // Default 2Hz
-
-	// Channel-specific load tracking
-	static constexpr int MAX_CHANNELS = 2;
-	static constexpr int LOAD_HISTORY_SIZE = 10;
-	float _channel_load_history[MAX_CHANNELS][LOAD_HISTORY_SIZE]{};
-	int _channel_history_index[MAX_CHANNELS]{};
-	float _channel_average_load[MAX_CHANNELS]{};
-	bool _channel_has_data[MAX_CHANNELS]{};
 
 	// Test mode variables
 	bool _test_mode_active{false};

@@ -135,6 +135,7 @@ private:
 	static const hbridge_manager_config_t* get_manager_config();
 	static bool start_instance(int instance);
 	static void stop_all_instances();
+	static void print_instance_status(uint8_t instance);  // Debug helper
 
 	// Parameters (instance-specific)
 	DEFINE_PARAMETERS(

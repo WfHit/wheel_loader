@@ -317,14 +317,15 @@ void WheelController::communicate_with_hbridge()
     // Publish to H-bridge driver using hbridge_command
     hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
-    cmd.channel = _instance; // 0 for front, 1 for rear
+    cmd.instance = _instance; // 0 for front, 1 for rear (use instance instead of channel)
 
     // Convert normalized PWM to H-bridge format
     float normalized_output = _pwm_output / MAX_PWM_OUTPUT; // Normalize to [-1, 1]
     cmd.duty_cycle = normalized_output;  // Use duty_cycle directly (-1.0 to 1.0)
     cmd.enable = _armed && !_emergency_stop;
 
-    _hbridge_command_pub.publish(cmd);
+    // Publish to specific message instance for this wheel
+    _hbridge_command_pub.publish(cmd, _instance);
 
     // Also publish actuator_outputs for compatibility
     publish_actuator_outputs();

@@ -255,6 +255,7 @@ set(msg_files
 	TractionControl.msg
 	PredictiveTraction.msg
 	LoadAwareTorque.msg
+	LoadLampCommand.msg
 	LoadSensing.msg
 	TerrainAdaptation.msg
 	ModuleStatus.msg

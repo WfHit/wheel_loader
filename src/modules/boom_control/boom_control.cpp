@@ -370,8 +370,9 @@ void BoomControl::publish_hbridge_command()
 	hbridge_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
 
-	// Set channel from parameter
-	cmd.channel = static_cast<uint8_t>(_param_hbridge_channel.get());
+	// Set instance from parameter (use instance instead of channel)
+	uint8_t hbridge_instance = static_cast<uint8_t>(_param_hbridge_channel.get());
+	cmd.instance = hbridge_instance;
 
 	// Apply deadzone to prevent motor hunting around zero
 	float output = _motor_output;
@@ -386,7 +387,8 @@ void BoomControl::publish_hbridge_command()
 	// Enable channel if not in error state
 	cmd.enable = (_state != BoomState::ERROR);
 
-	_hbridge_command_pub.publish(cmd);
+	// Publish to specific message instance for this motor
+	_hbridge_command_pub.publish(cmd, hbridge_instance);
 }
 
 void BoomControl::publish_boom_status()
@@ -425,6 +427,24 @@ void BoomControl::publish_boom_status()
 	}
 
 	_boom_status_pub.publish(status);
+}
+
+bool BoomControl::check_hbridge_status()
+{
+	// Check hbridge status for our motor instance
+	uint8_t hbridge_instance = static_cast<uint8_t>(_param_hbridge_channel.get());
+	hbridge_status_s hbridge_status;
+
+	for (auto &sub : _hbridge_status_sub) {
+		if (sub.update(&hbridge_status)) {
+			if (hbridge_status.instance == hbridge_instance) {
+				// Update our status based on hbridge feedback
+				// Could use this for fault detection, current monitoring, etc.
+				return hbridge_status.enabled;
+			}
+		}
+	}
+	return false;  // No status received or not enabled
 }
 
 void BoomControl::emergency_stop()
