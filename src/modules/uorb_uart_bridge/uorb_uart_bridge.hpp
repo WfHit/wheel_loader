@@ -22,6 +22,7 @@
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/load_lamp_command.h>
+#include <uORB/topics/sensor_quad_encoder.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/topic_registry/topic_registry.hpp>
@@ -97,6 +98,12 @@ private:
 	uORB::Publication<hbridge_status_s> _hbridge_status_front_1_pub{ORB_ID(hbridge_status), 1};
 	uORB::Publication<hbridge_status_s> _hbridge_status_rear_0_pub{ORB_ID(hbridge_status), 2};
 	uORB::Publication<hbridge_status_s> _hbridge_status_rear_1_pub{ORB_ID(hbridge_status), 3};
+
+	// Sensor quad encoder publications (multi-instance, NXT → X7+)
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_front_0_pub{ORB_ID(sensor_quad_encoder), 0};
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_front_1_pub{ORB_ID(sensor_quad_encoder), 1};
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_rear_0_pub{ORB_ID(sensor_quad_encoder), 2};
+	uORB::Publication<sensor_quad_encoder_s> _sensor_quad_encoder_rear_1_pub{ORB_ID(sensor_quad_encoder), 3};
 
 	// Statistics structure
 	struct {

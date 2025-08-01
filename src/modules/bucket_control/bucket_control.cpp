@@ -579,29 +579,35 @@ void BucketControl::setMotorCommand(float command)
 void BucketControl::readEncoderFeedback()
 {
     // Read from sensor_quad_encoder topic published by quad encoder driver
-    sensor_quad_encoder_s encoder_data;
-    if (_sensor_quad_encoder_sub.update(&encoder_data)) {
-        uint8_t encoder_idx = _param_encoder_index.get();
+    uint8_t encoder_idx = _param_encoder_index.get();
 
-        if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
-            int32_t current_position = encoder_data.position[encoder_idx];
-            _encoder_count = current_position - _encoder_zero_offset;
+    // Check if we have a valid encoder instance
+    if (encoder_idx < _sensor_quad_encoder_sub.size()) {
+        sensor_quad_encoder_s encoder_data;
+        if (_sensor_quad_encoder_sub[encoder_idx].update(&encoder_data)) {
+            // Verify this is the correct instance
+            if (encoder_data.instance == encoder_idx) {
+                // Position is in 1/million rad, convert to encoder counts
+                // Assuming the encoder scale parameter converts from counts to length
+                int32_t current_position = static_cast<int32_t>(encoder_data.position * 1e-6 / _param_encoder_scale.get());
+                _encoder_count = current_position - _encoder_zero_offset;
 
-            // Calculate velocity from encoder changes
-            if (_last_encoder_time > 0) {
-                float dt = hrt_elapsed_time(&_last_encoder_time) * 1e-6f;
-                if (dt > 0.001f) { // Avoid division by very small numbers
-                    int64_t delta_count = _encoder_count - _last_encoder_count;
-                    float delta_length = delta_count * _param_encoder_scale.get();
-                    _current_velocity = delta_length / dt;
+                // Velocity is in 1/million rad/s, convert to current velocity
+                if (_last_encoder_time > 0) {
+                    float dt = hrt_elapsed_time(&_last_encoder_time) * 1e-6f;
+                    if (dt > 0.001f) { // Avoid division by very small numbers
+                        int64_t delta_count = _encoder_count - _last_encoder_count;
+                        float delta_length = delta_count * _param_encoder_scale.get();
+                        _current_velocity = delta_length / dt;
+                    }
                 }
+
+                _last_encoder_count = _encoder_count;
+                _last_encoder_time = encoder_data.timestamp;
+
+                // Convert encoder counts to actuator length
+                _current_actuator_length = _encoder_count * _param_encoder_scale.get() + _kinematics.actuator_min_length;
             }
-
-            _last_encoder_count = _encoder_count;
-            _last_encoder_time = encoder_data.timestamp;
-
-            // Convert encoder counts to actuator length
-            _current_actuator_length = _encoder_count * _param_encoder_scale.get() + _kinematics.actuator_min_length;
         }
     }
 }

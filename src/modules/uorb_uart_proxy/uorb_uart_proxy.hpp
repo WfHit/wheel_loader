@@ -53,6 +53,7 @@
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/load_lamp_command.h>
+#include <uORB/topics/sensor_quad_encoder.h>
 
 #include <lib/distributed_uorb/uart_transport/uart_transport.hpp>
 #include <lib/distributed_uorb/uart_protocol/uart_protocol.hpp>
@@ -134,6 +135,10 @@ private:
 	// HBridge status subscriptions (multi-instance, NXT → X7+)
 	uORB::Subscription _hbridge_status_sub_0{ORB_ID(hbridge_status), 0};
 	uORB::Subscription _hbridge_status_sub_1{ORB_ID(hbridge_status), 1};
+
+	// Sensor quad encoder subscriptions (multi-instance, NXT → X7+)
+	uORB::Subscription _sensor_quad_encoder_sub_0{ORB_ID(sensor_quad_encoder), 0};
+	uORB::Subscription _sensor_quad_encoder_sub_1{ORB_ID(sensor_quad_encoder), 1};
 
 	// uORB publications (incoming from main board)
 	uORB::Publication<wheel_loader_setpoint_s> _wheel_loader_setpoint_pub{ORB_ID(wheel_loader_setpoint)};

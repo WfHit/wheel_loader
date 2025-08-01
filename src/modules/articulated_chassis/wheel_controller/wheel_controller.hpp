@@ -3,6 +3,8 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <px4_platform_common/px4_config.h>
+#include <drivers/drv_hrt.h>
 #include <lib/perf/perf_counter.h>
 #include <lib/pid/PID.hpp>
 #include <lib/mathlib/mathlib.h>
@@ -93,7 +95,7 @@ private:
 
     // uORB subscriptions - matching existing system
     uORB::Subscription _wheel_speeds_setpoint_sub{ORB_ID(wheel_speeds_setpoint)};
-    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
+    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder), _instance};
     uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};

@@ -199,7 +199,7 @@ private:
 
         // uORB subscriptions
     uORB::Subscription _bucket_command_sub{ORB_ID(bucket_command)};
-    uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
+    uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _sensor_quad_encoder_sub{ORB_ID::sensor_quad_encoder};
     uORB::SubscriptionMultiArray _hbridge_status_sub{ORB_ID(hbridge_status)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};

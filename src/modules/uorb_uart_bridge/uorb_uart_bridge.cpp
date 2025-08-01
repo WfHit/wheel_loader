@@ -475,6 +475,45 @@ void UorbUartBridge::processIncomingMessages()
 			break;
 		}
 
+		case distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT: {
+			if (frame.header.length == sizeof(sensor_quad_encoder_s)) {
+				sensor_quad_encoder_s sensor_data;
+				memcpy(&sensor_data, frame.payload, sizeof(sensor_data));
+
+				// Determine which front instance to publish to based on the sensor instance
+				if (sensor_data.instance == 0) {
+					_sensor_quad_encoder_front_0_pub.publish(sensor_data);
+				} else if (sensor_data.instance == 1) {
+					_sensor_quad_encoder_front_1_pub.publish(sensor_data);
+				}
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid sensor quad encoder front length: %d", frame.header.length);
+			}
+			break;
+		}
+
+		case distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR: {
+			if (frame.header.length == sizeof(sensor_quad_encoder_s)) {
+				sensor_quad_encoder_s sensor_data;
+				memcpy(&sensor_data, frame.payload, sizeof(sensor_data));
+
+				// Determine which rear instance to publish to based on the sensor instance
+				// Map rear board instances to global instances 2 and 3
+				if (sensor_data.instance == 0) {
+					sensor_data.instance = 2; // Remap to global instance 2
+					_sensor_quad_encoder_rear_0_pub.publish(sensor_data);
+				} else if (sensor_data.instance == 1) {
+					sensor_data.instance = 3; // Remap to global instance 3
+					_sensor_quad_encoder_rear_1_pub.publish(sensor_data);
+				}
+			} else {
+				_stats.rx_errors++;
+				PX4_WARN("Invalid sensor quad encoder rear length: %d", frame.header.length);
+			}
+			break;
+		}
+
 		default:
 			_stats.rx_errors++;
 			PX4_WARN("Unknown message ID: %d", frame.header.msg_id);

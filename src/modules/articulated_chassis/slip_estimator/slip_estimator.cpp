@@ -59,29 +59,27 @@ void SlipEstimator::updateVehicleState()
     const int front_idx = _param_front_encoder_idx.get();
     const int rear_idx = _param_rear_encoder_idx.get();
 
-    // Check all available encoder instances
-    for (uint8_t instance = 0; instance < _sensor_quad_encoder_sub.size(); instance++) {
-        sensor_quad_encoder_s encoders;
-        if (_sensor_quad_encoder_sub[instance].copy(&encoders)) {
-            // Validate encoder indices and count
-            if (encoders.count > front_idx && encoders.count > rear_idx) {
-                // Front wheel encoder
-                if (front_idx >= 0 && front_idx < encoders.count && encoders.valid[front_idx]) {
-                    // Convert rad/s to linear speed (m/s) using wheel radius parameter
-                    _vehicle_state.wheel_speed_front = encoders.velocity[front_idx] * _param_wheel_radius.get();
-                }
+    // Read front wheel encoder if valid index
+    if (front_idx >= 0 && front_idx < _sensor_quad_encoder_sub.size()) {
+        sensor_quad_encoder_s encoder_data;
+        if (_sensor_quad_encoder_sub[front_idx].update(&encoder_data)) {
+            // Verify this is the correct instance
+            if (encoder_data.instance == front_idx) {
+                // Convert 1/million rad/s to linear speed (m/s) using wheel radius parameter
+                _vehicle_state.wheel_speed_front = encoder_data.velocity * 1e-6f * _param_wheel_radius.get();
+            }
+        }
+    }
 
-                // Rear wheel encoder
-                if (rear_idx >= 0 && rear_idx < encoders.count && encoders.valid[rear_idx]) {
-                    // Convert rad/s to linear speed (m/s) using wheel radius parameter
-                    _vehicle_state.wheel_speed_rear = encoders.velocity[rear_idx] * _param_wheel_radius.get();
-                }
-
-                _vehicle_state.last_update = encoders.timestamp;
-                break; // Use first valid instance
-            } else {
-                PX4_WARN("SlipEstimator: Encoder indices (%d, %d) exceed available encoders (%d) in instance %d",
-                         front_idx, rear_idx, encoders.count, instance);
+    // Read rear wheel encoder if valid index
+    if (rear_idx >= 0 && rear_idx < _sensor_quad_encoder_sub.size()) {
+        sensor_quad_encoder_s encoder_data;
+        if (_sensor_quad_encoder_sub[rear_idx].update(&encoder_data)) {
+            // Verify this is the correct instance
+            if (encoder_data.instance == rear_idx) {
+                // Convert 1/million rad/s to linear speed (m/s) using wheel radius parameter
+                _vehicle_state.wheel_speed_rear = encoder_data.velocity * 1e-6f * _param_wheel_radius.get();
+                _vehicle_state.last_update = encoder_data.timestamp;
             }
         }
     }

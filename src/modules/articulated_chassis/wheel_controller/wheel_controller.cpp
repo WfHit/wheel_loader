@@ -1,6 +1,10 @@
 #include "wheel_controller.hpp"
 #include <mathlib/mathlib.h>
 #include <drivers/drv_hrt.h>
+#include <px4_platform_common/getopt.h>
+#include <px4_platform_common/log.h>
+
+#define MODULE_NAME "wheel_controller"
 
 WheelController::WheelController(uint8_t instance, bool is_front) :
     ModuleParams(nullptr),
@@ -106,16 +110,16 @@ void WheelController::process_encoder_data()
     sensor_quad_encoder_s encoder_data;
 
     if (_sensor_quad_encoder_sub.update(&encoder_data)) {
-        const uint8_t encoder_idx = _instance; // 0 for front, 1 for rear
-
-        if (encoder_idx < encoder_data.count && encoder_data.valid[encoder_idx]) {
+        // Verify this is the correct instance
+        if (encoder_data.instance == _instance) {
             // Get encoder position and velocity from sensor_quad_encoder
-            const int32_t current_position = encoder_data.position[encoder_idx];
-            const float velocity_rad_s = encoder_data.velocity[encoder_idx];
+            // Position is in 1/million rad, velocity is in 1/million rad/s
+            const float position_rad = encoder_data.position * 1e-6f;
+            const float velocity_rad_s = encoder_data.velocity * 1e-6f;
 
-            // Update encoder counts
+            // Update encoder counts (convert rad to counts using resolution)
             _encoder_count_prev = _encoder_count;
-            _encoder_count = current_position;
+            _encoder_count = static_cast<int32_t>(position_rad / (2.0f * M_PI) * _param_encoder_resolution.get());
 
             // Convert rad/s to RPM for internal calculations
             _current_speed_rpm = velocity_rad_s * 60.0f / (2.0f * M_PI_F);

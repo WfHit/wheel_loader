@@ -460,6 +460,65 @@ void UorbUartProxy::processOutgoingMessages()
 			PX4_WARN("Failed to send HBridge status instance 1");
 		}
 	}
+
+	// Send sensor quad encoder data (multi-instance, NXT → X7+)
+	sensor_quad_encoder_s sensor_data;
+
+	// Send sensor quad encoder instance 0
+	if (_sensor_quad_encoder_sub_0.update(&sensor_data)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(sensor_data);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &sensor_data, sizeof(sensor_data));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send sensor quad encoder instance 0");
+		}
+	}
+
+	// Send sensor quad encoder instance 1
+	if (_sensor_quad_encoder_sub_1.update(&sensor_data)) {
+		distributed_uorb::UartFrame frame;
+		frame.header.sync = distributed_uorb::UART_SYNC_PATTERN;
+
+		// Use appropriate message ID based on board type
+		if (_board_id == distributed_uorb::BOARD_ID_NXT_FRONT) {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_FRONT);
+		} else {
+			frame.header.msg_id = static_cast<uint8_t>(distributed_uorb::UartMessageId::SENSOR_QUAD_ENCODER_REAR);
+		}
+
+		frame.header.board_id = _board_id;
+		frame.header.length = sizeof(sensor_data);
+		frame.header.sequence = _tx_sequence++;
+		frame.header.timestamp = hrt_absolute_time();
+
+		memcpy(frame.payload, &sensor_data, sizeof(sensor_data));
+
+		if (_uart_transport.sendFrame(frame) >= 0) {
+			_stats.tx_messages++;
+			_stats.tx_bytes += sizeof(frame.header) + frame.header.length + sizeof(frame.crc);
+		} else {
+			_stats.tx_errors++;
+			PX4_WARN("Failed to send sensor quad encoder instance 1");
+		}
+	}
 }
 
 void UorbUartProxy::sendHeartbeat()

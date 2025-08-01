@@ -55,9 +55,11 @@ uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors
 ```cpp
 #include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/hbridge_command.h>
-uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
+uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _sensor_quad_encoder_sub{ORB_ID::sensor_quad_encoder};
 uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 ```
+
+**Note**: Updated to use multi-instance subscription for individual encoder instances.
 
 ### 2. SteeringController
 **Uses**: `robotic_servo_command` ✓ (servo provides internal position feedback)
@@ -90,9 +92,11 @@ uORB::Publication<actuator_motors_s> _actuator_motors_pub{ORB_ID(actuator_motors
 ```cpp
 #include <uORB/topics/sensor_quad_encoder.h>
 #include <uORB/topics/hbridge_command.h>
-uORB::Subscription _sensor_quad_encoder_sub{ORB_ID(sensor_quad_encoder)};
+uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _sensor_quad_encoder_sub{ORB_ID::sensor_quad_encoder};
 uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 ```
+
+**Note**: Updated to use multi-instance subscription for individual encoder instances.
 
 ## Implementation Notes
 
