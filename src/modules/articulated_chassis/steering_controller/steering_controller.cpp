@@ -99,18 +99,26 @@ void SteeringController::process_steering_command()
 	if (_steering_setpoint_sub.update(&setpoint)) {
 		_last_command_time = hrt_absolute_time();
 
+		// Validate setpoint
+		if (!PX4_ISFINITE(setpoint.steering_angle_rad)) {
+			PX4_WARN("Invalid steering setpoint: non-finite angle");
+			return;
+		}
+
 		// Get target angle and constrain to limits
 		_target_angle_rad = saturate_angle(setpoint.steering_angle_rad);
 
 		// Check if command is safe based on limit sensors
 		bool safe_to_move = true;
 
-		if (_target_angle_rad < 0 && _left_limit_active) {
+		if (_target_angle_rad < 0.0f && _left_limit_active) {
 			safe_to_move = false;  // Don't move left if left limit is active
+			PX4_DEBUG("Left limit active, blocking leftward movement");
 		}
 
-		if (_target_angle_rad > 0 && _right_limit_active) {
+		if (_target_angle_rad > 0.0f && _right_limit_active) {
 			safe_to_move = false;  // Don't move right if right limit is active
+			PX4_DEBUG("Right limit active, blocking rightward movement");
 		}
 
 		if (safe_to_move && _servo_healthy && !_emergency_stop) {
@@ -118,6 +126,14 @@ void SteeringController::process_steering_command()
 
 		} else {
 			// Emergency: command to center position
+			if (!_servo_healthy) {
+				PX4_DEBUG("Servo unhealthy, commanding center position");
+			}
+
+			if (_emergency_stop) {
+				PX4_DEBUG("Emergency stop active, commanding center position");
+			}
+
 			send_servo_command(0.0f);
 		}
 	}
@@ -125,6 +141,12 @@ void SteeringController::process_steering_command()
 
 void SteeringController::send_servo_command(float position_rad)
 {
+	// Validate position input
+	if (!PX4_ISFINITE(position_rad)) {
+		PX4_ERR("Invalid servo position command: non-finite value");
+		return;
+	}
+
 	robotic_servo_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
 	cmd.id = _st3125_servo_id.get();
@@ -177,17 +199,27 @@ void SteeringController::process_limit_sensors()
 
 void SteeringController::handle_abnormal_events()
 {
+	bool has_fault = false;
+
 	// Check for command timeout
 	if (is_command_timeout()) {
-		PX4_WARN("Steering command timeout - returning to center");
+		if (_last_command_time > 0) {  // Only warn if we've received at least one command
+			PX4_WARN("Steering command timeout - returning to center");
+		}
+
 		_target_angle_rad = 0.0f;
 		send_servo_command(0.0f);
+		has_fault = true;
 	}
 
 	// Check for feedback timeout
 	if (is_feedback_timeout()) {
-		PX4_WARN("Servo feedback timeout");
+		if (_last_feedback_time > 0) {  // Only warn if we've received at least one feedback
+			PX4_WARN("Servo feedback timeout");
+		}
+
 		_servo_healthy = false;
+		has_fault = true;
 	}
 
 	// Check servo error flags
@@ -196,26 +228,48 @@ void SteeringController::handle_abnormal_events()
 		_servo_healthy = false;
 		_emergency_stop = true;
 		send_servo_command(0.0f); // Emergency stop - return to center
+		has_fault = true;
 	}
 
 	// Check limit sensor faults
 	if (!_limit_sensors_healthy) {
 		PX4_WARN("Limit sensor fault detected");
-		// Continue operation but with caution
+		// Continue operation but with caution - this is not a critical fault
 	}
 
-	// Check for overcurrent
-	if (_servo_current_a > _st3125_current_limit.get()) {
-		PX4_WARN("Servo overcurrent: %.2fA", (double)_servo_current_a);
+	// Check for overcurrent (with hysteresis to avoid chattering)
+	const float current_limit = _st3125_current_limit.get();
+
+	if (_servo_current_a > current_limit * 1.1f) {  // 10% hysteresis
+		PX4_WARN("Servo overcurrent: %.2fA > %.2fA", (double)_servo_current_a, (double)current_limit);
 		_emergency_stop = true;
 		send_servo_command(0.0f);
+		has_fault = true;
+
+	} else if (_emergency_stop && _servo_current_a < current_limit * 0.9f) {
+		// Allow recovery when current drops below 90% of limit
+		_emergency_stop = false;
+		PX4_INFO("Overcurrent condition cleared");
 	}
 
-	// Check for overtemperature
-	if (_servo_temperature_c > 80.0f) { // ST3125 operating limit
-		PX4_WARN("Servo overtemperature: %.1f°C", (double)_servo_temperature_c);
+	// Check for overtemperature (with hysteresis)
+	const float temp_limit = 80.0f; // ST3125 operating limit
+
+	if (_servo_temperature_c > temp_limit + 5.0f) {  // 5°C hysteresis
+		PX4_WARN("Servo overtemperature: %.1f°C > %.1f°C", (double)_servo_temperature_c, (double)temp_limit);
 		_emergency_stop = true;
 		send_servo_command(0.0f);
+		has_fault = true;
+
+	} else if (_emergency_stop && _servo_temperature_c < temp_limit) {
+		// Allow recovery when temperature drops below limit
+		_emergency_stop = false;
+		PX4_INFO("Overtemperature condition cleared");
+	}
+
+	// If no faults, clear emergency stop (but keep it if manually set)
+	if (!has_fault && _servo_healthy) {
+		// Emergency stop may be cleared naturally when conditions improve
 	}
 }
 
