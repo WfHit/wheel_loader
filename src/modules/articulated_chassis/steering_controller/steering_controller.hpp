@@ -97,7 +97,7 @@ private:
 	// uORB subscriptions
 	uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
 	uORB::Subscription _servo_feedback_sub{ORB_ID(robotic_servo_feedback)};
-	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_subs{ORB_ID(limit_sensor)};
+	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID(limit_sensor)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	// uORB publications
@@ -138,5 +138,7 @@ private:
 	void update_parameters();
 	float saturate_angle(float angle_rad);
 	bool is_command_timeout();
+	uint8_t get_left_limit() const { return _limit_left_instance.get(); }
+	uint8_t get_right_limit() const { return _limit_right_instance.get(); }
 	bool is_feedback_timeout();
 };
