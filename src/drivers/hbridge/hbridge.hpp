@@ -139,8 +139,8 @@ private:
 
 	// Parameters (instance-specific)
 	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::HBRIDGE_MSG_INST0>) _param_msg_instance_0,
-		(ParamInt<px4::params::HBRIDGE_MSG_INST1>) _param_msg_instance_1,
+		(ParamInt<px4::params::HBRIDGE_MSG_I0>) _param_msg_instance_0,
+		(ParamInt<px4::params::HBRIDGE_MSG_I1>) _param_msg_instance_1,
 		(ParamInt<px4::params::HBRIDGE_DIR_REV0>) _param_dir_reverse_0,
 		(ParamInt<px4::params::HBRIDGE_DIR_REV1>) _param_dir_reverse_1,
 		(ParamInt<px4::params::HBRIDGE_0_FLIM>) _param_0_fwd_limit,

@@ -37,10 +37,10 @@
 #include <px4_platform_common/log.h>
 
 WheelController::WheelController() :
-	ModuleBase(MODULE_NAME),
+	ModuleBase(),
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	_speed_controller(0.0f, 0.0f, 0.0f, 0.0f, MAX_PWM_VALUE, 0.0f, CONTROL_DT),
+	_speed_controller(),
 	_speed_filter(CONTROL_DT, DEFAULT_FILTER_FREQ)
 {
 }
@@ -98,9 +98,8 @@ bool WheelController::init()
 	_speed_controller.setGains(_param_speed_p.get(),
 				   _param_speed_i.get(),
 				   _param_speed_d.get());
-	_speed_controller.setIntegratorLimits(-_param_integrator_max.get(),
-					      _param_integrator_max.get());
-	_speed_controller.setOutputLimits(MIN_PWM_VALUE, MAX_PWM_VALUE);
+	_speed_controller.setIntegralLimit(_param_integrator_max.get());
+	_speed_controller.setOutputLimit(MAX_PWM_VALUE);
 
 	// Initialize speed filter
 	_speed_filter.set_cutoff_frequency(CONTROL_DT, _param_filter_freq.get());

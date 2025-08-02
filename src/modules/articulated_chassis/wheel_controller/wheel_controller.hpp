@@ -108,11 +108,11 @@ private:
 	uORB::Subscription _setpoint_sub{ORB_ID(wheel_loader_setpoint)};
 
 	// Instance-specific subscriptions - initialized in init()
-	uORB::Subscription _encoder_sub;
-	uORB::Subscription _hbridge_status_sub;
+	uORB::Subscription _encoder_sub{ORB_ID(sensor_quad_encoder)};
+	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
 
 	// uORB publications
-	uORB::PublicationMulti<hbridge_command_s> _motor_cmd_pub;
+	uORB::PublicationMulti<hbridge_command_s> _motor_cmd_pub{ORB_ID(hbridge_command)};
 
 	// Control system
 	PID _speed_controller;

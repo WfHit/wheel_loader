@@ -8,7 +8,7 @@ px4_add_module(
 	DEPENDS
 		mathlib
 		px4_work_queue
-		pid
+		PID
 	MODULE_CONFIG
 		module.yaml
 )

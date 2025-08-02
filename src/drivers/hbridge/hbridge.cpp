@@ -632,8 +632,8 @@ $ param set HBRIDGE_DIR_REV0 1  # Reverse direction for channel 0
 $ param set HBRIDGE_DIR_REV1 0  # Normal direction for channel 1
 
 Configure message instances:
-$ param set HBRIDGE_MSG_INST0 0  # Channel 0 listens to command instance 0
-$ param set HBRIDGE_MSG_INST1 1  # Channel 1 listens to command instance 1
+$ param set HBRIDGE_MSG_I0 0  # Channel 0 listens to command instance 0
+$ param set HBRIDGE_MSG_I1 1  # Channel 1 listens to command instance 1
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("hbridge", "driver");

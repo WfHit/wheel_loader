@@ -51,7 +51,7 @@ parameters:
               default: 0.001
               decimal: 6
               increment: 0.000001
-              unit: units/pulse
+              unit: ""
           QENC0_REV:
               description:
                   short: Encoder 0 direction reverse
@@ -105,7 +105,7 @@ parameters:
               default: 0.001
               decimal: 6
               increment: 0.000001
-              unit: units/pulse
+              unit: ""
           QENC1_REV:
               description:
                   short: Encoder 1 direction reverse
