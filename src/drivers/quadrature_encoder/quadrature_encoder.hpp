@@ -142,9 +142,6 @@ private:
     // === Timing Control ===
     uint32_t _run_interval_us{10000};     // Polling interval (default 100Hz)
 
-    // === Core Interface ===
-    void Run() override;
-
     // === Instance Lifecycle ===
     static bool start_instance(int instance);
     void stop_all_encoder_instances();
@@ -191,6 +188,6 @@ private:
         (ParamBool<px4::params::QE_1_ENABLE>) _param_qe1_enable,
         (ParamInt<px4::params::QE_1_OVERFLOW>) _param_qe1_overflow,
         (ParamFloat<px4::params::QE_1_RESOLUTION>) _param_qe1_resolution,
-        (ParamBool<px4::params::QE_1_REVERSE>) _param_qe1_reverse,
+        (ParamBool<px4::params::QE_1_REVERSE>) _param_qe1_reverse
     )
 };

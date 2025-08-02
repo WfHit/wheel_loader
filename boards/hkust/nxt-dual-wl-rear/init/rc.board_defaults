@@ -52,8 +52,8 @@ param set-default WL_REAR_WHEEL_KD 0.05
 
 # Quadrature encoder configuration
 param set-default QENC0_EN 1          # Enable quadrature encoder
-param set-default QENC0_PPR 52        # 13-line encoder: 13 lines × 4 edges = 52 pulses per revolution
-param set-default QENC0_RES 1.0       # Resolution: 2π/52 rad/pulse for 13-line encoder
+param set-default QENC0_PPR 52        # 13-line encoder: 13 lines x 4 edges = 52 pulses per revolution
+param set-default QENC0_RES 1.0       # Resolution: 2*pi/52 rad/pulse for 13-line encoder
 param set-default QENC0_REV 0         # Normal direction
 
 # Test Serial Driver Configuration

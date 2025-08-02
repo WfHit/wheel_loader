@@ -369,12 +369,13 @@ void QuadratureEncoder::handle_reset_events()
 
 void QuadratureEncoder::handle_parameter_updates()
 {
-    if (_parameter_update_sub.updated()) {
-        parameter_update_s param_update;
-        _parameter_update_sub.copy(&param_update);
-        ModuleParams::updateParams();
-        update_encoder_configuration();
-    }
+    // Temporarily disabled parameter updates
+    // if (_parameter_update_sub.updated()) {
+    //     parameter_update_s param_update;
+    //     _parameter_update_sub.copy(&param_update);
+    //     ModuleParams::updateParams();
+    //     update_encoder_configuration();
+    // }
 }
 
 void QuadratureEncoder::update_encoder_configuration()

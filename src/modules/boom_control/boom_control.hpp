@@ -151,10 +151,10 @@ private:
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
-	uORB::SubscriptionMultiArray _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
 
 	// uORB publications
-	uORB::PublicationMulti<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+	orb_advert_t _hbridge_command_pub{nullptr};
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 
 	// Performance counters

@@ -2,7 +2,7 @@ module_name: GPIO Quadrature Encoder Driver
 parameters:
     - group: Quadrature Encoder General
       definitions:
-          QENC_RATE:
+          QE_POLL_RATE:
               description:
                   short: Global encoder update rate
                   long: Global data update frequency for all encoders
@@ -14,7 +14,7 @@ parameters:
               unit: Hz
     - group: Quadrature Encoder 0
       definitions:
-          QENC0_EN:
+          QE_0_ENABLE:
               description:
                   short: Enable encoder 0
                   long: Enable or disable encoder channel 0
@@ -25,7 +25,7 @@ parameters:
               values:
                   0: Disabled
                   1: Enabled
-          QENC0_PPR:
+          QE_0_OVERFLOW:
               description:
                   short: Encoder 0 counter overflow value
                   long: |
@@ -37,7 +37,7 @@ parameters:
               max: 65535
               default: 0
               increment: 1
-          QENC0_RES:
+          QE_0_RESOLUTION:
               description:
                   short: Encoder 0 resolution (units per pulse)
                   long: |
@@ -52,7 +52,7 @@ parameters:
               decimal: 6
               increment: 0.000001
               unit: ""
-          QENC0_REV:
+          QE_0_REVERSE:
               description:
                   short: Encoder 0 direction reverse
                   long: |
@@ -68,7 +68,7 @@ parameters:
                   1: Reversed direction
     - group: Quadrature Encoder 1
       definitions:
-          QENC1_EN:
+          QE_1_ENABLE:
               description:
                   short: Enable encoder 1
                   long: Enable or disable encoder channel 1
@@ -79,7 +79,7 @@ parameters:
               values:
                   0: Disabled
                   1: Enabled
-          QENC1_PPR:
+          QE_1_OVERFLOW:
               description:
                   short: Encoder 1 counter overflow value
                   long: |
@@ -91,7 +91,7 @@ parameters:
               max: 65535
               default: 0
               increment: 1
-          QENC1_RES:
+          QE_1_RESOLUTION:
               description:
                   short: Encoder 1 resolution (units per pulse)
                   long: |
@@ -106,7 +106,7 @@ parameters:
               decimal: 6
               increment: 0.000001
               unit: ""
-          QENC1_REV:
+          QE_1_REVERSE:
               description:
                   short: Encoder 1 direction reverse
                   long: |

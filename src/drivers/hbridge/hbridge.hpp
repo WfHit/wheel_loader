@@ -102,8 +102,8 @@ private:
 
 	// Subscriptions (instance-specific command subscription)
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::SubscriptionMultiArray _command_sub{ORB_ID(hbridge_command)};
-	uORB::SubscriptionMultiArray _limit_sensor_sub{ORB_ID(limit_sensor)};
+	uORB::SubscriptionMultiArray<hbridge_command_s> _command_sub{ORB_ID::hbridge_command};
+	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID::limit_sensor};
 
 	// Performance counters
 	perf_counter_t _loop_perf{nullptr};

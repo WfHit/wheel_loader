@@ -388,7 +388,14 @@ void BoomControl::publish_hbridge_command()
 	cmd.enable = (_state != BoomState::ERROR);
 
 	// Publish to specific message instance for this motor
-	_hbridge_command_pub.publish(cmd, hbridge_instance);
+	if (_hbridge_command_pub == nullptr) {
+		int instance = hbridge_instance;
+		_hbridge_command_pub = orb_advertise_multi(ORB_ID(hbridge_command), nullptr, &instance);
+	}
+
+	if (_hbridge_command_pub != nullptr) {
+		orb_publish(ORB_ID(hbridge_command), _hbridge_command_pub, &cmd);
+	}
 }
 
 void BoomControl::publish_boom_status()

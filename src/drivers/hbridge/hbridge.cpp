@@ -36,7 +36,7 @@
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_arch/io_timer.h>
-#include <px4_arch/gpio.h>
+#include <px4_arch/micro_hal.h>
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_motor_pwm.h>
 #include <lib/mathlib/mathlib.h>
@@ -64,8 +64,8 @@ HBridge::HBridge(uint8_t instance) :
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	_instance(instance),
 	_parameter_update_sub(ORB_ID(parameter_update)),
-	_command_sub(ORB_ID(hbridge_command)),
-	_limit_sensor_sub(ORB_ID(limit_sensor)),
+	_command_sub(ORB_ID::hbridge_command),
+	_limit_sensor_sub(ORB_ID::limit_sensor),
 	_loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")),
 	_command_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": command"))
 {
@@ -258,7 +258,7 @@ void HBridge::process_commands()
 	perf_begin(_command_perf);
 
 	hbridge_command_s cmd;
-	if (_command_sub.update(get_msg_instance(), &cmd)) {
+	if (_command_sub[get_msg_instance()].updated() && _command_sub[get_msg_instance()].copy(&cmd)) {
 		// Process duty cycle command for this instance
 		if (cmd.enable) {
 			float duty_cycle = math::constrain(cmd.duty_cycle, -1.0f, 1.0f);
@@ -279,13 +279,13 @@ void HBridge::process_limit_sensors()
 
 	// Check forward limit sensor for this instance
 	uint8_t forward_limit_id = get_fwd_limit();
-	if (forward_limit_id != 255 && _limit_sensor_sub.update(forward_limit_id, &limit_msg)) {
+	if (forward_limit_id != 255 && _limit_sensor_sub[forward_limit_id].updated() && _limit_sensor_sub[forward_limit_id].copy(&limit_msg)) {
 		_forward_limit_active = limit_msg.state;
 	}
 
 	// Check reverse limit sensor for this instance
 	uint8_t reverse_limit_id = get_rev_limit();
-	if (reverse_limit_id != 255 && _limit_sensor_sub.update(reverse_limit_id, &limit_msg)) {
+	if (reverse_limit_id != 255 && _limit_sensor_sub[reverse_limit_id].updated() && _limit_sensor_sub[reverse_limit_id].copy(&limit_msg)) {
 		_reverse_limit_active = limit_msg.state;
 	}
 }
@@ -499,7 +499,7 @@ void HBridge::print_instance_status(uint8_t instance)
 	PX4_INFO("HBridge instance %d (%s):", instance, config->name);
 	PX4_INFO("  Enabled: %s", config->enabled ? "YES" : "NO");
 	PX4_INFO("  PWM Channel: %d", config->pwm_ch);
-	PX4_INFO("  Direction GPIO: 0x%08x", config->dir_gpio);
+	PX4_INFO("  Direction GPIO: 0x%08lx", config->dir_gpio);
 	PX4_INFO("  Message Instance: %d", inst->get_msg_instance());
 	PX4_INFO("  Direction Reversed: %s", inst->get_dir_reverse() ? "YES" : "NO");
 	PX4_INFO("  Current Duty Cycle: %.2f", (double)inst->_current_duty_cycle);
