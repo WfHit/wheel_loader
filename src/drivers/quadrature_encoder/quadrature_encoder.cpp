@@ -68,6 +68,7 @@ QuadratureEncoder::QuadratureEncoder(uint8_t instance) :
     ModuleParams(nullptr),
     ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
     _instance(instance),
+    _pub_encoder(ORB_ID(sensor_quad_encoder)),
     _parameter_update_sub(ORB_ID(parameter_update)),
     _cycle_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")),
     _sample_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": sample")),
@@ -98,11 +99,6 @@ QuadratureEncoder::~QuadratureEncoder()
     if (_instance == MANAGER_INSTANCE) {
         stop_all_encoder_instances();
         _manager_instance = nullptr;
-    }
-
-    // Unadvertise publication
-    if (_pub_handle != nullptr) {
-        orb_unadvertise(_pub_handle);
     }
 
     // Stop platform encoder if this is not the manager instance
@@ -147,7 +143,9 @@ bool QuadratureEncoder::init()
     }
 
     // Set up timing configuration
-    uint32_t poll_rate = math::constrain(_param_poll_rate.get(), 10, 1000); // 10-1000 Hz
+    uint32_t poll_rate = static_cast<uint32_t>(_param_poll_rate.get());
+    if (poll_rate < 10) poll_rate = 10;      // Minimum 10 Hz
+    if (poll_rate > 1000) poll_rate = 1000;  // Maximum 1000 Hz
     _run_interval_us = 1000000 / poll_rate;
 
     // Check if this instance is enabled
@@ -158,11 +156,6 @@ bool QuadratureEncoder::init()
 
     // Configure encoder
     if (!configure_encoder()) {
-        return false;
-    }
-
-    // Initialize uORB publication
-    if (!init_publication()) {
         return false;
     }
 
@@ -221,7 +214,9 @@ bool QuadratureEncoder::configure_encoder()
 
     // Configure encoder overflow count from parameters
     int overflow_count = get_instance_overflow();
-    uint16_t overflow_value = (uint16_t)math::constrain(overflow_count, 0, 65535);
+    uint16_t overflow_value = (overflow_count < 0) ? 0 :
+                             (overflow_count > 65535) ? 65535 :
+                             static_cast<uint16_t>(overflow_count);
 
     if (quad_encoder_set_overflow_count(_instance, overflow_value) < 0) {
         PX4_ERR("Failed to set encoder overflow count for instance %d", _instance);
@@ -235,23 +230,6 @@ bool QuadratureEncoder::configure_encoder()
     }
 
     PX4_INFO("Encoder %d configured successfully", _instance);
-    return true;
-}
-
-bool QuadratureEncoder::init_publication()
-{
-    sensor_quad_encoder_s msg{};
-    msg.timestamp = hrt_absolute_time();
-    msg.instance = _instance;
-
-    int instance_copy = _instance;
-    _pub_handle = orb_advertise_multi(ORB_ID(sensor_quad_encoder), &msg, &instance_copy);
-
-    if (_pub_handle == nullptr) {
-        PX4_ERR("Failed to advertise sensor_quad_encoder");
-        return false;
-    }
-
     return true;
 }
 
@@ -343,9 +321,7 @@ void QuadratureEncoder::publish_encoder_data()
     msg.position = _encoder_state.position;
     msg.velocity = _encoder_state.velocity;
 
-    if (_pub_handle != nullptr) {
-        orb_publish(ORB_ID(sensor_quad_encoder), _pub_handle, &msg);
-    }
+    _pub_encoder.publish(msg);
 }
 
 void QuadratureEncoder::reset_position()
@@ -369,20 +345,21 @@ void QuadratureEncoder::handle_reset_events()
 
 void QuadratureEncoder::handle_parameter_updates()
 {
-    // Temporarily disabled parameter updates
-    // if (_parameter_update_sub.updated()) {
-    //     parameter_update_s param_update;
-    //     _parameter_update_sub.copy(&param_update);
-    //     ModuleParams::updateParams();
-    //     update_encoder_configuration();
-    // }
+    if (_parameter_update_sub.updated()) {
+        parameter_update_s param_update;
+        _parameter_update_sub.copy(&param_update);
+        ModuleParams::updateParams();
+        update_encoder_configuration();
+    }
 }
 
 void QuadratureEncoder::update_encoder_configuration()
 {
     // Update hardware overflow count
     int overflow_count = get_instance_overflow();
-    uint16_t overflow_value = (uint16_t)math::constrain(overflow_count, 0, 65535);
+    uint16_t overflow_value = (overflow_count < 0) ? 0 :
+                             (overflow_count > 65535) ? 65535 :
+                             static_cast<uint16_t>(overflow_count);
 
     if (quad_encoder_set_overflow_count(_instance, overflow_value) < 0) {
         PX4_ERR("Failed to update encoder overflow count for instance %d", _instance);
@@ -465,7 +442,7 @@ int QuadratureEncoder::print_status()
     PX4_INFO("  Enabled: %s", is_instance_enabled() ? "YES" : "NO");
     PX4_INFO("  Poll rate: %ld Hz", _param_poll_rate.get());
     PX4_INFO("  Overflow: %d", get_instance_overflow());
-    PX4_INFO("  Resolution: %.6f units/pulse", get_instance_resolution());
+    PX4_INFO("  Resolution: %.6f units/pulse", static_cast<double>(get_instance_resolution()));
     PX4_INFO("  Reverse: %s", get_instance_reverse() ? "YES" : "NO");
     PX4_INFO("  Inverted: %s", _board_config->inverted ? "YES" : "NO");
     PX4_INFO("  Position: %.3f", _encoder_state.position);

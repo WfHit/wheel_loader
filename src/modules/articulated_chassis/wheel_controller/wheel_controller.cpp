@@ -60,24 +60,10 @@ bool WheelController::init()
 	uint8_t encoder_instance = static_cast<uint8_t>(_param_encoder_id.get());
 	uint8_t motor_channel = static_cast<uint8_t>(_param_motor_channel.get());
 
-	// Initialize encoder subscription with specific instance
-	_encoder_sub = uORB::Subscription{ORB_ID(sensor_quad_encoder), encoder_instance};
+	// SubscriptionMultiArray automatically subscribes to all instances
+	// We'll use encoder_instance and motor_channel to index into the arrays
 
-	if (!_encoder_sub.subscribe()) {
-		PX4_ERR("Failed to subscribe to sensor_quad_encoder instance %d", encoder_instance);
-		return false;
-	}
-
-	// Initialize H-bridge status subscription with specific instance
-	_hbridge_status_sub = uORB::Subscription{ORB_ID(hbridge_status), motor_channel};
-
-	if (!_hbridge_status_sub.subscribe()) {
-		PX4_ERR("Failed to subscribe to hbridge_status instance %d", motor_channel);
-		return false;
-	}
-
-	// Initialize H-bridge command publication with specific instance
-	_motor_cmd_pub = uORB::PublicationMulti<hbridge_command_s>{ORB_ID(hbridge_command), motor_channel};
+	// H-bridge command publication already initialized in header
 
 	// Initialize other subscriptions
 	if (!_setpoint_sub.subscribe()) {
@@ -169,23 +155,17 @@ bool WheelController::update_speed_setpoint()
 	wheel_loader_setpoint_s setpoint;
 
 	if (_setpoint_sub.update(&setpoint)) {
-		// Check if setpoint is for this wheel instance
-		bool is_for_this_wheel = (_param_is_front_wheel.get() == 1) ?
-					 setpoint.front_wheel_active :
-					 setpoint.rear_wheel_active;
+		// Use speed directly based on wheel type (always update)
+		float target_speed = (_param_is_front_wheel.get() == 1) ?
+				     setpoint.front_wheel_speed :
+				     setpoint.rear_wheel_speed;
 
-		if (is_for_this_wheel) {
-			float target_speed = (_param_is_front_wheel.get() == 1) ?
-					     setpoint.front_wheel_speed_rad_s :
-					     setpoint.rear_wheel_speed_rad_s;
-
-			// Limit speed to maximum
-			_state.setpoint_rad_s = math::constrain(target_speed,
-								-_param_max_speed.get(),
-								_param_max_speed.get());
-			_state.last_setpoint_us = hrt_absolute_time();
-			return true;
-		}
+		// Limit speed to maximum
+		_state.setpoint_rad_s = math::constrain(target_speed,
+							-_param_max_speed.get(),
+							_param_max_speed.get());
+		_state.last_setpoint_us = hrt_absolute_time();
+		return true;
 	}
 
 	return is_setpoint_valid();
@@ -194,12 +174,13 @@ bool WheelController::update_speed_setpoint()
 void WheelController::update_encoder_feedback()
 {
 	sensor_quad_encoder_s encoder;
+	uint8_t encoder_instance = static_cast<uint8_t>(_param_encoder_id.get());
 
-	if (_encoder_sub.update(&encoder)) {
+	if (_encoder_sub[encoder_instance].updated() && _encoder_sub[encoder_instance].copy(&encoder)) {
 		// Check if encoder data is from correct instance
-		if (encoder.device_id == (uint32_t)_param_encoder_id.get()) {
+		if (encoder.instance == encoder_instance) {
 			// Convert encoder data to rad/s (implementation depends on encoder specifics)
-			float raw_speed = encoder.speed; // Assuming speed is already in rad/s
+			float raw_speed = encoder.velocity; // Use velocity field from encoder message
 
 			// Apply low-pass filtering
 			_state.speed_rad_s = _speed_filter.apply(raw_speed);
@@ -222,25 +203,23 @@ void WheelController::publish_motor_command()
 {
 	hbridge_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
-	cmd.channel = static_cast<uint8_t>(_param_motor_channel.get());
+	        cmd.instance = static_cast<uint8_t>(_param_motor_channel.get());
 	cmd.duty_cycle = _state.pwm_output;
-	cmd.enabled = _state.motor_enabled && !_state.emergency_stop;
-
-	_motor_cmd_pub.publish(cmd);
+        cmd.enable = _state.motor_enabled && !_state.emergency_stop;	_motor_cmd_pub.publish(cmd);
 }
 
 void WheelController::update_hbridge_status()
 {
 	hbridge_status_s status;
+	uint8_t motor_channel = static_cast<uint8_t>(_param_motor_channel.get());
 
-	if (_hbridge_status_sub.update(&status)) {
-		if (status.channel == static_cast<uint8_t>(_param_motor_channel.get())) {
+	if (_hbridge_status_sub[motor_channel].updated() && _hbridge_status_sub[motor_channel].copy(&status)) {
+		if (status.instance == static_cast<uint8_t>(_param_motor_channel.get())) {
 			_state.motor_enabled = status.enabled;
 
-			// Check for faults
-			if (status.fault) {
-				PX4_WARN("Motor channel %d fault detected", _param_motor_channel.get());
-				_state.emergency_stop = true;
+			// Use limit sensors to check for faults/obstacles
+			if (status.forward_limit || status.reverse_limit) {
+				PX4_WARN("Motor channel %ld limit sensor active", _param_motor_channel.get());
 			}
 		}
 	}
@@ -251,7 +230,7 @@ void WheelController::check_safety_conditions()
 	const uint64_t now = hrt_absolute_time();
 
 	// Check setpoint timeout
-	if (!isSetpointValid()) {
+	if (!is_setpoint_valid()) {
 		if (!_state.emergency_stop) {
 			PX4_WARN("Setpoint timeout");
 		}

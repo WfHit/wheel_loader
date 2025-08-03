@@ -1,3 +1,36 @@
+/****************************************************************************
+ *
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name PX4 nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
+
 #pragma once
 
 // PX4 platform includes
@@ -24,6 +57,7 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/quad_encoder_reset.h>
 #include <uORB/topics/sensor_quad_encoder.h>
@@ -83,7 +117,7 @@ private:
     bool _zeroing_complete{false};
     hrt_abstime _zeroing_start_time{0};
     hrt_abstime _zeroing_state_start_time{0};
-    int64_t _encoder_zero_offset{0};
+    float _encoder_zero_offset{0.0f};
     float _zeroing_position{0.0f};
     float _zeroing_velocity{0.0f};
     float _zeroing_target{0.0f};
@@ -135,6 +169,8 @@ private:
     void readEncoderFeedback();
     bool checkLimitSwitches();
     bool checkHBridgeStatus();  // Check hbridge status for our motor instance
+    void updateHBridgeStatus(); // EKF2-style instance discovery and selection
+    void updateEncoderData();   // EKF2-style encoder instance discovery and selection
 
     // AHRS Integration methods
     void updateAHRSData();
@@ -179,8 +215,6 @@ private:
     bool _anti_spill_active{false};
     bool _stability_warning{false};
 
-    int64_t _encoder_count{0};
-    int64_t _last_encoder_count{0};
     hrt_abstime _last_encoder_time{0};
     bool _limit_switch_load{false};          // Load limit (bucket down position)
     bool _limit_switch_dump{false};          // Dump limit (bucket up position)
@@ -200,11 +234,13 @@ private:
         // uORB subscriptions
     uORB::Subscription _bucket_command_sub{ORB_ID(bucket_command)};
     uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _sensor_quad_encoder_sub{ORB_ID::sensor_quad_encoder};
-    uORB::SubscriptionMultiArray _hbridge_status_sub{ORB_ID(hbridge_status)};
+    uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
+    uORB::Subscription _sensor_mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
     uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
+    uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID::limit_sensor};
 
     // uORB publications
     uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
@@ -213,6 +249,16 @@ private:
 
     // Motor and sensor indices
     uint8_t _motor_index{0};
+
+    // EKF2-style instance selection for SubscriptionMultiArray
+    int _hbridge_status_selected{-1};       // Selected instance for hbridge status
+    int _encoder_selected{-1};              // Selected instance for encoder
+    int _limit_load_selected{-1};           // Selected instance for load limit sensor
+    int _limit_dump_selected{-1};           // Selected instance for dump limit sensor
+    hrt_abstime _last_hbridge_status_update{0};
+    hrt_abstime _last_encoder_update{0};
+    hrt_abstime _last_limit_load_update{0};
+    hrt_abstime _last_limit_dump_update{0};
 
     // Module parameters - Hardware mapping
     DEFINE_PARAMETERS(
@@ -279,26 +325,33 @@ private:
         IDLE = 0,
         MOVING_TO_MIN = 1,
         RECORDING_MIN = 2,
-        MOVING_TO_MAX = 3,
-        RECORDING_MAX = 4,
-        COMPLETED = 5,
-        FAILED = 6
+        READING_MIN = 3,
+        MOVING_TO_MAX = 4,
+        RECORDING_MAX = 5,
+        READING_MAX = 6,
+        MOVING_TO_CENTER = 7,
+        READING_CENTER = 8,
+        COMPLETED = 9,
+        FAILED = 10
     };
 
     bool _calibration_mode{false};
     CalibrationState _calib_state{CalibrationState::IDLE};
     float _calib_min_angle{0.0f};
     float _calib_max_angle{0.0f};
+    float _calib_center_angle{0.0f};
     float _calib_direction{1.0f};  // 1.0 for normal, -1.0 for reversed
     uint64_t _calib_start_time{0};
     uint64_t _calib_settle_time{0};
+    uint64_t _calib_timeout_ms{30000};  // 30 seconds default timeout
     bool _calib_limit_detected{false};
 
-    void start_auto_calibration();
+    bool start_auto_calibration();
     void update_calibration();
     void complete_calibration();
     void abort_calibration();
     bool check_limit_sensors();
+    float get_as5600_angle();
     float translate_as5600_to_bucket_angle(float as5600_angle);
     float translate_bucket_to_as5600_angle(float bucket_angle);
 };

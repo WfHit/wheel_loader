@@ -44,6 +44,7 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
@@ -93,9 +94,11 @@ private:
 	// Core control functions
 	bool update_speed_setpoint();
 	void update_encoder_feedback();
+	void updateEncoderData();       // EKF2-style encoder instance discovery and selection
 	void run_speed_controller();
 	void publish_motor_command();
 	void update_hbridge_status();
+	void updateHBridgeStatus();     // EKF2-style hbridge instance discovery and selection
 	void check_safety_conditions();
 
 	// Parameter and utility functions
@@ -108,8 +111,14 @@ private:
 	uORB::Subscription _setpoint_sub{ORB_ID(wheel_loader_setpoint)};
 
 	// Instance-specific subscriptions - initialized in init()
-	uORB::Subscription _encoder_sub{ORB_ID(sensor_quad_encoder)};
-	uORB::Subscription _hbridge_status_sub{ORB_ID(hbridge_status)};
+	uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _encoder_sub{ORB_ID::sensor_quad_encoder};
+	uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
+
+	// EKF2-style instance selection for SubscriptionMultiArray
+	int _encoder_selected{-1};              // Selected instance for encoder
+	int _hbridge_status_selected{-1};       // Selected instance for hbridge status
+	hrt_abstime _last_encoder_update{0};
+	hrt_abstime _last_hbridge_status_update{0};
 
 	// uORB publications
 	uORB::PublicationMulti<hbridge_command_s> _motor_cmd_pub{ORB_ID(hbridge_command)};

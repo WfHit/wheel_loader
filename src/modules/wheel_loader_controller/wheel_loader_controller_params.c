@@ -141,3 +141,29 @@ PARAM_DEFINE_FLOAT(WLC_SAFE_ACCEL, 1.0f);
  * @group Wheel Loader Controller
  */
 PARAM_DEFINE_FLOAT(WLC_SAFE_SPEED, 2.0f);
+
+/**
+ * Front wheel status instance
+ *
+ * Instance ID for the front wheel status subscription.
+ *
+ * @unit
+ * @min 0
+ * @max 15
+ * @decimal 0
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_FRONT_WHEEL, 0);
+
+/**
+ * Rear wheel status instance
+ *
+ * Instance ID for the rear wheel status subscription.
+ *
+ * @unit
+ * @min 0
+ * @max 15
+ * @decimal 0
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_REAR_WHEEL, 1);

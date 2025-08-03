@@ -271,13 +271,16 @@ void TerrainAdaptation::applyTerrainAdaptation(const terrain_adaptation_s &adapt
     if (_wheel_speeds_setpoint_sub.copy(&current_setpoint)) {
 
         // Reduce speed if recommended speed is lower than current
-        float speed_magnitude = fabsf(current_setpoint.wheel_speed_m_s);
+        float front_speed_magnitude = fabsf(current_setpoint.front_wheel_speed_rad_s);
+        float rear_speed_magnitude = fabsf(current_setpoint.rear_wheel_speed_rad_s);
+        float max_speed_magnitude = fmaxf(front_speed_magnitude, rear_speed_magnitude);
 
-        if (speed_magnitude > adaptation.adapted_max_speed) {
-            float reduction_factor = adaptation.adapted_max_speed / speed_magnitude;
+        if (max_speed_magnitude > adaptation.adapted_max_speed) {
+            float reduction_factor = adaptation.adapted_max_speed / max_speed_magnitude;
 
             wheel_speeds_setpoint_s adapted_setpoint = current_setpoint;
-            adapted_setpoint.wheel_speed_m_s *= reduction_factor;
+            adapted_setpoint.front_wheel_speed_rad_s *= reduction_factor;
+            adapted_setpoint.rear_wheel_speed_rad_s *= reduction_factor;
             adapted_setpoint.timestamp = hrt_absolute_time();
 
             _wheel_speeds_setpoint_pub.publish(adapted_setpoint);

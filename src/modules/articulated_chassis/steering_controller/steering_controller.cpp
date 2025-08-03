@@ -185,14 +185,14 @@ void SteeringController::process_limit_sensors()
 
 	// Check left limit sensor for this instance
 	uint8_t left_limit_id = get_left_limit();
-	if (left_limit_id != 255 && _limit_sensor_sub.update(left_limit_id, &limit_msg)) {
+	if (left_limit_id != 255 && _limit_sensor_sub[left_limit_id].updated() && _limit_sensor_sub[left_limit_id].copy(&limit_msg)) {
 		_left_limit_active = limit_msg.state;
 		_limit_sensors_healthy = !limit_msg.redundancy_fault;
 	}
 
 	// Check right limit sensor for this instance
 	uint8_t right_limit_id = get_right_limit();
-	if (right_limit_id != 255 && _limit_sensor_sub.update(right_limit_id, &limit_msg)) {
+	if (right_limit_id != 255 && _limit_sensor_sub[right_limit_id].updated() && _limit_sensor_sub[right_limit_id].copy(&limit_msg)) {
 		_right_limit_active = limit_msg.state;
 		_limit_sensors_healthy = !limit_msg.redundancy_fault;
 	}

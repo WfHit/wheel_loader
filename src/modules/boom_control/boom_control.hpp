@@ -153,6 +153,10 @@ private:
 	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
 	uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
 
+	// EKF2-style instance selection for SubscriptionMultiArray
+	int _hbridge_status_selected{-1};       // Selected instance for hbridge status
+	hrt_abstime _last_hbridge_status_update{0};
+
 	// uORB publications
 	orb_advert_t _hbridge_command_pub{nullptr};
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
@@ -195,6 +199,7 @@ private:
 	void publish_hbridge_command();
 	void publish_boom_status();
 	bool check_hbridge_status();  // Check hbridge status for our motor instance
+	void updateHBridgeStatus();   // EKF2-style instance discovery and selection
 
 	// Auto-calibration functionality
 	enum class CalibrationState : uint8_t {

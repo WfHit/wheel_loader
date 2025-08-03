@@ -8,7 +8,7 @@ The AS5600 magnetic rotary position sensor has been configured for the HKUST nxt
 - **I2C Bus**: I2C1 (configured via parameter)
 - **Data Rate**: 50 Hz
 - **Resolution**: 12-bit (4096 steps per revolution)
-- **Angular Range**: 0° to 360° (0 to 2π radians)
+- **Angular Range**: 0° to 360° (0 to 2*pi radians)
 
 ## Parameters
 The following parameters have been configured with default values for the HKUST nxt-dual-wl board:
@@ -69,7 +69,7 @@ as5600 info
 The AS5600 sensor publishes data to the `sensor_mag_encoder` uORB topic at 50 Hz. The published data includes:
 
 - **raw_angle**: Raw 12-bit angle value (0-4095)
-- **angle**: Converted angle in radians (0 to 2π) with offset applied
+- **angle**: Converted angle in radians (0 to 2*pi) with offset applied
 - **magnitude**: Magnetic field strength measurement
 - **automatic_gain_control**: AGC value
 - **magnet_detected**: Boolean indicating if magnet is detected
@@ -87,7 +87,7 @@ param set SENS_EN_AS5600 1
 # Set I2C bus to bus 4 (if needed)
 param set AS5600_I2C_BUS 4
 
-# Set angular offset (example: 90 degrees = π/2 radians)
+# Set angular offset (example: 90 degrees = pi/2 radians)
 param set AS5600_OFFSET 1.5708
 
 # Save parameters

@@ -7,7 +7,7 @@ const quad_encoder_config_t g_board_encoder_configs[BOARD_NUM_QUADRATURE_ENCODER
 	{
 		.gpio_a = QENCODER_A_GPIO,
 		.gpio_b = QENCODER_B_GPIO,
-		.pulses_per_revolution = QENCODER_DEFAULT_PPR,
+		.overflow_count = 0,  // 0 = no auto-reset
 	}
 };
 

@@ -1,3 +1,36 @@
+/****************************************************************************
+ *
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ * 3. Neither the name PX4 nor the names of its contributors may be
+ *    used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
+ ****************************************************************************/
+
 #include "bucket_control.hpp"
 #include <px4_platform_common/log.h>
 #include <lib/mathlib/mathlib.h>
@@ -230,10 +263,10 @@ void BucketControl::Run()
         updateAHRSData();
     }
 
-    // Read sensors
-    readEncoderFeedback();
+    // Read sensors using EKF2-style instance discovery
+    updateEncoderData();
+    updateHBridgeStatus();
     checkLimitSwitches();
-    checkHBridgeStatus();
 
     // Get current boom angle from AS5600 magnetic encoder
     sensor_mag_encoder_s mag_encoder_data;
@@ -264,7 +297,7 @@ void BucketControl::Run()
 
     // Process bucket commands
     bucket_command_s cmd;
-    if (_bucket_cmd_sub.update(&cmd)) {
+    if (_bucket_command_sub.update(&cmd)) {
         _target_ground_angle = cmd.target_angle; // Command is in ground coordinates
 
         // Update control mode from command if specified
@@ -468,14 +501,13 @@ void BucketControl::performZeroing()
                 _quad_encoder_reset_pub.publish(reset_cmd);
 
                 // Reset our internal tracking
-                _encoder_zero_offset = 0;  // Reset since encoder driver will reset to 0
-                _encoder_count = 0;
+                _encoder_zero_offset = 0.0f;  // Reset since encoder driver will reset to 0
                 _current_actuator_length = _kinematics.actuator_max_length;
                 _zeroing_state = ZeroingState::COMPLETE;
                 _zeroing_complete = true;
 
-                PX4_INFO("Zeroing complete at dump limit - encoder reset command sent for instance %d",
-                         _param_encoder_index.get());
+                PX4_INFO("Zeroing complete at dump limit - encoder reset command sent for instance %ld",
+                         static_cast<long>(_param_encoder_index.get()));
             }
 
             // Timeout protection for slow approach
@@ -564,16 +596,15 @@ void BucketControl::updateTrajectorySetpoint(float dt)
 
 void BucketControl::setMotorCommand(float command)
 {
-    // Publish HBridge command for bucket motor
+    // Publish HBridge command for bucket motor (EKF2 pattern)
     hbridge_command_s cmd{};
     cmd.timestamp = hrt_absolute_time();
-    cmd.instance = _motor_index;  // Use instance instead of channel
+    cmd.instance = _motor_index;  // Instance info embedded in message data
     cmd.duty_cycle = command;     // Use command directly as duty_cycle (-1.0 to 1.0)
     cmd.enable = true;
 
-    // Publish to specific message instance for this motor
-    int instance_to_publish = _motor_index;
-    _hbridge_command_pub.publish(cmd, instance_to_publish);
+    // Publish using EKF2 pattern - no instance parameter needed
+    _hbridge_command_pub.publish(cmd);
 }
 
 void BucketControl::readEncoderFeedback()
@@ -587,45 +618,145 @@ void BucketControl::readEncoderFeedback()
         if (_sensor_quad_encoder_sub[encoder_idx].update(&encoder_data)) {
             // Verify this is the correct instance
             if (encoder_data.instance == encoder_idx) {
-                // Position is in 1/million rad, convert to encoder counts
-                // Assuming the encoder scale parameter converts from counts to length
-                int32_t current_position = static_cast<int32_t>(encoder_data.position * 1e-6 / _param_encoder_scale.get());
-                _encoder_count = current_position - _encoder_zero_offset;
+                // Get actuator length directly from encoder position
+                // Position is in 1/million rad, convert to length using scale
+                float position_rad = static_cast<float>(encoder_data.position) * 1e-6f;
+                _current_actuator_length = (position_rad - _encoder_zero_offset) * _param_encoder_scale.get() + _kinematics.actuator_min_length;
 
-                // Velocity is in 1/million rad/s, convert to current velocity
-                if (_last_encoder_time > 0) {
-                    float dt = hrt_elapsed_time(&_last_encoder_time) * 1e-6f;
-                    if (dt > 0.001f) { // Avoid division by very small numbers
-                        int64_t delta_count = _encoder_count - _last_encoder_count;
-                        float delta_length = delta_count * _param_encoder_scale.get();
-                        _current_velocity = delta_length / dt;
+                // Get velocity directly from encoder velocity
+                // Velocity is in 1/million rad/s, convert to mm/s
+                float velocity_rad_s = static_cast<float>(encoder_data.velocity) * 1e-6f;
+                _current_velocity = velocity_rad_s * _param_encoder_scale.get();
+
+                _last_encoder_time = encoder_data.timestamp;
+            }
+        }
+    }
+}
+
+void BucketControl::updateEncoderData()
+{
+    sensor_quad_encoder_s encoder_data;
+
+    // If no specific instance selected, find our encoder's instance
+    if (_encoder_selected < 0) {
+        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
+        uint8_t target_encoder_idx = _param_encoder_index.get();
+
+        if (_sensor_quad_encoder_sub.advertised()) {
+            for (unsigned i = 0; i < _sensor_quad_encoder_sub.size(); i++) {
+                if (_sensor_quad_encoder_sub[i].update(&encoder_data)) {
+                    // Check if this is our encoder's data
+                    if ((encoder_data.timestamp != 0) &&
+                        (encoder_data.timestamp > timestamp_stale) &&
+                        (encoder_data.instance == target_encoder_idx)) {
+
+                        int nencoder = orb_group_count(ORB_ID(sensor_quad_encoder));
+                        if (nencoder > 1) {
+                            PX4_INFO("Bucket control selected encoder:%d (instance %d, %d advertised)",
+                                     i, target_encoder_idx, nencoder);
+                        }
+
+                        _encoder_selected = i;
+                        _last_encoder_update = encoder_data.timestamp;
+                        break;
                     }
                 }
-
-                _last_encoder_count = _encoder_count;
-                _last_encoder_time = encoder_data.timestamp;
-
-                // Convert encoder counts to actuator length
-                _current_actuator_length = _encoder_count * _param_encoder_scale.get() + _kinematics.actuator_min_length;
             }
+        }
+    }
+
+    // Use the selected instance
+    if (_encoder_selected >= 0 &&
+        _sensor_quad_encoder_sub[_encoder_selected].update(&encoder_data)) {
+
+        if (encoder_data.instance == _param_encoder_index.get()) {
+            // Process our encoder's data
+            _last_encoder_update = encoder_data.timestamp;
+
+            // Get actuator length directly from encoder position
+            // Position is in 1/million rad, convert to length using scale
+            float position_rad = static_cast<float>(encoder_data.position) * 1e-6f;
+            _current_actuator_length = (position_rad - _encoder_zero_offset) * _param_encoder_scale.get() + _kinematics.actuator_min_length;
+
+            // Get velocity directly from encoder velocity
+            // Velocity is in 1/million rad/s, convert to mm/s
+            float velocity_rad_s = static_cast<float>(encoder_data.velocity) * 1e-6f;
+            _current_velocity = velocity_rad_s * _param_encoder_scale.get();
+
+            _last_encoder_time = encoder_data.timestamp;
         }
     }
 }
 
 bool BucketControl::checkLimitSwitches()
 {
-    // Read limit sensor states from limit_sensor topic
     limit_sensor_s limit_sensor_data;
 
-    uint8_t load_instance = _param_limit_load_idx.get();  // Load limit (bucket down)
-    uint8_t dump_instance = _param_limit_dump_idx.get();  // Dump limit (bucket up)
+    // If no specific instances selected, find our limit sensor instances
+    if (_limit_load_selected < 0 || _limit_dump_selected < 0) {
+        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
+        uint8_t target_load_idx = _param_limit_load_idx.get();
+        uint8_t target_dump_idx = _param_limit_dump_idx.get();
 
-    // Check for updated limit sensor data
-    while (_limit_sensor_sub.update(&limit_sensor_data)) {
-        if (limit_sensor_data.instance == load_instance) {
-            _limit_switch_load = limit_sensor_data.state;   // Load limit switch
-        } else if (limit_sensor_data.instance == dump_instance) {
-            _limit_switch_dump = limit_sensor_data.state;   // Dump limit switch
+        if (_limit_sensor_sub.advertised()) {
+            for (unsigned i = 0; i < _limit_sensor_sub.size(); i++) {
+                if (_limit_sensor_sub[i].update(&limit_sensor_data)) {
+                    // Check if this is our load limit sensor's data
+                    if ((limit_sensor_data.timestamp != 0) &&
+                        (limit_sensor_data.timestamp > timestamp_stale) &&
+                        (limit_sensor_data.instance == target_load_idx) &&
+                        (_limit_load_selected < 0)) {
+
+                        int nlimit = orb_group_count(ORB_ID(limit_sensor));
+                        if (nlimit > 1) {
+                            PX4_INFO("Bucket control selected load limit sensor:%d (instance %d, %d advertised)",
+                                     i, target_load_idx, nlimit);
+                        }
+
+                        _limit_load_selected = i;
+                        _last_limit_load_update = limit_sensor_data.timestamp;
+                    }
+
+                    // Check if this is our dump limit sensor's data
+                    if ((limit_sensor_data.timestamp != 0) &&
+                        (limit_sensor_data.timestamp > timestamp_stale) &&
+                        (limit_sensor_data.instance == target_dump_idx) &&
+                        (_limit_dump_selected < 0)) {
+
+                        int nlimit = orb_group_count(ORB_ID(limit_sensor));
+                        if (nlimit > 1) {
+                            PX4_INFO("Bucket control selected dump limit sensor:%d (instance %d, %d advertised)",
+                                     i, target_dump_idx, nlimit);
+                        }
+
+                        _limit_dump_selected = i;
+                        _last_limit_dump_update = limit_sensor_data.timestamp;
+                    }
+                }
+            }
+        }
+    }
+
+    // Use the selected load limit instance
+    if (_limit_load_selected >= 0 &&
+        _limit_sensor_sub[_limit_load_selected].update(&limit_sensor_data)) {
+
+        if (limit_sensor_data.instance == _param_limit_load_idx.get()) {
+            // Process our load limit sensor's data
+            _last_limit_load_update = limit_sensor_data.timestamp;
+            _limit_switch_load = limit_sensor_data.state;
+        }
+    }
+
+    // Use the selected dump limit instance
+    if (_limit_dump_selected >= 0 &&
+        _limit_sensor_sub[_limit_dump_selected].update(&limit_sensor_data)) {
+
+        if (limit_sensor_data.instance == _param_limit_dump_idx.get()) {
+            // Process our dump limit sensor's data
+            _last_limit_dump_update = limit_sensor_data.timestamp;
+            _limit_switch_dump = limit_sensor_data.state;
         }
     }
 
@@ -634,11 +765,14 @@ bool BucketControl::checkLimitSwitches()
 
 bool BucketControl::checkHBridgeStatus()
 {
-    // Check hbridge status for our motor instance
+    // Check hbridge status for our motor instance using EKF2-style SubscriptionMultiArray
     hbridge_status_s hbridge_status;
-    for (auto &sub : _hbridge_status_sub) {
-        if (sub.update(&hbridge_status)) {
-            if (hbridge_status.instance == _motor_index) {
+    uint8_t hbridge_channel = static_cast<uint8_t>(_param_motor_index.get());
+
+    if (hbridge_channel < _hbridge_status_sub.size()) {
+        if (_hbridge_status_sub[hbridge_channel].update(&hbridge_status)) {
+            // Verify this is the correct instance
+            if (hbridge_status.instance == hbridge_channel) {
                 // Update our status based on hbridge feedback
                 // Could use this for fault detection, current monitoring, etc.
                 return hbridge_status.enabled;
@@ -646,6 +780,57 @@ bool BucketControl::checkHBridgeStatus()
         }
     }
     return false;  // No status received or not enabled
+}
+
+void BucketControl::updateHBridgeStatus()
+{
+    hbridge_status_s hbridge_status;
+
+    // If no specific instance selected, find our motor's instance
+    if (_hbridge_status_selected < 0) {
+        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
+
+        if (_hbridge_status_sub.advertised()) {
+            for (unsigned i = 0; i < _hbridge_status_sub.size(); i++) {
+                if (_hbridge_status_sub[i].update(&hbridge_status)) {
+                    // Check if this is our motor's status
+                    if ((hbridge_status.timestamp != 0) &&
+                        (hbridge_status.timestamp > timestamp_stale) &&
+                        (hbridge_status.instance == _motor_index)) {
+
+                        int nstatus = orb_group_count(ORB_ID(hbridge_status));
+                        if (nstatus > 1) {
+                            PX4_INFO("Bucket control selected hbridge_status:%d (motor %d, %d advertised)",
+                                     i, _motor_index, nstatus);
+                        }
+
+                        _hbridge_status_selected = i;
+                        _last_hbridge_status_update = hbridge_status.timestamp;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Use the selected instance
+    if (_hbridge_status_selected >= 0 &&
+        _hbridge_status_sub[_hbridge_status_selected].update(&hbridge_status)) {
+
+        if (hbridge_status.instance == _motor_index) {
+            // Process our motor's status
+            _last_hbridge_status_update = hbridge_status.timestamp;
+
+            // Check if hbridge is disabled - this could indicate a problem
+            if (!hbridge_status.enabled) {
+                PX4_WARN("HBridge motor %d is disabled", _motor_index);
+            }
+
+            // Update internal state if needed
+            // _motor_current = hbridge_status.current;
+            // _motor_voltage = hbridge_status.voltage;
+        }
+    }
 }
 
 // AHRS Integration Methods
@@ -913,9 +1098,9 @@ int BucketControl::custom_command(int argc, char *argv[])
             cmd.max_velocity = instance->_param_max_velocity.get() / 1000.0f; // Convert mm/s to m/s for angle rate
             cmd.enable_stability_limit = instance->_param_ahrs_enabled.get();
             cmd.enable_anti_spill = (mode == 4); // Enable anti-spill for transport mode
-            cmd.grading_angle = std::nanf(""); // Use parameter defaults
-            cmd.transport_angle = std::nanf(""); // Use parameter defaults
-            cmd.stability_threshold = std::nanf(""); // Use parameter defaults
+            cmd.grading_angle = nanf(""); // Use parameter defaults
+            cmd.transport_angle = nanf(""); // Use parameter defaults
+            cmd.stability_threshold = nanf(""); // Use parameter defaults
 
             // Publish the command
             static uORB::Publication<bucket_command_s> test_bucket_cmd_pub{ORB_ID(bucket_command)};
@@ -950,9 +1135,9 @@ int BucketControl::custom_command(int argc, char *argv[])
             cmd.max_velocity = instance->_param_max_velocity.get() / 1000.0f; // Convert mm/s to m/s for angle rate
             cmd.enable_stability_limit = instance->_param_ahrs_enabled.get();
             cmd.enable_anti_spill = (instance->_control_mode == ControlMode::TRANSPORT);
-            cmd.grading_angle = std::nanf(""); // Use parameter defaults
-            cmd.transport_angle = std::nanf(""); // Use parameter defaults
-            cmd.stability_threshold = std::nanf(""); // Use parameter defaults
+            cmd.grading_angle = nanf(""); // Use parameter defaults
+            cmd.transport_angle = nanf(""); // Use parameter defaults
+            cmd.stability_threshold = nanf(""); // Use parameter defaults
 
             // Publish the command
             static uORB::Publication<bucket_command_s> test_bucket_cmd_pub{ORB_ID(bucket_command)};
@@ -1044,8 +1229,9 @@ bool BucketControl::start_auto_calibration()
     PX4_INFO("Starting AS5600 auto-calibration for bucket control");
     _calib_state = CalibrationState::MOVING_TO_CENTER;
 
-    // Move to center position first
-    set_target_actuator_length(_param_length_center.get());
+    // Move to center position first (between min and max)
+    float center_length = (_param_actuator_min.get() + _param_actuator_max.get()) / 2.0f;
+    _target_actuator_length = center_length;
 
     return true;
 }
@@ -1072,14 +1258,15 @@ void BucketControl::update_calibration()
 
         case CalibrationState::MOVING_TO_CENTER: {
             // Wait for actuator to reach center position
-            float length_error = fabsf(_current_actuator_length - _param_length_center.get());
+            float center_length = (_param_actuator_min.get() + _param_actuator_max.get()) / 2.0f;
+            float length_error = fabsf(_current_actuator_length - center_length);
             if (length_error < 5.0f) { // 5mm tolerance
                 _calib_state = CalibrationState::READING_CENTER;
                 _calib_center_angle = get_as5600_angle();
                 PX4_INFO("Center position reached, AS5600 angle: %.1f°", static_cast<double>(math::degrees(_calib_center_angle)));
 
                 // Move to minimum position
-                set_target_actuator_length(_param_length_min.get());
+                _target_actuator_length = _param_actuator_min.get();
                 _calib_state = CalibrationState::MOVING_TO_MIN;
             }
             break;
@@ -1091,14 +1278,14 @@ void BucketControl::update_calibration()
 
         case CalibrationState::MOVING_TO_MIN: {
             // Wait for actuator to reach minimum position
-            float length_error = fabsf(_current_actuator_length - _param_length_min.get());
+            float length_error = fabsf(_current_actuator_length - _param_actuator_min.get());
             if (length_error < 5.0f) { // 5mm tolerance
                 _calib_state = CalibrationState::READING_MIN;
                 _calib_min_angle = get_as5600_angle();
                 PX4_INFO("Minimum position reached, AS5600 angle: %.1f°", static_cast<double>(math::degrees(_calib_min_angle)));
 
                 // Move to maximum position
-                set_target_actuator_length(_param_length_max.get());
+                _target_actuator_length = _param_actuator_max.get();
                 _calib_state = CalibrationState::MOVING_TO_MAX;
             }
             break;
@@ -1108,9 +1295,13 @@ void BucketControl::update_calibration()
             // Already handled in MOVING_TO_MIN
             break;
 
+        case CalibrationState::RECORDING_MIN:
+            // Recording state for minimum position
+            break;
+
         case CalibrationState::MOVING_TO_MAX: {
             // Wait for actuator to reach maximum position
-            float length_error = fabsf(_current_actuator_length - _param_length_max.get());
+            float length_error = fabsf(_current_actuator_length - _param_actuator_max.get());
             if (length_error < 5.0f) { // 5mm tolerance
                 _calib_state = CalibrationState::READING_MAX;
                 _calib_max_angle = get_as5600_angle();
@@ -1124,6 +1315,10 @@ void BucketControl::update_calibration()
 
         case CalibrationState::READING_MAX:
             // Already handled in MOVING_TO_MAX
+            break;
+
+        case CalibrationState::RECORDING_MAX:
+            // Recording state for maximum position
             break;
 
         case CalibrationState::COMPLETED:
@@ -1140,7 +1335,7 @@ void BucketControl::complete_calibration()
     }
 
     // Validate calibration data
-    if (isnan(_calib_min_angle) || isnan(_calib_max_angle) || isnan(_calib_center_angle)) {
+    if (std::isnan(_calib_min_angle) || std::isnan(_calib_max_angle) || std::isnan(_calib_center_angle)) {
         PX4_ERR("Calibration failed: invalid angle readings");
         abort_calibration();
         return;
@@ -1158,19 +1353,20 @@ void BucketControl::complete_calibration()
     PX4_INFO("AS5600 Calibration completed successfully:");
     PX4_INFO("  Min position: %.1f° (length: %.1f mm)",
              static_cast<double>(math::degrees(_calib_min_angle)),
-             static_cast<double>(_param_length_min.get()));
+             static_cast<double>(_param_actuator_min.get()));
     PX4_INFO("  Center position: %.1f° (length: %.1f mm)",
              static_cast<double>(math::degrees(_calib_center_angle)),
-             static_cast<double>(_param_length_center.get()));
+             static_cast<double>((_param_actuator_min.get() + _param_actuator_max.get()) / 2.0f));
     PX4_INFO("  Max position: %.1f° (length: %.1f mm)",
              static_cast<double>(math::degrees(_calib_max_angle)),
-             static_cast<double>(_param_length_max.get()));
+             static_cast<double>(_param_actuator_max.get()));
     PX4_INFO("  Total range: %.1f°", static_cast<double>(math::degrees(angle_range)));
 
     _calib_state = CalibrationState::COMPLETED;
 
     // Return to center position
-    set_target_actuator_length(_param_length_center.get());
+    float center_length = (_param_actuator_min.get() + _param_actuator_max.get()) / 2.0f;
+    _target_actuator_length = center_length;
 
     // End calibration mode
     _calibration_mode = false;
@@ -1187,7 +1383,8 @@ void BucketControl::abort_calibration()
     _calibration_mode = false;
 
     // Return to center position for safety
-    set_target_actuator_length(_param_length_center.get());
+    float center_length = (_param_actuator_min.get() + _param_actuator_max.get()) / 2.0f;
+    _target_actuator_length = center_length;
 }
 
 bool BucketControl::check_limit_sensors()
@@ -1204,8 +1401,8 @@ float BucketControl::get_as5600_angle()
     // TODO: Implement actual AS5600 I2C communication
 
     // Simulate angle based on actuator length (for testing)
-    float length_ratio = (_current_actuator_length - _param_length_min.get()) /
-                        (_param_length_max.get() - _param_length_min.get());
+    float length_ratio = (_current_actuator_length - _param_actuator_min.get()) /
+                        (_param_actuator_max.get() - _param_actuator_min.get());
 
     // Convert to angle range (assuming bucket rotates from -45° to +45°)
     float simulated_angle = math::radians(-45.0f + length_ratio * 90.0f);
@@ -1221,7 +1418,7 @@ float BucketControl::translate_as5600_to_bucket_angle(float as5600_angle)
     }
 
     // Use calibration data to translate AS5600 angle to bucket angle
-    if (isnan(_calib_min_angle) || isnan(_calib_max_angle)) {
+    if (std::isnan(_calib_min_angle) || std::isnan(_calib_max_angle)) {
         return as5600_angle;
     }
 
@@ -1247,7 +1444,7 @@ float BucketControl::translate_bucket_to_as5600_angle(float bucket_angle)
     }
 
     // Use calibration data to translate bucket angle to AS5600 angle
-    if (isnan(_calib_min_angle) || isnan(_calib_max_angle)) {
+    if (std::isnan(_calib_min_angle) || std::isnan(_calib_max_angle)) {
         return bucket_angle;
     }
 

@@ -676,6 +676,15 @@ int HBridge::print_status()
 	return 0;
 }
 
+void HBridge::updateParams()
+{
+	// Update module parameters
+	ModuleParams::updateParams();
+
+	// No additional parameters to update for now
+	// Direction reversal is handled via get_dir_reverse() method
+}
+
 extern "C" __EXPORT int hbridge_main(int argc, char *argv[])
 {
 	return HBridge::main(argc, argv);

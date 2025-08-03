@@ -55,6 +55,7 @@ else()
 		mtd.cpp
 		board_limit_sensor_config.cpp
 		board_encoder_config.cpp
+		board_hbridge_config.cpp
 
 	)
 	# add_dependencies(drivers_board arch_board_hw_info)

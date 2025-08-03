@@ -73,6 +73,78 @@ bool BoomControl::init()
 	return true;
 }
 
+bool BoomControl::check_hbridge_status()
+{
+	// Check hbridge status for our motor instance using EKF2-style SubscriptionMultiArray
+	uint8_t hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
+	hbridge_status_s hbridge_status;
+
+	if (hbridge_channel < _hbridge_status_sub.size()) {
+		if (_hbridge_status_sub[hbridge_channel].update(&hbridge_status)) {
+			// Verify this is the correct instance
+			if (hbridge_status.instance == hbridge_channel) {
+				// Update our status based on hbridge feedback
+				// Could use this for fault detection, current monitoring, etc.
+				return hbridge_status.enabled;
+			}
+		}
+	}
+	return false;  // No status received or not enabled
+}
+
+void BoomControl::updateHBridgeStatus()
+{
+	hbridge_status_s hbridge_status;
+
+	// If no specific instance selected, find our motor's instance
+	if (_hbridge_status_selected < 0) {
+		const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
+		uint8_t target_hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
+
+		if (_hbridge_status_sub.advertised()) {
+			for (unsigned i = 0; i < _hbridge_status_sub.size(); i++) {
+				if (_hbridge_status_sub[i].update(&hbridge_status)) {
+					// Check if this is our motor's status
+					if ((hbridge_status.timestamp != 0) &&
+					    (hbridge_status.timestamp > timestamp_stale) &&
+					    (hbridge_status.instance == target_hbridge_channel)) {
+
+						int nstatus = orb_group_count(ORB_ID(hbridge_status));
+						if (nstatus > 1) {
+							PX4_INFO("Boom control selected hbridge_status:%d (channel %d, %d advertised)",
+							         i, target_hbridge_channel, nstatus);
+						}
+
+						_hbridge_status_selected = i;
+						_last_hbridge_status_update = hbridge_status.timestamp;
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	// Use the selected instance
+	if (_hbridge_status_selected >= 0 &&
+	    _hbridge_status_sub[_hbridge_status_selected].update(&hbridge_status)) {
+
+		if (hbridge_status.instance == static_cast<uint8_t>(_param_hbridge_channel.get())) {
+			// Process our motor's status
+			_last_hbridge_status_update = hbridge_status.timestamp;
+
+			// Example: check if motor is disabled (potential fault condition)
+			if (!hbridge_status.enabled) {
+				PX4_ERR("HBridge channel %" PRId32 " is disabled", _param_hbridge_channel.get());
+				// Handle disabled state...
+			}
+
+			// Update internal state if needed
+			// _motor_current = hbridge_status.current;
+			// _motor_voltage = hbridge_status.voltage;
+		}
+	}
+}
+
 void BoomControl::Run()
 {
 	if (should_exit()) {
@@ -93,6 +165,9 @@ void BoomControl::Run()
 
 	// Update sensor data from AS5600
 	update_sensor_data();
+
+	// Update HBridge status using EKF2-style instance discovery
+	updateHBridgeStatus();
 
 	// Handle auto-calibration if active
 	if (_calibration_mode) {
@@ -436,24 +511,6 @@ void BoomControl::publish_boom_status()
 	_boom_status_pub.publish(status);
 }
 
-bool BoomControl::check_hbridge_status()
-{
-	// Check hbridge status for our motor instance
-	uint8_t hbridge_instance = static_cast<uint8_t>(_param_hbridge_channel.get());
-	hbridge_status_s hbridge_status;
-
-	for (auto &sub : _hbridge_status_sub) {
-		if (sub.update(&hbridge_status)) {
-			if (hbridge_status.instance == hbridge_instance) {
-				// Update our status based on hbridge feedback
-				// Could use this for fault detection, current monitoring, etc.
-				return hbridge_status.enabled;
-			}
-		}
-	}
-	return false;  // No status received or not enabled
-}
-
 void BoomControl::emergency_stop()
 {
 	_motor_output = 0.0f;
@@ -729,16 +786,12 @@ bool BoomControl::check_limit_sensors()
 {
 	hbridge_status_s hbridge_status;
 	bool limit_triggered = false;
+	uint8_t hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
 
 	// Check for hbridge status updates
-	if (_hbridge_status_sub.update(&hbridge_status) && hbridge_status.channel_limits_available) {
-		uint8_t up_index = _param_limit_up_index.get();
-		uint8_t down_index = _param_limit_down_index.get();
-
-		if (up_index < 4 && hbridge_status.channel_limit_state[up_index]) {
-			limit_triggered = true;
-		}
-		if (down_index < 4 && hbridge_status.channel_limit_state[down_index]) {
+	if (_hbridge_status_sub[hbridge_channel].updated() && _hbridge_status_sub[hbridge_channel].copy(&hbridge_status)) {
+		// Check if forward or reverse limits are active
+		if (hbridge_status.forward_limit || hbridge_status.reverse_limit) {
 			limit_triggered = true;
 		}
 	}

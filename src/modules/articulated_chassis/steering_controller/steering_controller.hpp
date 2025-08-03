@@ -97,7 +97,7 @@ private:
 	// uORB subscriptions
 	uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
 	uORB::Subscription _servo_feedback_sub{ORB_ID(robotic_servo_feedback)};
-	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID(limit_sensor)};
+	uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID::limit_sensor};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	// uORB publications

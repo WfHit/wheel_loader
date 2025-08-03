@@ -361,15 +361,13 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	wheel_speeds_setpoint_s front_wheel_cmd{};
 	front_wheel_cmd.timestamp = now;
 	const float wheel_radius_m = 0.25f; // Should be parameterized
-	front_wheel_cmd.wheel_speed_m_s = (front_left_speed + front_right_speed) * 0.5f * wheel_radius_m;
+	front_wheel_cmd.front_wheel_speed_rad_s = (front_left_speed + front_right_speed) * 0.5f / wheel_radius_m;
 	front_wheel_cmd.max_acceleration = _max_accel.get();
-	front_wheel_cmd.synchronized = true;
-	front_wheel_cmd.differential_enable = false;
 
 	// Generate rear wheel controller command
 	wheel_speeds_setpoint_s rear_wheel_cmd{};
 	rear_wheel_cmd.timestamp = now;
-	rear_wheel_cmd.wheel_speed_m_s = (rear_left_speed + rear_right_speed) * 0.5f * wheel_radius_m;
+	rear_wheel_cmd.rear_wheel_speed_rad_s = (rear_left_speed + rear_right_speed) * 0.5f / wheel_radius_m;
 	rear_wheel_cmd.max_acceleration = _max_accel.get();
 	rear_wheel_cmd.synchronized = true;
 	rear_wheel_cmd.differential_enable = false;
@@ -403,8 +401,8 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 
 	// Apply emergency stop overrides
 	if (cmd.emergency_stop || _emergency_stop_active) {
-		front_wheel_cmd.wheel_speed_m_s = 0.0f;
-		rear_wheel_cmd.wheel_speed_m_s = 0.0f;
+		front_wheel_cmd.front_wheel_speed_rad_s = 0.0f;
+		rear_wheel_cmd.rear_wheel_speed_rad_s = 0.0f;
 	}
 
 	// Publish commands
@@ -619,15 +617,21 @@ void WheelLoaderController::publishStatus()
 	wheel_loader_status_s status{};
 	status.timestamp = hrt_absolute_time();
 
-	// Current wheel speeds (from wheel status feedback)
+	// Current wheel speeds (from wheel status feedback) - EKF2-style SubscriptionMultiArray
 	wheel_status_s front_wheel_status, rear_wheel_status;
+	uint8_t front_wheel_idx = static_cast<uint8_t>(_front_wheel_idx.get());
+	uint8_t rear_wheel_idx = static_cast<uint8_t>(_rear_wheel_idx.get());
 
-	if (_wheel_status_subs[0].updated() && _wheel_status_subs[0].copy(&front_wheel_status)) {
+	if (front_wheel_idx < _wheel_status_subs.size() &&
+	    _wheel_status_subs[front_wheel_idx].updated() &&
+	    _wheel_status_subs[front_wheel_idx].copy(&front_wheel_status)) {
 		status.front_wheel_speed = front_wheel_status.current_speed_rpm * (2.0f * M_PI_F / 60.0f); // Convert to rad/s
 		status.front_motor_current = front_wheel_status.motor_current_amps;
 	}
 
-	if (_wheel_status_subs[1].updated() && _wheel_status_subs[1].copy(&rear_wheel_status)) {
+	if (rear_wheel_idx < _wheel_status_subs.size() &&
+	    _wheel_status_subs[rear_wheel_idx].updated() &&
+	    _wheel_status_subs[rear_wheel_idx].copy(&rear_wheel_status)) {
 		status.rear_wheel_speed = rear_wheel_status.current_speed_rpm * (2.0f * M_PI_F / 60.0f); // Convert to rad/s
 		status.rear_motor_current = rear_wheel_status.motor_current_amps;
 	}
@@ -764,28 +768,29 @@ void WheelLoaderController::updateSubsystemHealth()
 		_steering_health = HealthState::ERROR;
 	}
 
-	// Update wheel health
-	for (int i = 0; i < 2; i++) {
+	// Update wheel health - EKF2-style SubscriptionMultiArray
+	uint8_t front_wheel_idx = static_cast<uint8_t>(_front_wheel_idx.get());
+	uint8_t rear_wheel_idx = static_cast<uint8_t>(_rear_wheel_idx.get());
+
+	// Check front wheel
+	if (front_wheel_idx < _wheel_status_subs.size()) {
 		wheel_status_s wheel_status;
+		if (_wheel_status_subs[front_wheel_idx].updated() && _wheel_status_subs[front_wheel_idx].copy(&wheel_status)) {
+			_last_wheel_status_time[0] = now;
+			_front_wheel_health = wheel_status.controller_healthy ? HealthState::HEALTHY : HealthState::ERROR;
+		} else if ((now - _last_wheel_status_time[0]) > health_timeout_us) {
+			_front_wheel_health = HealthState::ERROR;
+		}
+	}
 
-		if (_wheel_status_subs[i].updated() && _wheel_status_subs[i].copy(&wheel_status)) {
-			_last_wheel_status_time[i] = now;
-			HealthState wheel_health = wheel_status.controller_healthy ? HealthState::HEALTHY : HealthState::ERROR;
-
-			if (i == 0) {
-				_front_wheel_health = wheel_health;
-
-			} else {
-				_rear_wheel_health = wheel_health;
-			}
-
-		} else if ((now - _last_wheel_status_time[i]) > health_timeout_us) {
-			if (i == 0) {
-				_front_wheel_health = HealthState::ERROR;
-
-			} else {
-				_rear_wheel_health = HealthState::ERROR;
-			}
+	// Check rear wheel
+	if (rear_wheel_idx < _wheel_status_subs.size()) {
+		wheel_status_s wheel_status;
+		if (_wheel_status_subs[rear_wheel_idx].updated() && _wheel_status_subs[rear_wheel_idx].copy(&wheel_status)) {
+			_last_wheel_status_time[1] = now;
+			_rear_wheel_health = wheel_status.controller_healthy ? HealthState::HEALTHY : HealthState::ERROR;
+		} else if ((now - _last_wheel_status_time[1]) > health_timeout_us) {
+			_rear_wheel_health = HealthState::ERROR;
 		}
 	}
 }
