@@ -36,6 +36,7 @@ px4_add_module(
 	SRCS
 		boom_control.cpp
 		boom_control_main.cpp
+		boom_calibration.cpp
 	MODULE_CONFIG
 		module.yaml
 	DEPENDS

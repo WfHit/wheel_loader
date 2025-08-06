@@ -45,32 +45,30 @@ int BoomControl::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Boom control module for wheel loader hydraulic boom system.
+Boom control module for wheel loader.
 
-Features:
-- Position control with PID feedback from AS5600 absolute encoder
-- Automatic zeroing and calibration
-- Safety monitoring and emergency stop
-- Trajectory planning for smooth operation
-- Load monitoring and adaptive control
+Controls the boom angle using AS5600 sensor feedback and DC motor with H-bridge (DRV8701).
+Includes proper kinematics transformation, S-curve motion planning, and PID position control.
 
 ### Implementation
-The module runs at 100Hz and provides:
-- Precise position control via HBridge driver
-- Real-time position feedback from AS5600 sensor
-- Automatic calibration and magnet detection
-- Safety interlocks and limit monitoring
+The module uses triangle-based kinematics to convert between boom angles and actuator lengths.
+The AS5600 magnetic encoder provides position feedback at the actuator pivot point.
+A PID controller with S-curve trajectory generation provides smooth and precise motion.
 
 ### Examples
-Start boom control:
-$ boom_control start
+To set boom to carry position:
+$ boom_control preset carry
 
-Stop boom control:
-$ boom_control stop
+To start calibration:
+$ boom_control calibrate
+
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("boom_control", "controller");
+	PRINT_MODULE_USAGE_NAME("boom_control", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAM_COMMENT("Optional parameters:");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("preset", "Set boom to preset position (ground|carry|max)");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("calibrate", "Start automatic AS5600 calibration");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
@@ -78,6 +76,39 @@ $ boom_control stop
 
 int BoomControl::custom_command(int argc, char *argv[])
 {
+	if (!is_running()) {
+		print_usage("not running");
+		return 1;
+	}
+
+	if (!strcmp(argv[0], "preset")) {
+		if (argc < 2) {
+			PX4_ERR("usage: boom_control preset <ground|carry|max>");
+			return 1;
+		}
+
+		BoomPreset preset;
+		if (!strcmp(argv[1], "ground")) {
+			preset = BoomPreset::GROUND;
+		} else if (!strcmp(argv[1], "carry")) {
+			preset = BoomPreset::CARRY;
+		} else if (!strcmp(argv[1], "max")) {
+			preset = BoomPreset::MAX_HEIGHT;
+		} else {
+			PX4_ERR("Unknown preset: %s", argv[1]);
+			return 1;
+		}
+
+		get_instance()->set_target_position(preset);
+		return 0;
+	}
+
+	if (!strcmp(argv[0], "calibrate")) {
+		PX4_INFO("Starting boom auto-calibration...");
+		get_instance()->start_auto_calibration();
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 

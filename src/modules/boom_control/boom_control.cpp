@@ -7,7 +7,62 @@
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *    notice	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get());
+
+	// Use PositionSmoothing for trajectory generation (1D motion using Z-axis)
+	matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length / 1000.0f}; // Convert to meters
+	matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length / 1000.0f};
+	matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+
+	float dt = 1.0f / _param_update_rate.get();
+	PositionSmoothing::PositionSmoothingSetpoints setpoints;
+	_trajectory_generator.generateSetpoints(current_pos, target_pos, feedforward_velocity,
+	                                       dt, false, setpoints);
+
+	// Store the generated setpoints for use in position control
+	_desired_position_m = setpoints.position(2);
+	_desired_velocity_m_s = setpoints.velocity(2);
+}
+
+void BoomControl::run_position_control()
+{
+	if (_state == BoomState::ERROR || !_sensor_valid) {
+		_motor_output = 0.0f;
+		return;
+	}
+
+	// Use the setpoints from trajectory generator (already in meters)
+	float desired_position_m = _desired_position_m;
+	float desired_velocity_m_s = _desired_velocity_m_s;
+
+	// Convert back to mm for control
+	float desired_position_mm = desired_position_m * 1000.0f;
+
+	// Position error in mm
+	float position_error = desired_position_mm - _current_actuator_length;
+
+	// Check if we've reached the target
+	if (fabsf(position_error) < 5.0f && fabsf(desired_velocity_m_s) < 0.001f) { // 5mm tolerance
+		_state = BoomState::HOLDING;
+	}
+
+	// PID control
+	float dt = 1.0f / _param_update_rate.get();
+	_motor_output = _position_pid.update(position_error, dt);
+
+	// Add velocity feedforward
+	float velocity_ff = desired_velocity_m_s / (_param_boom_max_vel.get() / 1000.0f);
+	_motor_output += velocity_ff * 0.3f; // Feedforward gain
+
+	// Apply deadzone compensation
+	if (fabsf(_motor_output) > _param_motor_deadzone.get()) {
+		if (_motor_output > 0.0f) {
+			_motor_output += _param_motor_deadzone.get();
+		} else {
+			_motor_output -= _param_motor_deadzone.get();
+		}
+	}
+}f conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
@@ -529,313 +584,4 @@ void BoomControl::reset_trajectory()
 	// Note: PositionSmoothing doesn't have simple setters, so we reset our internal state
 	_desired_position_m = _current_actuator_length / 1000.0f;
 	_desired_velocity_m_s = 0.0f;
-}
-
-int BoomControl::task_spawn(int argc, char *argv[])
-{
-	BoomControl *instance = new BoomControl();
-
-	if (instance) {
-		_object.store(instance);
-		_task_id = task_id_is_work_queue;
-
-		if (instance->init()) {
-			return PX4_OK;
-		}
-
-	} else {
-		PX4_ERR("alloc failed");
-	}
-
-	delete instance;
-	_object.store(nullptr);
-	_task_id = -1;
-
-	return PX4_ERROR;
-}
-
-int BoomControl::custom_command(int argc, char *argv[])
-{
-	if (!is_running()) {
-		print_usage("not running");
-		return 1;
-	}
-
-	if (!strcmp(argv[0], "preset")) {
-		if (argc < 2) {
-			PX4_ERR("usage: boom_control preset <ground|carry|max>");
-			return 1;
-		}
-
-		BoomPreset preset;
-		if (!strcmp(argv[1], "ground")) {
-			preset = BoomPreset::GROUND;
-		} else if (!strcmp(argv[1], "carry")) {
-			preset = BoomPreset::CARRY;
-		} else if (!strcmp(argv[1], "max")) {
-			preset = BoomPreset::MAX_HEIGHT;
-		} else {
-			PX4_ERR("Unknown preset: %s", argv[1]);
-			return 1;
-		}
-
-		get_instance()->set_target_position(preset);
-		return 0;
-	}
-
-	if (!strcmp(argv[0], "calibrate")) {
-		PX4_INFO("Starting boom auto-calibration...");
-		get_instance()->start_auto_calibration();
-		return 0;
-	}
-
-	return print_usage("unknown command");
-}
-
-int BoomControl::print_usage(const char *reason)
-{
-	if (reason) {
-		PX4_WARN("%s\n", reason);
-	}
-
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-Boom control module for wheel loader.
-
-Controls the boom angle using AS5600 sensor feedback and DC motor with H-bridge (DRV8701).
-Includes proper kinematics transformation, S-curve motion planning, and PID position control.
-
-### Implementation
-The module uses triangle-based kinematics to convert between boom angles and actuator lengths.
-The AS5600 magnetic encoder provides position feedback at the actuator pivot point.
-A PID controller with S-curve trajectory generation provides smooth and precise motion.
-
-### Examples
-To set boom to carry position:
-$ boom_control preset carry
-
-)DESCR_STR");
-
-	PRINT_MODULE_USAGE_NAME("boom_control", "driver");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_PARAM_COMMENT("Optional parameters:");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("preset", "Set boom to preset position (ground|carry|max)");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-	return 0;
-}
-
-// Auto-calibration implementation
-void BoomControl::start_auto_calibration()
-{
-	if (_state != BoomState::IDLE) {
-		PX4_WARN("Cannot start calibration - boom not in IDLE state");
-		return;
-	}
-
-	_calibration_mode = true;
-	_calib_state = CalibrationState::MOVING_TO_MIN;
-	_calib_start_time = hrt_absolute_time();
-	_calib_limit_detected = false;
-
-	PX4_INFO("Starting boom calibration - moving to down limit");
-}
-
-void BoomControl::update_calibration()
-{
-	switch (_calib_state) {
-		case CalibrationState::MOVING_TO_MIN:
-		{
-			// Move down slowly until limit sensor is triggered
-			_motor_output = -0.3f; // 30% power downward
-
-			if (check_limit_sensors()) {
-				if (!_calib_limit_detected) {
-					_calib_limit_detected = true;
-					_calib_settle_time = hrt_absolute_time();
-				} else if (hrt_elapsed_time(&_calib_settle_time) > 500_ms) {
-					// Settled for 500ms, record minimum angle
-					_calib_state = CalibrationState::RECORDING_MIN;
-				}
-			} else {
-				_calib_limit_detected = false;
-			}
-
-			// Timeout protection
-			if (hrt_elapsed_time(&_calib_start_time) > 30_s) {
-				PX4_ERR("Calibration timeout moving to minimum");
-				abort_calibration();
-				return;
-			}
-			break;
-		}
-
-		case CalibrationState::RECORDING_MIN:
-		{
-			_motor_output = 0.0f; // Stop motor
-
-			// Read current AS5600 angle as minimum
-			sensor_mag_encoder_s mag_encoder_data;
-			if (_mag_encoder_sub.copy(&mag_encoder_data) &&
-			    mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
-
-				float raw_angle_deg = math::degrees(mag_encoder_data.angle);
-				_calib_min_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
-
-				PX4_INFO("Minimum angle recorded: %.1f degrees", static_cast<double>(_calib_min_angle));
-
-				_calib_state = CalibrationState::MOVING_TO_MAX;
-				_calib_limit_detected = false;
-				PX4_INFO("Moving to up limit");
-			}
-			break;
-		}
-
-		case CalibrationState::MOVING_TO_MAX:
-		{
-			// Move up slowly until limit sensor is triggered
-			_motor_output = 0.3f; // 30% power upward
-
-			if (check_limit_sensors()) {
-				if (!_calib_limit_detected) {
-					_calib_limit_detected = true;
-					_calib_settle_time = hrt_absolute_time();
-				} else if (hrt_elapsed_time(&_calib_settle_time) > 500_ms) {
-					// Settled for 500ms, record maximum angle
-					_calib_state = CalibrationState::RECORDING_MAX;
-				}
-			} else {
-				_calib_limit_detected = false;
-			}
-
-			// Timeout protection
-			if (hrt_elapsed_time(&_calib_start_time) > 60_s) {
-				PX4_ERR("Calibration timeout moving to maximum");
-				abort_calibration();
-				return;
-			}
-			break;
-		}
-
-		case CalibrationState::RECORDING_MAX:
-		{
-			_motor_output = 0.0f; // Stop motor
-
-			// Read current AS5600 angle as maximum
-			sensor_mag_encoder_s mag_encoder_data;
-			if (_mag_encoder_sub.copy(&mag_encoder_data) &&
-			    mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
-
-				float raw_angle_deg = math::degrees(mag_encoder_data.angle);
-				_calib_max_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
-
-				PX4_INFO("Maximum angle recorded: %.1f degrees", static_cast<double>(_calib_max_angle));
-
-				complete_calibration();
-			}
-			break;
-		}
-
-		case CalibrationState::COMPLETED:
-		case CalibrationState::FAILED:
-		default:
-			// Return to normal operation
-			_calibration_mode = false;
-			_motor_output = 0.0f;
-			break;
-	}
-}
-
-void BoomControl::complete_calibration()
-{
-	_calib_state = CalibrationState::COMPLETED;
-	_motor_output = 0.0f;
-
-	// Determine direction based on angle difference
-	float angle_diff = _calib_max_angle - _calib_min_angle;
-	_calib_direction = (angle_diff > 0) ? 1.0f : -1.0f;
-
-	// Display results
-	PX4_INFO("=== Boom Calibration Results ===");
-	PX4_INFO("Minimum AS5600 angle: %.1f degrees", static_cast<double>(_calib_min_angle));
-	PX4_INFO("Maximum AS5600 angle: %.1f degrees", static_cast<double>(_calib_max_angle));
-	PX4_INFO("Angle difference: %.1f degrees", static_cast<double>(fabsf(angle_diff)));
-	PX4_INFO("Direction: %s", (_calib_direction > 0) ? "Normal" : "Reversed");
-
-	// Suggest parameter values
-	PX4_INFO("=== Suggested Parameters ===");
-	PX4_INFO("BOOM_MAG_SCALE: %.3f", static_cast<double>(_calib_direction));
-	PX4_INFO("BOOM_MAG_OFFSET: %.1f", static_cast<double>(-_calib_min_angle * _calib_direction));
-	PX4_INFO("BOOM_ANGLE_REV: %d", (_calib_direction < 0) ? 1 : 0);
-
-	_calibration_mode = false;
-}
-
-void BoomControl::abort_calibration()
-{
-	_calib_state = CalibrationState::FAILED;
-	_motor_output = 0.0f;
-	_calibration_mode = false;
-	_state = BoomState::ERROR;
-
-	PX4_ERR("Boom calibration failed");
-}
-
-bool BoomControl::check_limit_sensors()
-{
-	hbridge_status_s hbridge_status;
-	bool limit_triggered = false;
-	uint8_t hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
-
-	// Check for hbridge status updates
-	if (_hbridge_status_sub[hbridge_channel].updated() && _hbridge_status_sub[hbridge_channel].copy(&hbridge_status)) {
-		// Check if forward or reverse limits are active
-		if (hbridge_status.forward_limit || hbridge_status.reverse_limit) {
-			limit_triggered = true;
-		}
-	}
-
-	return limit_triggered;
-}
-
-float BoomControl::translate_as5600_to_boom_angle(float as5600_angle)
-{
-	if (_calib_state != CalibrationState::COMPLETED) {
-		PX4_WARN("Calibration not completed - using uncalibrated angle");
-		return as5600_angle;
-	}
-
-	// Normalize AS5600 angle to 0-1 range between calibrated limits
-	float normalized = (as5600_angle - _calib_min_angle) / (_calib_max_angle - _calib_min_angle);
-
-	// Map to boom angle range (assuming -10° to +75° boom range)
-	float boom_min = _param_boom_angle_min.get();
-	float boom_max = _param_boom_angle_max.get();
-	float boom_angle = boom_min + normalized * (boom_max - boom_min);
-
-	return boom_angle;
-}
-
-float BoomControl::translate_boom_to_as5600_angle(float boom_angle)
-{
-	if (_calib_state != CalibrationState::COMPLETED) {
-		PX4_WARN("Calibration not completed - using uncalibrated angle");
-		return boom_angle;
-	}
-
-	// Normalize boom angle to 0-1 range
-	float boom_min = _param_boom_angle_min.get();
-	float boom_max = _param_boom_angle_max.get();
-	float normalized = (boom_angle - boom_min) / (boom_max - boom_min);
-
-	// Map to AS5600 angle range
-	float as5600_angle = _calib_min_angle + normalized * (_calib_max_angle - _calib_min_angle);
-
-	return as5600_angle;
-}
-
-extern "C" __EXPORT int boom_control_main(int argc, char *argv[])
-{
-	return BoomControl::main(argc, argv);
 }
