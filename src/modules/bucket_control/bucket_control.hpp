@@ -61,9 +61,6 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/quad_encoder_reset.h>
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/vehicle_acceleration.h>
-#include <uORB/topics/vehicle_angular_velocity.h>
-#include <uORB/topics/vehicle_attitude.h>
 
 using namespace time_literals;
 
@@ -97,14 +94,6 @@ private:
         FAST_MOVE_TO_DUMP,       // Fast move toward dump limit
         SLOW_APPROACH_DUMP,      // Slow approach to dump limit (bucket up)
         COMPLETE
-    };
-
-    enum class ControlMode : uint8_t {
-        MANUAL = 0,
-        AUTO_LEVEL = 1,
-        SLOPE_COMPENSATION = 2,
-        GRADING = 3,
-        TRANSPORT = 4
     };
 
     // State machine
@@ -153,7 +142,6 @@ private:
     // Enhanced kinematic calculations with boom compensation
     float actuatorLengthToBucketAngle(float actuator_length, float boom_angle = 0.0f);
     float bucketAngleToActuatorLength(float bucket_angle, float boom_angle = 0.0f);
-    float compensateBoomAngle(float target_ground_angle, float boom_angle);
     void updateKinematicParameters();
 
     // Four-bar linkage solver for bellcrank -> coupler -> bucket system
@@ -162,7 +150,11 @@ private:
 
     // Motion control
     void updateMotionControl();
-    void updateTrajectorySetpoint(float dt);
+
+    // Clean control architecture functions
+    void monitorCommandTarget();
+    void monitorBoomChanges();
+    void updateActuatorTarget();
 
     // Hardware interface through existing drivers
     void setMotorCommand(float command);
@@ -172,15 +164,14 @@ private:
     void updateHBridgeStatus(); // EKF2-style instance discovery and selection
     void updateEncoderData();   // EKF2-style encoder instance discovery and selection
 
-    // AHRS Integration methods
-    void updateAHRSData();
-    float calculateGroundRelativeAngle(float bucket_boom_angle);
-    float compensateForSlope(float target_angle);
-    void updateStabilityFactor();
-    void applyAntiSpillControl();
-    float limitMovementForStability(float command);
-    void performAutoLevel();
-    void performGradingControl();
+    // Boom angle monitoring and compensation
+    void updateBoomAngleMonitoring();
+    float _previous_boom_angle{0.0f};       // Previous boom angle for change detection
+    float _target_absolute_bucket_angle{0.0f};  // Target absolute bucket angle (ground-relative)
+    bool _boom_angle_changed{false};        // Flag indicating boom has moved
+    float _boom_angle_threshold{0.005f};    // Threshold for detecting boom movement (rad)
+
+    // Simplified status publishing
     void publishStatus();
 
     // Control variables
@@ -192,35 +183,16 @@ private:
 
     // Current angles for status reporting
     float _current_bucket_angle{0.0f};       // rad (relative to boom)
-    float _current_ground_angle{0.0f};       // rad (relative to ground)
 
-    // AHRS data
-    float _machine_roll{0.0f};
-    float _machine_pitch{0.0f};
-    float _machine_yaw{0.0f};
-    float _angular_rate_x{0.0f};
-    float _angular_rate_y{0.0f};
-    float _angular_rate_z{0.0f};
-    float _acceleration_x{0.0f};
-    float _acceleration_y{0.0f};
-    float _acceleration_z{0.0f};
-
-    // Advanced control features
-    ControlMode _control_mode{ControlMode::MANUAL};
-    float _target_ground_angle{0.0f};        // Target angle relative to ground
-    float _grading_angle{0.0f};              // Desired cutting angle for grading
-    float _transport_angle{0.0f};            // Safe angle for transport
-    float _stability_factor{1.0f};           // Dynamic stability scaling factor
-    float _current_boom_angle{0.0f};         // Current boom angle from boom status
-    bool _anti_spill_active{false};
-    bool _stability_warning{false};
+    float _current_boom_angle{0.0f};         // Current boom angle from AS5600 sensor
 
     hrt_abstime _last_encoder_time{0};
     bool _limit_switch_load{false};          // Load limit (bucket down position)
     bool _limit_switch_dump{false};          // Dump limit (bucket up position)
 
-    // PID controller
+    // PID controllers
     PID _position_pid;
+    PID _velocity_pid;
 
     // Motion planning components
     VelocitySmoothing _velocity_smoother;
@@ -237,9 +209,6 @@ private:
     uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
     uORB::Subscription _sensor_mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-    uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
-    uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
-    uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
     uORB::SubscriptionMultiArray<limit_sensor_s> _limit_sensor_sub{ORB_ID::limit_sensor};
 
     // uORB publications
@@ -300,6 +269,9 @@ private:
         (ParamFloat<px4::params::BCT_PID_P>) _param_pid_p,
         (ParamFloat<px4::params::BCT_PID_I>) _param_pid_i,
         (ParamFloat<px4::params::BCT_PID_D>) _param_pid_d,
+        (ParamFloat<px4::params::BCT_VEL_PID_P>) _param_vel_pid_p,
+        (ParamFloat<px4::params::BCT_VEL_PID_I>) _param_vel_pid_i,
+        (ParamFloat<px4::params::BCT_VEL_PID_D>) _param_vel_pid_d,
         (ParamFloat<px4::params::BCT_MAX_VEL>) _param_max_velocity,
         (ParamFloat<px4::params::BCT_MAX_ACC>) _param_max_acceleration,
         (ParamFloat<px4::params::BCT_JERK_LIM>) _param_jerk_limit,
@@ -308,8 +280,7 @@ private:
         (ParamFloat<px4::params::BCT_ZERO_FAST>) _param_zeroing_fast_speed,
         (ParamFloat<px4::params::BCT_ZERO_SLOW>) _param_zeroing_slow_speed,
 
-        // AHRS Integration parameters
-        (ParamInt<px4::params::BCT_AHRS_EN>) _param_ahrs_enabled,
+        // Boom compensation parameters
         (ParamInt<px4::params::BCT_CTRL_MODE>) _param_control_mode,
         (ParamFloat<px4::params::BCT_LEVEL_P>) _param_level_p_gain,
         (ParamFloat<px4::params::BCT_LEVEL_D>) _param_level_d_gain,
@@ -320,38 +291,7 @@ private:
         (ParamFloat<px4::params::BCT_SPILL_THR>) _param_spill_threshold
     )
 
-    // Auto-calibration functionality
-    enum class CalibrationState : uint8_t {
-        IDLE = 0,
-        MOVING_TO_MIN = 1,
-        RECORDING_MIN = 2,
-        READING_MIN = 3,
-        MOVING_TO_MAX = 4,
-        RECORDING_MAX = 5,
-        READING_MAX = 6,
-        MOVING_TO_CENTER = 7,
-        READING_CENTER = 8,
-        COMPLETED = 9,
-        FAILED = 10
-    };
+    )
 
-    bool _calibration_mode{false};
-    CalibrationState _calib_state{CalibrationState::IDLE};
-    float _calib_min_angle{0.0f};
-    float _calib_max_angle{0.0f};
-    float _calib_center_angle{0.0f};
-    float _calib_direction{1.0f};  // 1.0 for normal, -1.0 for reversed
-    uint64_t _calib_start_time{0};
-    uint64_t _calib_settle_time{0};
-    uint64_t _calib_timeout_ms{30000};  // 30 seconds default timeout
-    bool _calib_limit_detected{false};
-
-    bool start_auto_calibration();
-    void update_calibration();
-    void complete_calibration();
-    void abort_calibration();
-    bool check_limit_sensors();
-    float get_as5600_angle();
-    float translate_as5600_to_bucket_angle(float as5600_angle);
-    float translate_bucket_to_as5600_angle(float bucket_angle);
+};
 };

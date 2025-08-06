@@ -31,80 +31,153 @@
  *
  ****************************************************************************/
 
+/**
+ * @file bucket_control_main.cpp.cpp
+ * Bucket control module system interface and command handling.
+ */
+
 #include "bucket_control.hpp"
-
-#include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
+#include <lib/mathlib/mathlib.h>
 
-int BucketControl::print_usage(const char *reason)
+// Module interface implementation
+int BucketControl::task_spawn(int argc, char *argv[])
 {
-	if (reason) {
-		PX4_WARN("%s\n", reason);
-	}
+    BucketControl *instance = new BucketControl();
 
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-Bucket control module for wheel loader hydraulic bucket system.
+    if (instance) {
+        _object.store(instance);
+        _task_id = task_id_is_work_queue;
 
-Features:
-- Position control with PID feedback from quad encoder
-- Automatic zeroing sequence with limit sensors
-- Safety monitoring and emergency stop
-- Trajectory planning for smooth operation
-- Load monitoring and adaptive control
+        if (instance->init()) {
+            return PX4_OK;
+        }
 
-### Implementation
-The module runs at 100Hz and provides:
-- Precise position control via HBridge driver
-- Real-time encoder feedback from quad encoder
-- Automatic calibration and zeroing
-- Safety interlocks and limit monitoring
+    } else {
+        PX4_ERR("alloc failed");
+    }
 
-### Examples
-Start bucket control:
-$ bucket_control start
+    delete instance;
+    _object.store(nullptr);
+    _task_id = -1;
 
-Stop bucket control:
-$ bucket_control stop
-)DESCR_STR");
-
-	PRINT_MODULE_USAGE_NAME("bucket_control", "controller");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-	return 0;
+    return PX4_ERROR;
 }
 
 int BucketControl::custom_command(int argc, char *argv[])
 {
-	return print_usage("unknown command");
+    if (!is_running()) {
+        PX4_ERR("Module not running");
+        return PX4_ERROR;
+    }
+
+    BucketControl *instance = get_instance();
+    if (!instance) {
+        PX4_ERR("Instance not available");
+        return PX4_ERROR;
+    }
+
+    if (argc < 2) {
+        return print_usage("missing command");
+    }
+
+    if (!strcmp(argv[1], "test")) {
+        if (argc < 3) {
+            PX4_INFO("Available test commands:");
+            PX4_INFO("  angle <deg>    - Set target bucket angle in degrees");
+            PX4_INFO("  status         - Show current status");
+            return PX4_OK;
+        }
+
+        if (!strcmp(argv[2], "angle")) {
+            if (argc < 4) {
+                PX4_ERR("Usage: bucket_control test angle <degrees>");
+                return PX4_ERROR;
+            }
+
+            float angle_deg = atof(argv[3]);
+            float angle_rad = math::radians(angle_deg);
+
+            // Validate angle range (typical bucket range: -90 to +90 degrees)
+            if (angle_deg < -90.0f || angle_deg > 90.0f) {
+                PX4_WARN("Angle %f° is outside typical range [-90, +90]", static_cast<double>(angle_deg));
+            }
+
+            // Create and publish bucket command to set target angle
+            bucket_command_s cmd{};
+            cmd.timestamp = hrt_absolute_time();
+            cmd.target_angle = angle_rad; // Set the target angle
+            cmd.control_mode = 0; // Fixed to boom compensation mode
+            cmd.command_mode = 0; // Position mode
+            cmd.coordinate_frame = 0; // Ground reference
+            cmd.max_velocity = instance->_param_max_velocity.get() / 1000.0f; // Convert mm/s to m/s for angle rate
+            cmd.enable_stability_limit = false; // No AHRS integration
+            cmd.enable_anti_spill = false; // Anti-spill not used in boom compensation mode
+            cmd.grading_angle = nanf(""); // Use parameter defaults
+            cmd.transport_angle = nanf(""); // Use parameter defaults
+            cmd.stability_threshold = nanf(""); // Use parameter defaults
+
+            // Publish the command
+            static uORB::Publication<bucket_command_s> test_bucket_cmd_pub{ORB_ID(bucket_command)};
+            test_bucket_cmd_pub.publish(cmd);
+
+            PX4_INFO("Bucket command published: target angle %.1f° (%.3f rad)", static_cast<double>(angle_deg), static_cast<double>(angle_rad));
+            return PX4_OK;
+        }
+
+        if (!strcmp(argv[2], "status")) {
+            const char* state_names[] = {"UNINITIALIZED", "ZEROING", "READY", "MOVING", "ERROR"};
+
+            PX4_INFO("=== Bucket Control Status ===");
+            PX4_INFO("State: %s", state_names[static_cast<int>(instance->_state)]);
+            PX4_INFO("Control Mode: Boom Compensation (fixed)");
+            PX4_INFO("Target Bucket Angle: %.1f°", static_cast<double>(math::degrees(instance->_target_absolute_bucket_angle)));
+            PX4_INFO("Current Bucket Angle: %.1f°", static_cast<double>(math::degrees(instance->_current_bucket_angle)));
+            PX4_INFO("Current Boom Angle: %.1f°", static_cast<double>(math::degrees(instance->_current_boom_angle)));
+            PX4_INFO("Actuator Length: %.1f mm (target: %.1f mm)",
+                     static_cast<double>(instance->_current_actuator_length),
+                     static_cast<double>(instance->_target_actuator_length));
+            PX4_INFO("Limit Switches - Load: %s, Dump: %s",
+                     instance->_limit_switch_load ? "ACTIVE" : "inactive",
+                     instance->_limit_switch_dump ? "ACTIVE" : "inactive");
+            PX4_INFO("Zeroing Complete: %s", instance->_zeroing_complete ? "YES" : "NO");
+            PX4_INFO("Boom Angle Changed: %s", instance->_boom_angle_changed ? "YES" : "NO");
+
+            return PX4_OK;
+        }
+
+        return print_usage("unknown test command");
+    }
+
+    return print_usage("unknown command");
 }
 
-int BucketControl::task_spawn(int argc, char *argv[])
+int BucketControl::print_usage(const char *reason)
 {
-	BucketControl *instance = new BucketControl();
+    if (reason) {
+        PX4_WARN("%s\n", reason);
+    }
 
-	if (instance) {
-		_object.store(instance);
-		_task_id = task_id_is_work_queue;
+    PRINT_MODULE_DESCRIPTION(
+        R"DESCR_STR(
+### Description
+Bucket control module for wheel loader.
 
-		if (instance->init()) {
-			return PX4_OK;
-		}
+Manages bucket angle control through linear actuator with boom angle compensation.
+Supports zeroing procedure with load limit (bucket down) and dump limit (bucket up) switches.
 
-	} else {
-		PX4_ERR("alloc failed");
-	}
+)DESCR_STR");
 
-	delete instance;
-	_object.store(nullptr);
-	_task_id = -1;
+    PRINT_MODULE_USAGE_NAME("bucket_control", "controller");
+    PRINT_MODULE_USAGE_COMMAND("start");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("test angle <deg>", "Set target bucket angle in degrees");
+    PRINT_MODULE_USAGE_COMMAND_DESCR("test status", "Show current module status");
+    PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
-	return PX4_ERROR;
+    return 0;
 }
 
 extern "C" __EXPORT int bucket_control_main(int argc, char *argv[])
 {
-	return BucketControl::main(argc, argv);
+    return BucketControl::main(argc, argv);
 }

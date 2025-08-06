@@ -111,6 +111,33 @@ parameters:
               max: 2.0
               default: 0.05
               decimal: 3
+          BCT_VEL_PID_P:
+              description:
+                  short: Velocity control P gain
+                  long: Proportional gain for bucket velocity control
+              type: float
+              min: 0.0
+              max: 10.0
+              default: 1.0
+              decimal: 3
+          BCT_VEL_PID_I:
+              description:
+                  short: Velocity control I gain
+                  long: Integral gain for bucket velocity control
+              type: float
+              min: 0.0
+              max: 5.0
+              default: 0.1
+              decimal: 3
+          BCT_VEL_PID_D:
+              description:
+                  short: Velocity control D gain
+                  long: Derivative gain for bucket velocity control
+              type: float
+              min: 0.0
+              max: 2.0
+              default: 0.01
+              decimal: 3
           BCT_MAX_VEL:
               description:
                   short: Maximum actuator velocity
@@ -269,16 +296,6 @@ parameters:
               default: 800.0
               decimal: 1
               unit: mm
-    - group: Bucket AHRS
-      definitions:
-          BCT_AHRS_EN:
-              description:
-                  short: AHRS integration enable
-                  long: Enable attitude-based bucket control features
-              type: int32
-              min: 0
-              max: 1
-              default: 1
               values:
                   0: Disabled
                   1: Enabled
