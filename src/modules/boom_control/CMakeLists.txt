@@ -46,7 +46,7 @@ px4_add_module(
 	DEPENDS
 		mathlib
 		motion_planning
-		pid
+		PID
 	MODULE_CONFIG
 		module.yaml
 )

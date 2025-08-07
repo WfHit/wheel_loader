@@ -63,10 +63,10 @@ bool BoomSensorInterface::update(SensorData& data)
 	sensor_mag_encoder_s encoder_msg;
 	if (_mag_encoder_sub.update(&encoder_msg)) {
 		// Process new encoder data
-		data.raw_angle = encoder_msg.angle_deg;
+		data.raw_angle = encoder_msg.angle;
 		data.calibrated_angle = apply_calibration(data.raw_angle);
 		data.magnet_detected = encoder_msg.magnet_detected;
-		data.status_flags = encoder_msg.status;
+		data.status_flags = 0; // encoder_msg doesn't have status field, use 0
 		data.timestamp = encoder_msg.timestamp;
 		data.is_valid = validate_data(data);
 

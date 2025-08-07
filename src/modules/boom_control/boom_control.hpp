@@ -70,7 +70,6 @@ class BoomControl final : public ModuleBase<BoomControl>,
                           public px4::ScheduledWorkItem
 {
 public:
-	static constexpr char const *MODULE_NAME = "boom_control";
 	static constexpr uint32_t CONTROL_INTERVAL_US = 20000; // 50 Hz
 
 	BoomControl();

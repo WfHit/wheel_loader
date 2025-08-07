@@ -45,8 +45,8 @@ bool BoomMotionController::initialize()
 	updateParams();
 
 	// Initialize PID controllers
-	_position_controller.setPID(_param_pos_p.get(), _param_pos_i.get(), _param_pos_d.get());
-	_velocity_controller.setPID(_param_vel_p.get(), _param_vel_i.get(), _param_vel_d.get());
+	_position_controller.setGains(_param_pos_p.get(), _param_pos_i.get(), _param_pos_d.get());
+	_velocity_controller.setGains(_param_vel_p.get(), _param_vel_i.get(), _param_vel_d.get());
 
 	// Initialize trajectory generator
 	_trajectory_generator.reset({0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f});
@@ -68,7 +68,9 @@ void BoomMotionController::set_target_position(float angle, float velocity_limit
 
 	// Update trajectory generator target
 	Vector3f target_pos(angle, 0.0f, 0.0f);
-	_trajectory_generator.setCurrentPositionSetpoint(target_pos);
+	Vector3f current_vel(0.0f, 0.0f, 0.0f);
+	Vector3f current_accel(0.0f, 0.0f, 0.0f);
+	_trajectory_generator.reset(current_accel, current_vel, target_pos);
 }
 
 void BoomMotionController::set_target_velocity(float velocity)
@@ -106,20 +108,26 @@ BoomMotionController::MotionSetpoint BoomMotionController::update_trajectory(flo
 				max_vel(0) = _velocity_limit_override;
 			}
 
-			_trajectory_generator.setMaxVelocity(max_vel);
-			_trajectory_generator.setMaxAcceleration(max_acc);
-			_trajectory_generator.setMaxJerk(max_jerk);
+		_trajectory_generator.setMaxVelocity(max_vel);
+		_trajectory_generator.setMaxAcceleration(max_acc);
+		_trajectory_generator.setMaxJerk(max_jerk(0)); // Use first component only
 
-			// Update trajectory
-			Vector3f target_pos(_target_position, 0.0f, 0.0f);
-			_trajectory_generator.update(target_pos, dt);
+		// Update trajectory using PositionSmoothing
+		Vector3f current_pos(_current_position, 0.0f, 0.0f);
+		Vector3f waypoints[3] = {
+			current_pos,                                    // past waypoint
+			Vector3f(_target_position, 0.0f, 0.0f),       // target
+			Vector3f(_target_position, 0.0f, 0.0f)        // next target (same as current for simplicity)
+		};
+		Vector3f ff_velocity(0.0f, 0.0f, 0.0f);
+		PositionSmoothing::PositionSmoothingSetpoints setpoints;
 
-			// Get trajectory output
-			_current_traj_pos = _trajectory_generator.getCurrentPositionSetpoint();
-			_current_traj_vel = _trajectory_generator.getCurrentVelocitySetpoint();
-			_current_traj_acc = _trajectory_generator.getCurrentAccelerationSetpoint();
+		_trajectory_generator.generateSetpoints(current_pos, waypoints, ff_velocity, dt, false, setpoints);
 
-			setpoint.position = _current_traj_pos(0);
+		// Extract trajectory output (use only x-axis since boom is 1D)
+		_current_traj_pos = Vector3f(setpoints.position(0), 0.0f, 0.0f);
+		_current_traj_vel = Vector3f(setpoints.velocity(0), 0.0f, 0.0f);
+		_current_traj_acc = Vector3f(setpoints.acceleration(0), 0.0f, 0.0f);			setpoint.position = _current_traj_pos(0);
 			setpoint.velocity = _current_traj_vel(0);
 			setpoint.acceleration = _current_traj_acc(0);
 			setpoint.feedforward = calculate_feedforward(setpoint);
@@ -177,14 +185,14 @@ BoomMotionController::ControlOutput BoomMotionController::compute_control(const 
 			float velocity_error = setpoint.velocity - current_velocity;
 
 			// Position controller output becomes velocity setpoint
-			float velocity_setpoint = _position_controller.update_setpoint(position_error, dt);
+			_position_controller.setSetpoint(0.0f); // Set target error to 0
+			float velocity_setpoint = _position_controller.update(current_position - setpoint.position, dt);
 			velocity_setpoint += setpoint.velocity; // Add feedforward
 
 			// Velocity controller
 			velocity_error = velocity_setpoint - current_velocity;
-			control_output = _velocity_controller.update_setpoint(velocity_error, dt);
-
-			// Add feedforward and load compensation
+			_velocity_controller.setSetpoint(velocity_setpoint);
+			control_output = _velocity_controller.update(current_velocity, dt);			// Add feedforward and load compensation
 			control_output += setpoint.feedforward + _load_compensation;
 
 			// Check if at target
@@ -197,18 +205,21 @@ BoomMotionController::ControlOutput BoomMotionController::compute_control(const 
 
 		case ControlMode::VELOCITY:
 		{
-			float velocity_error = setpoint.velocity - current_velocity;
-			control_output = _velocity_controller.update_setpoint(velocity_error, dt);
+			_velocity_controller.setSetpoint(setpoint.velocity);
+			control_output = _velocity_controller.update(current_velocity, dt);
 			control_output += _load_compensation;
+			float velocity_error = setpoint.velocity - current_velocity;
 			output.at_target = (fabsf(velocity_error) < 0.01f);
 			break;
 		}
 
 		case ControlMode::MANUAL:
+		{
 			// Manual mode - pass through (would be handled by external command)
 			control_output = 0.0f;
 			output.at_target = true;
 			break;
+		}
 
 		default:
 			control_output = 0.0f;
@@ -237,8 +248,8 @@ void BoomMotionController::set_load_compensation(float load_estimate)
 
 void BoomMotionController::reset()
 {
-	_position_controller.resetIntegrator();
-	_velocity_controller.resetIntegrator();
+	_position_controller.resetIntegral();
+	_velocity_controller.resetIntegral();
 	_last_output = 0.0f;
 }
 

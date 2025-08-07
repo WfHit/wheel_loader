@@ -68,9 +68,10 @@ bool BoomActuatorInterface::send_command(const ActuatorCommand& command)
 	// Create H-bridge command
 	hbridge_command_s hbridge_cmd{};
 	hbridge_cmd.timestamp = hrt_absolute_time();
+	hbridge_cmd.instance = _hbridge_selected; // Use configured H-bridge instance
 	hbridge_cmd.duty_cycle = math::constrain(command.duty_cycle, -1.0f, 1.0f);
 	hbridge_cmd.enable = command.enable;
-	hbridge_cmd.mode = command.mode;
+	// Note: hbridge_command doesn't have a mode field, removed command.mode assignment
 
 	// Apply duty cycle limit
 	float max_duty = _param_duty_max.get();
@@ -97,15 +98,15 @@ bool BoomActuatorInterface::update_status(ActuatorStatus& status)
 		return false;
 	}
 
-	// Get H-bridge status
+	// Get H-bridge status - use index for the configured H-bridge instance
 	hbridge_status_s hbridge_status;
-	if (_hbridge_status_sub.update(&hbridge_status)) {
+	if (_hbridge_status_sub[_hbridge_selected].updated() && _hbridge_status_sub[_hbridge_selected].copy(&hbridge_status)) {
 		// Update status from H-bridge
 		status.enabled = hbridge_status.enabled;
-		status.fault = hbridge_status.fault;
-		status.current = hbridge_status.current;
-		status.voltage = hbridge_status.voltage;
-		status.temperature = hbridge_status.temperature;
+		status.fault = hbridge_status.forward_limit || hbridge_status.reverse_limit; // Use limits as fault indicators
+		status.current = 0.0f;  // Not available in hbridge_status
+		status.voltage = 0.0f;  // Not available in hbridge_status
+		status.temperature = 0.0f;  // Not available in hbridge_status
 		status.timestamp = hbridge_status.timestamp;
 
 		_last_status = status;

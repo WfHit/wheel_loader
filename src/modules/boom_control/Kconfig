@@ -1,4 +1,4 @@
-menuconfig BOOM_CONTROL
+menuconfig MODULES_BOOM_CONTROL
 	bool "boom control"
 	default n
 	---help---
