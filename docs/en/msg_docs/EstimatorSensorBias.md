@@ -24,7 +24,7 @@ bool gyro_bias_valid
 bool gyro_bias_stable		# true when the gyro bias estimate is stable enough to use for calibration
 
 uint32 accel_device_id          # unique device ID for the sensor that does not change between power cycles
-float32[3] accel_bias           # accelerometer in-run bias in body frame (m/s^2)
+float32[3]            # accelerometer in-run bias in body frame (m/s^2)
 float32 accel_bias_limit        # magnitude of maximum accelerometer in-run bias in body frame (m/s^2)
 float32[3] accel_bias_variance
 bool accel_bias_valid
