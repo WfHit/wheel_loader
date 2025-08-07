@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2024 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,207 +33,100 @@
 
 #pragma once
 
-#include <px4_platform_common/defines.h>
+#include <drivers/drv_hrt.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
-#include <lib/pid/PID.hpp>
-#include <lib/motion_planning/PositionSmoothing.hpp>
-#include <lib/perf/perf_counter.h>
-#include <drivers/drv_hrt.h>
-
 #include <uORB/Publication.hpp>
-#include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
-#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
-#include <uORB/topics/hbridge_command.h>
-#include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/sensor_mag_encoder.h>
+
+#include <perf/perf_counter.h>
 
 using namespace time_literals;
 
+// Forward declarations
+class BoomKinematics;
+class BoomSensorInterface;
+class BoomMotionController;
+class BoomActuatorInterface;
+class BoomStateManager;
+
 /**
- * @brief Boom Control Module for Wheel Loader
+ * @brief Main boom control module for wheel loader lifting system
  *
- * Controls the boom angle using AS5600 sensor feedback and DC motor with H-bridge (DRV8701).
- * Includes proper kinematics, S-curve motion planning, and PID control.
+ * Coordinates boom actuator components:
+ * - Sensor reading and processing
+ * - Kinematic calculations
+ * - Motion planning and control
+ * - Actuator commanding
+ * - State management and safety
  */
-class BoomControl : public ModuleBase<BoomControl>, public ModuleParams, public px4::ScheduledWorkItem
+class BoomControl final : public ModuleBase<BoomControl>,
+                          public ModuleParams,
+                          public px4::ScheduledWorkItem
 {
 public:
+	static constexpr char const *MODULE_NAME = "boom_control";
+	static constexpr uint32_t CONTROL_INTERVAL_US = 20000; // 50 Hz
+
 	BoomControl();
-	~BoomControl() override;
+	~BoomControl();
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
 	static int custom_command(int argc, char *argv[]);
 	static int print_usage(const char *reason = nullptr);
 
-	void Run() override;
 	bool init();
 
 private:
-	// Control states
-	enum class BoomState : uint8_t {
-		IDLE = 0,
-		MOVING = 1,
-		HOLDING = 2,
-		ERROR = 3
-	};
+	void Run() override;
 
-	// Preset positions
-	enum class BoomPreset : uint8_t {
-		GROUND = 0,
-		CARRY = 1,
-		MAX_HEIGHT = 2,
-		CUSTOM = 3
-	};
+	/**
+	 * @brief Main control pipeline stages
+	 */
+	void update_sensors();
+	void process_commands();
+	void update_motion_planning();
+	void execute_control();
+	void publish_telemetry();
 
-	// Kinematic parameters for triangle linkage
-	struct Kinematics {
-		float pivot_to_actuator_base;    // Distance from boom pivot to actuator base mount [mm]
-		float pivot_to_actuator_attach;  // Distance from boom pivot to actuator attachment point [mm]
-		float actuator_base_angle;       // Angle of actuator base mount from horizontal [rad]
-	};
+	/**
+	 * @brief System management
+	 */
+	void update_parameters();
+	void handle_emergency_stop();
+	bool check_system_health();
 
-	// Parameters
-	DEFINE_PARAMETERS(
-		// Control update rate
-		(ParamInt<px4::params::BOOM_UPDATE_RATE>) _param_update_rate,
+	// Core components
+	BoomKinematics* _kinematics{nullptr};
+	BoomSensorInterface* _sensor_interface{nullptr};
+	BoomMotionController* _motion_controller{nullptr};
+	BoomActuatorInterface* _actuator_interface{nullptr};
+	BoomStateManager* _state_manager{nullptr};
 
-		// PID gains for position control
-		(ParamFloat<px4::params::BOOM_PID_P>) _param_boom_p,
-		(ParamFloat<px4::params::BOOM_PID_I>) _param_boom_i,
-		(ParamFloat<px4::params::BOOM_PID_D>) _param_boom_d,
+	// Current system state
+	float _current_boom_angle{0.0f};          // rad
+	float _current_actuator_length{0.0f};     // mm
+	float _target_boom_angle{0.0f};           // rad
+	hrt_abstime _last_command_time{0};
 
-		// Motion planning limits
-		(ParamFloat<px4::params::BOOM_VEL>) _param_boom_max_vel,
-		(ParamFloat<px4::params::BOOM_ACCEL>) _param_boom_max_acc,
-		(ParamFloat<px4::params::BOOM_JERK>) _param_boom_max_jerk,
-
-		// Boom angle limits
-		(ParamFloat<px4::params::BOOM_ANGLE_MIN>) _param_boom_angle_min,
-		(ParamFloat<px4::params::BOOM_ANGLE_MAX>) _param_boom_angle_max,
-
-		// Preset positions
-		(ParamFloat<px4::params::BOOM_POS_GROUND>) _param_boom_pos_ground,
-		(ParamFloat<px4::params::BOOM_POS_CARRY>) _param_boom_pos_carry,
-		(ParamFloat<px4::params::BOOM_POS_MAX>) _param_boom_pos_max,
-
-		// Kinematic parameters for triangle calculations
-		(ParamFloat<px4::params::BOOM_KIN_L1>) _param_kin_pivot_to_base,
-		(ParamFloat<px4::params::BOOM_KIN_L2>) _param_kin_pivot_to_attach,
-		(ParamFloat<px4::params::BOOM_KIN_ANG>) _param_kin_base_angle,
-
-		// Magnetic encoder sensor calibration - using available sensor param
-		(ParamInt<px4::params::BOOM_ANGLE_SENS>) _param_mag_encoder_instance_id,
-		(ParamFloat<px4::params::BOOM_MAG_SCALE>) _param_mag_encoder_scale,
-		(ParamFloat<px4::params::BOOM_MAG_OFFSET>) _param_mag_encoder_offset,
-		(ParamBool<px4::params::BOOM_ANGLE_REV>) _param_angle_reverse,
-
-		// H-bridge motor configuration
-		(ParamInt<px4::params::BOOM_HBRIDGE_CH>) _param_hbridge_channel,
-		(ParamFloat<px4::params::BOOM_DEADBAND>) _param_motor_deadzone,
-
-		// Motor output limit
-		(ParamFloat<px4::params::BOOM_MAX_OUTPUT>) _param_max_output
-	)
-
-	// Control system components
-	PID _position_pid;
-	PositionSmoothing _trajectory_generator;
-
-	// uORB subscriptions
+	// uORB interface
 	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _mag_encoder_sub{ORB_ID(sensor_mag_encoder)};
-	uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
-
-	// EKF2-style instance selection for SubscriptionMultiArray
-	int _hbridge_status_selected{-1};       // Selected instance for hbridge status
-	hrt_abstime _last_hbridge_status_update{0};
-
-	// uORB publications
-	orb_advert_t _hbridge_command_pub{nullptr};
 	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
 
-	// Performance counters
-	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
-	perf_counter_t _interval_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": interval")};
+	// Performance monitoring
+	perf_counter_t _cycle_perf;
+	perf_counter_t _control_latency_perf;
 
-	// State variables
-	BoomState _state{BoomState::IDLE};
-	float _current_boom_angle{0.0f};
-	float _target_boom_angle{0.0f};
-	float _current_actuator_length{0.0f};
-	float _target_actuator_length{0.0f};
-	float _motor_output{0.0f};
-	bool _calibration_mode{false};  // Calibration mode flag
-
-	// Trajectory setpoints
-	float _desired_position_m{0.0f};
-	float _desired_velocity_m_s{0.0f};
-
-	bool _sensor_valid{false};
-
-	uint64_t _last_sensor_update{0};
-	uint64_t _last_command_time{0};
-
-	Kinematics _kinematics{};
-
-	// Kinematic transformation functions
-	float boom_angle_to_actuator_length(float boom_angle);
-	float actuator_length_to_boom_angle(float actuator_length);
-	float as5600_angle_to_actuator_length(float as5600_angle);
-
-	// Control and sensor functions
-	void update_parameters();
-	void update_sensor_data();
-	void process_boom_command();
-	void update_trajectory();
-	void run_position_control();
-	void publish_hbridge_command();
-	void publish_boom_status();
-	bool check_hbridge_status();  // Check hbridge status for our motor instance
-	void updateHBridgeStatus();   // EKF2-style instance discovery and selection
-
-	// Auto-calibration functionality
-	enum class CalibrationState : uint8_t {
-		IDLE = 0,
-		MOVING_TO_MIN = 1,
-		RECORDING_MIN = 2,
-		MOVING_TO_MAX = 3,
-		RECORDING_MAX = 4,
-		COMPLETED = 5,
-		FAILED = 6
-	};
-
-	CalibrationState _calib_state{CalibrationState::IDLE};
-	float _calib_min_angle{0.0f};
-	float _calib_max_angle{0.0f};
-	float _calib_direction{1.0f};  // 1.0 for normal, -1.0 for reversed
-	uint64_t _calib_start_time{0};
-	uint64_t _calib_settle_time{0};
-	bool _calib_limit_detected{false};
-
-	void start_auto_calibration();
-	void update_calibration();
-	void complete_calibration();
-	void abort_calibration();
-	bool check_limit_sensors();
-	float translate_as5600_to_boom_angle(float as5600_angle);
-	float translate_boom_to_as5600_angle(float boom_angle);
-
-	// Utility functions
-	void set_target_position(BoomPreset preset);
-	void update_kinematics_from_params();
-	void reset_trajectory();
-
-	// Safety functions
-	void emergency_stop();
-	bool is_sensor_timeout();
+	// Module parameters
+	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::BOOM_EN>) _param_enabled,
+		(ParamFloat<px4::params::BOOM_RATE>) _param_update_rate
+	)
 };

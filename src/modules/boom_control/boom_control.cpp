@@ -1,68 +1,13 @@
 /****************************************************************************
  *
- *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2024 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get());
-
-	// Use PositionSmoothing for trajectory generation (1D motion using Z-axis)
-	matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length / 1000.0f}; // Convert to meters
-	matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length / 1000.0f};
-	matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
-
-	float dt = 1.0f / _param_update_rate.get();
-	PositionSmoothing::PositionSmoothingSetpoints setpoints;
-	_trajectory_generator.generateSetpoints(current_pos, target_pos, feedforward_velocity,
-	                                       dt, false, setpoints);
-
-	// Store the generated setpoints for use in position control
-	_desired_position_m = setpoints.position(2);
-	_desired_velocity_m_s = setpoints.velocity(2);
-}
-
-void BoomControl::run_position_control()
-{
-	if (_state == BoomState::ERROR || !_sensor_valid) {
-		_motor_output = 0.0f;
-		return;
-	}
-
-	// Use the setpoints from trajectory generator (already in meters)
-	float desired_position_m = _desired_position_m;
-	float desired_velocity_m_s = _desired_velocity_m_s;
-
-	// Convert back to mm for control
-	float desired_position_mm = desired_position_m * 1000.0f;
-
-	// Position error in mm
-	float position_error = desired_position_mm - _current_actuator_length;
-
-	// Check if we've reached the target
-	if (fabsf(position_error) < 5.0f && fabsf(desired_velocity_m_s) < 0.001f) { // 5mm tolerance
-		_state = BoomState::HOLDING;
-	}
-
-	// PID control
-	float dt = 1.0f / _param_update_rate.get();
-	_motor_output = _position_pid.update(position_error, dt);
-
-	// Add velocity feedforward
-	float velocity_ff = desired_velocity_m_s / (_param_boom_max_vel.get() / 1000.0f);
-	_motor_output += velocity_ff * 0.3f; // Feedforward gain
-
-	// Apply deadzone compensation
-	if (fabsf(_motor_output) > _param_motor_deadzone.get()) {
-		if (_motor_output > 0.0f) {
-			_motor_output += _param_motor_deadzone.get();
-		} else {
-			_motor_output -= _param_motor_deadzone.get();
-		}
-	}
-}f conditions and the following disclaimer.
+ *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
@@ -87,117 +32,86 @@ void BoomControl::run_position_control()
  ****************************************************************************/
 
 #include "boom_control.hpp"
+#include "boom_kinematics.hpp"
+#include "boom_sensor_interface.hpp"
+#include "boom_motion_controller.hpp"
+#include "boom_actuator_interface.hpp"
+#include "boom_state_manager.hpp"
 
-#include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
-
-#include <lib/mathlib/mathlib.h>
-#include <matrix/matrix/math.hpp>
+#include <mathlib/mathlib.h>
 
 BoomControl::BoomControl() :
 	ModuleParams(nullptr),
-	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
+	_cycle_perf(perf_alloc(PC_ELAPSED, "boom_control_cycle")),
+	_control_latency_perf(perf_alloc(PC_ELAPSED, "boom_control_latency"))
 {
+	// Allocate components
+	_kinematics = new BoomKinematics(this);
+	_sensor_interface = new BoomSensorInterface(this);
+	_motion_controller = new BoomMotionController(this);
+	_actuator_interface = new BoomActuatorInterface(this);
+	_state_manager = new BoomStateManager(this);
 }
 
 BoomControl::~BoomControl()
 {
+	// Clean up components
+	delete _kinematics;
+	delete _sensor_interface;
+	delete _motion_controller;
+	delete _actuator_interface;
+	delete _state_manager;
+
+	// Free performance counters
 	perf_free(_cycle_perf);
-	perf_free(_interval_perf);
+	perf_free(_control_latency_perf);
 }
 
 bool BoomControl::init()
 {
-	// Update parameters and initialize kinematics
-	update_parameters();
-	update_kinematics_from_params();
+	// Check if module is enabled
+	if (_param_enabled.get() == 0) {
+		PX4_INFO("Boom control module disabled");
+		return false;
+	}
 
-	// Initialize trajectory generator
-	_trajectory_generator.setMaxVelocityZ(_param_boom_max_vel.get() / 1000.0f); // Convert mm/s to m/s
-	_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get() / 1000.0f);
-	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get() / 1000.0f);
+	// Initialize components
+	if (!_sensor_interface->initialize(0)) {
+		PX4_ERR("Failed to initialize sensor interface");
+		return false;
+	}
 
-	// Set initial target to current position
-	_target_boom_angle = _param_boom_pos_carry.get();
-	_target_actuator_length = boom_angle_to_actuator_length(_target_boom_angle);
+	if (!_actuator_interface->initialize(0)) {
+		PX4_ERR("Failed to initialize actuator interface");
+		return false;
+	}
 
-	// Start scheduled execution
-	int update_rate_hz = _param_update_rate.get();
-	ScheduleOnInterval(1_s / update_rate_hz);
+	if (!_motion_controller->initialize()) {
+		PX4_ERR("Failed to initialize motion controller");
+		return false;
+	}
 
+	// Update configurations
+	_kinematics->update_configuration();
+	if (!_kinematics->validate_configuration()) {
+		PX4_ERR("Invalid kinematic configuration");
+		return false;
+	}
+
+	// Set initial state
+	_state_manager->request_transition(BoomStateManager::OperationalState::IDLE);
+
+	// Start periodic execution at configured rate
+	float update_rate = _param_update_rate.get();
+	uint32_t interval_us = static_cast<uint32_t>(1000000.0f / update_rate);
+	interval_us = math::max(interval_us, CONTROL_INTERVAL_US);  // Minimum 50 Hz
+
+	ScheduleOnInterval(interval_us);
+
+	PX4_INFO("Boom control initialized (update rate: %.1f Hz)", (double)update_rate);
 	return true;
-}
-
-bool BoomControl::check_hbridge_status()
-{
-	// Check hbridge status for our motor instance using EKF2-style SubscriptionMultiArray
-	uint8_t hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
-	hbridge_status_s hbridge_status;
-
-	if (hbridge_channel < _hbridge_status_sub.size()) {
-		if (_hbridge_status_sub[hbridge_channel].update(&hbridge_status)) {
-			// Verify this is the correct instance
-			if (hbridge_status.instance == hbridge_channel) {
-				// Update our status based on hbridge feedback
-				// Could use this for fault detection, current monitoring, etc.
-				return hbridge_status.enabled;
-			}
-		}
-	}
-	return false;  // No status received or not enabled
-}
-
-void BoomControl::updateHBridgeStatus()
-{
-	hbridge_status_s hbridge_status;
-
-	// If no specific instance selected, find our motor's instance
-	if (_hbridge_status_selected < 0) {
-		const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
-		uint8_t target_hbridge_channel = static_cast<uint8_t>(_param_hbridge_channel.get());
-
-		if (_hbridge_status_sub.advertised()) {
-			for (unsigned i = 0; i < _hbridge_status_sub.size(); i++) {
-				if (_hbridge_status_sub[i].update(&hbridge_status)) {
-					// Check if this is our motor's status
-					if ((hbridge_status.timestamp != 0) &&
-					    (hbridge_status.timestamp > timestamp_stale) &&
-					    (hbridge_status.instance == target_hbridge_channel)) {
-
-						int nstatus = orb_group_count(ORB_ID(hbridge_status));
-						if (nstatus > 1) {
-							PX4_INFO("Boom control selected hbridge_status:%d (channel %d, %d advertised)",
-							         i, target_hbridge_channel, nstatus);
-						}
-
-						_hbridge_status_selected = i;
-						_last_hbridge_status_update = hbridge_status.timestamp;
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	// Use the selected instance
-	if (_hbridge_status_selected >= 0 &&
-	    _hbridge_status_sub[_hbridge_status_selected].update(&hbridge_status)) {
-
-		if (hbridge_status.instance == static_cast<uint8_t>(_param_hbridge_channel.get())) {
-			// Process our motor's status
-			_last_hbridge_status_update = hbridge_status.timestamp;
-
-			// Example: check if motor is disabled (potential fault condition)
-			if (!hbridge_status.enabled) {
-				PX4_ERR("HBridge channel %" PRId32 " is disabled", _param_hbridge_channel.get());
-				// Handle disabled state...
-			}
-
-			// Update internal state if needed
-			// _motor_current = hbridge_status.current;
-			// _motor_voltage = hbridge_status.voltage;
-		}
-	}
 }
 
 void BoomControl::Run()
@@ -209,379 +123,396 @@ void BoomControl::Run()
 	}
 
 	perf_begin(_cycle_perf);
-	perf_count(_interval_perf);
 
-	// Check for parameter updates
-	parameter_update_s param_update;
-	if (_parameter_update_sub.update(&param_update)) {
-		update_parameters();
-		update_kinematics_from_params();
-	}
-
-	// Update sensor data from AS5600
-	update_sensor_data();
-
-	// Update HBridge status using EKF2-style instance discovery
-	updateHBridgeStatus();
-
-	// Handle auto-calibration if active
-	if (_calibration_mode) {
-		update_calibration();
-	}
-
-	// Process boom command inputs
-	process_boom_command();
-
-	// Update trajectory planning
-	update_trajectory();
-
-	// Run position control
-	run_position_control();
-
-	// Publish H-bridge channel command
-	publish_hbridge_command();
-
-	// Publish boom status
-	publish_boom_status();
+	// Main control pipeline
+	update_sensors();
+	process_commands();
+	update_motion_planning();
+	execute_control();
+	publish_telemetry();
 
 	perf_end(_cycle_perf);
 }
 
-void BoomControl::update_parameters()
+void BoomControl::update_sensors()
 {
-	updateParams();
-
-	// Update PID gains
-	_position_pid.setGains(_param_boom_p.get(), _param_boom_i.get(), _param_boom_d.get());
-
-	// Update trajectory generator limits
-	_trajectory_generator.setMaxVelocityZ(_param_boom_max_vel.get() / 1000.0f);
-	_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get() / 1000.0f);
-	_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get() / 1000.0f);
-}
-
-void BoomControl::update_kinematics_from_params()
-{
-	_kinematics.pivot_to_actuator_base = _param_kin_pivot_to_base.get();
-	_kinematics.pivot_to_actuator_attach = _param_kin_pivot_to_attach.get();
-	_kinematics.actuator_base_angle = math::radians(_param_kin_base_angle.get());
-}
-
-void BoomControl::update_sensor_data()
-{
-	sensor_mag_encoder_s mag_encoder_data;
-	if (_mag_encoder_sub.update(&mag_encoder_data) && mag_encoder_data.device_id == static_cast<uint32_t>(_param_mag_encoder_instance_id.get())) {
-		_last_sensor_update = hrt_absolute_time();
-		_sensor_valid = (mag_encoder_data.magnet_detected == 1) &&
-		                (mag_encoder_data.magnet_too_strong == 0) &&
-		                (mag_encoder_data.magnet_too_weak == 0);
-
-		// Magnetic encoder provides angle directly in radians
-		float raw_angle_deg = math::degrees(mag_encoder_data.angle);
-
-		// Apply calibration
-		float calibrated_angle = raw_angle_deg * _param_mag_encoder_scale.get() + _param_mag_encoder_offset.get();
-
-		// Apply angle reverse if enabled
-		if (_param_angle_reverse.get()) {
-			calibrated_angle = -calibrated_angle;
-		}
-
-		// Ensure angle is in 0-360 range
-		while (calibrated_angle < 0.0f) {
-			calibrated_angle += 360.0f;
-		}
-		while (calibrated_angle >= 360.0f) {
-			calibrated_angle -= 360.0f;
-		}
-
-		// Convert AS5600 angle to actuator length
-		_current_actuator_length = as5600_angle_to_actuator_length(calibrated_angle);
-
-		// Convert actuator length to boom angle
-		_current_boom_angle = actuator_length_to_boom_angle(_current_actuator_length);
-	} else if (is_sensor_timeout()) {
-		_sensor_valid = false;
-		emergency_stop();
-	}
-}
-
-float BoomControl::as5600_angle_to_actuator_length(float as5600_angle)
-{
-	// AS5600 measures the angle at the actuator pivot point
-	// Use law of cosines to find actuator length
-
-	float theta = math::radians(as5600_angle);
-	float a = _kinematics.pivot_to_actuator_base;
-	float b = _kinematics.pivot_to_actuator_attach;
-	float gamma = _kinematics.actuator_base_angle + theta;
-
-	// Law of cosines: c² = a² + b² - 2ab*cos(gamma)
-	float length_squared = a * a + b * b - 2.0f * a * b * cosf(gamma);
-
-	// Ensure we don't take square root of negative number
-	if (length_squared < 0.0f) {
-		length_squared = 0.0f;
+	// Check for parameter updates
+	parameter_update_s param_update;
+	if (_parameter_update_sub.update(&param_update)) {
+		update_parameters();
 	}
 
-	return sqrtf(length_squared);
-}
-
-float BoomControl::boom_angle_to_actuator_length(float boom_angle)
-{
-	// Inverse kinematics: Given boom angle, find required actuator length
-
-	float theta = math::radians(boom_angle);
-	float a = _kinematics.pivot_to_actuator_base;
-	float b = _kinematics.pivot_to_actuator_attach;
-
-	// Calculate the angle between pivot-to-base and pivot-to-attach
-	float gamma = _kinematics.actuator_base_angle - theta;
-
-	// Use law of cosines to find actuator length
-	float length_squared = a * a + b * b - 2.0f * a * b * cosf(gamma);
-
-	if (length_squared < 0.0f) {
-		length_squared = 0.0f;
+	// Update sensor readings
+	BoomSensorInterface::SensorData sensor_data;
+	if (_sensor_interface->update(sensor_data)) {
+		// Convert to boom angle using kinematics
+		_current_actuator_length = sensor_data.actuator_length;
+		_current_boom_angle = _kinematics->actuator_to_boom_angle(_current_actuator_length);
 	}
 
-	return sqrtf(length_squared);
+	// Update actuator status
+	BoomActuatorInterface::ActuatorStatus actuator_status;
+	_actuator_interface->update_status(actuator_status);
+
+	// Update state manager with system health
+	_state_manager->update(
+		_sensor_interface->is_healthy(),
+		_actuator_interface->is_healthy(),
+		false // at_target will be updated by motion controller
+	);
 }
 
-float BoomControl::actuator_length_to_boom_angle(float actuator_length)
+void BoomControl::process_commands()
 {
-	// Forward kinematics: Given actuator length, find boom angle
-
-	float a = _kinematics.pivot_to_actuator_base;
-	float b = _kinematics.pivot_to_actuator_attach;
-	float c = actuator_length;
-
-	// Law of cosines to find angle
-	float cos_gamma = (a * a + b * b - c * c) / (2.0f * a * b);
-	cos_gamma = math::constrain(cos_gamma, -1.0f, 1.0f); // Ensure valid range
-
-	float gamma = acosf(cos_gamma);
-	float boom_angle = math::degrees(_kinematics.actuator_base_angle - gamma);
-
-	return boom_angle;
-}
-
-void BoomControl::process_boom_command()
-{
-	boom_command_s cmd;
-	if (_boom_command_sub.update(&cmd)) {
+	boom_command_s command;
+	if (_boom_command_sub.update(&command)) {
 		_last_command_time = hrt_absolute_time();
 
-		// Handle emergency stop first
-		if (cmd.emergency_stop) {
-			emergency_stop();
+		// Handle emergency stop
+		if (command.emergency_stop) {
+			handle_emergency_stop();
 			return;
 		}
 
-		// Process command based on mode
-		switch (cmd.control_mode) {
+		// Check if system is operational
+		if (!_state_manager->is_operational()) {
+			PX4_WARN("System not operational, ignoring command");
+			return;
+		}
+
+		// Process based on control mode
+		switch (command.control_mode) {
 		case 0: // Position control
-			_target_boom_angle = cmd.lift_angle_cmd;
-
-			// Update trajectory parameters
-			_trajectory_generator.setMaxVelocityZ(cmd.max_lift_velocity);
-			_trajectory_generator.setMaxAccelerationZ(_param_boom_max_acc.get());
-			_trajectory_generator.setMaxJerkZ(_param_boom_max_jerk.get());
-
-			_state = BoomState::MOVING;
+			_target_boom_angle = command.lift_angle_cmd;
+			_motion_controller->set_mode(BoomMotionController::ControlMode::POSITION);
+			_motion_controller->set_target_position(_target_boom_angle, command.max_lift_velocity);
+			_state_manager->request_transition(BoomStateManager::OperationalState::MOVING);
 			break;
 
 		case 1: // Velocity control
-		{
-			// Direct velocity command - integrate to get position
-			float dt = 0.01f; // Assume 100Hz update rate
-			_target_boom_angle += cmd.lift_velocity_cmd * dt; // lift_velocity_cmd used as velocity
-
-			_state = BoomState::MOVING;
+			_motion_controller->set_mode(BoomMotionController::ControlMode::VELOCITY);
+			_motion_controller->set_target_velocity(command.lift_velocity_cmd);
+			_state_manager->request_transition(BoomStateManager::OperationalState::MOVING);
 			break;
-		}
 
-		case 2: // Force control (not implemented yet)
-			PX4_WARN("Force control mode not implemented");
+		case 2: // Manual control
+			_motion_controller->set_mode(BoomMotionController::ControlMode::MANUAL);
+			// Direct duty cycle control would be handled here
 			break;
 
 		default:
-			PX4_WARN("Unknown boom command mode: %d", cmd.control_mode);
+			PX4_WARN("Unknown control mode: %d", command.control_mode);
 			break;
 		}
 	}
-}
 
-void BoomControl::set_target_position(BoomPreset preset)
-{
-	switch (preset) {
-	case BoomPreset::GROUND:
-		_target_boom_angle = _param_boom_pos_ground.get();
-		break;
-	case BoomPreset::CARRY:
-		_target_boom_angle = _param_boom_pos_carry.get();
-		break;
-	case BoomPreset::MAX_HEIGHT:
-		_target_boom_angle = _param_boom_pos_max.get();
-		break;
-	default:
-		return; // Don't change target for unknown preset
-	}
-
-	_state = BoomState::MOVING;
-}
-
-void BoomControl::update_trajectory()
-{
-	if (_state == BoomState::ERROR) {
-		return;
-	}
-
-	// Convert boom angle to actuator length for trajectory planning
-	_target_actuator_length = boom_angle_to_actuator_length(_target_boom_angle);
-
-	// Use PositionSmoothing for trajectory generation (1D motion using Z-axis)
-	matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length / 1000.0f}; // Convert to meters
-	matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length / 1000.0f};
-	matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
-
-	float dt = 1.0f / _param_update_rate.get();
-	PositionSmoothing::PositionSmoothingSetpoints setpoints;
-	_trajectory_generator.generateSetpoints(current_pos, target_pos, feedforward_velocity,
-	                                       dt, false, setpoints);
-
-	// Store the generated setpoints for use in position control
-	_desired_position_m = setpoints.position(2);
-	_desired_velocity_m_s = setpoints.velocity(2);
-}
-
-void BoomControl::run_position_control()
-{
-	if (_state == BoomState::ERROR || !_sensor_valid) {
-		_motor_output = 0.0f;
-		return;
-	}
-
-	// Use the setpoints from trajectory generator (already in meters)
-	float desired_position_m = _desired_position_m;
-	float desired_velocity_m_s = _desired_velocity_m_s;
-
-	// Convert back to mm for control
-	float desired_position_mm = desired_position_m * 1000.0f;
-
-	// Position error in mm
-	float position_error = desired_position_mm - _current_actuator_length;
-
-	// Check if we've reached the target
-	if (fabsf(position_error) < 5.0f && fabsf(desired_velocity_m_s) < 0.001f) { // 5mm tolerance
-		_state = BoomState::HOLDING;
-	}
-
-	// PID control
-	float dt = 1.0f / _param_update_rate.get();
-	_motor_output = _position_pid.update(position_error, dt);
-
-	// Add velocity feedforward
-	float velocity_ff = desired_velocity_m_s / (_param_boom_max_vel.get() / 1000.0f);
-	_motor_output += velocity_ff * 0.3f; // Feedforward gain
-
-	// Apply deadzone compensation
-	if (fabsf(_motor_output) > _param_motor_deadzone.get()) {
-		if (_motor_output > 0.0f) {
-			_motor_output += _param_motor_deadzone.get();
-		} else {
-			_motor_output -= _param_motor_deadzone.get();
+	// Check for command timeout
+	static constexpr hrt_abstime COMMAND_TIMEOUT_US = 1000000; // 1 second
+	if ((hrt_absolute_time() - _last_command_time) > COMMAND_TIMEOUT_US) {
+		if (_state_manager->get_state_info().state == BoomStateManager::OperationalState::MOVING) {
+			_state_manager->request_transition(BoomStateManager::OperationalState::HOLDING);
 		}
 	}
 }
 
-void BoomControl::publish_hbridge_command()
+void BoomControl::update_motion_planning()
 {
-	hbridge_command_s cmd{};
-	cmd.timestamp = hrt_absolute_time();
+	auto state_info = _state_manager->get_state_info();
 
-	// Set instance from parameter (use instance instead of channel)
-	uint8_t hbridge_instance = static_cast<uint8_t>(_param_hbridge_channel.get());
-	cmd.instance = hbridge_instance;
-
-	// Apply deadzone to prevent motor hunting around zero
-	float output = _motor_output;
-	if (fabsf(output) < _param_motor_deadzone.get()) {
-		output = 0.0f;
+	// Skip if in error or uninitialized state
+	if (state_info.state == BoomStateManager::OperationalState::ERROR ||
+	    state_info.state == BoomStateManager::OperationalState::UNINITIALIZED) {
+		return;
 	}
 
-	// Set duty cycle (-1.0 to 1.0 range)
-	// Positive = extend actuator (boom up), Negative = retract actuator (boom down)
-	cmd.duty_cycle = output;
+	// Update trajectory if moving
+	if (state_info.state == BoomStateManager::OperationalState::MOVING) {
+		float dt = static_cast<float>(CONTROL_INTERVAL_US) * 1e-6f;
 
-	// Enable channel if not in error state
-	cmd.enable = (_state != BoomState::ERROR);
+		// Update trajectory planning
+		auto setpoint = _motion_controller->update_trajectory(_current_boom_angle, dt);
 
-	// Publish to specific message instance for this motor
-	if (_hbridge_command_pub == nullptr) {
-		int instance = hbridge_instance;
-		_hbridge_command_pub = orb_advertise_multi(ORB_ID(hbridge_command), nullptr, &instance);
-	}
-
-	if (_hbridge_command_pub != nullptr) {
-		orb_publish(ORB_ID(hbridge_command), _hbridge_command_pub, &cmd);
+		// Check if at target
+		static constexpr float POSITION_TOLERANCE = 0.01f; // ~0.5 degrees
+		static constexpr float VELOCITY_TOLERANCE = 0.001f;
+		if (fabsf(setpoint.position - _current_boom_angle) < POSITION_TOLERANCE &&
+		    fabsf(setpoint.velocity) < VELOCITY_TOLERANCE) {
+			_state_manager->request_transition(BoomStateManager::OperationalState::HOLDING);
+		}
 	}
 }
 
-void BoomControl::publish_boom_status()
+void BoomControl::execute_control()
+{
+	perf_begin(_control_latency_perf);
+
+	auto state_info = _state_manager->get_state_info();
+
+	// Handle emergency stop
+	if (state_info.state == BoomStateManager::OperationalState::EMERGENCY_STOP) {
+		_actuator_interface->emergency_stop();
+		perf_end(_control_latency_perf);
+		return;
+	}
+
+	// Skip control if not operational
+	if (!_state_manager->is_operational()) {
+		BoomActuatorInterface::ActuatorCommand cmd{};
+		cmd.duty_cycle = 0.0f;
+		cmd.enable = false;
+		_actuator_interface->send_command(cmd);
+		perf_end(_control_latency_perf);
+		return;
+	}
+
+	// Get motion setpoint
+	float dt = static_cast<float>(CONTROL_INTERVAL_US) * 1e-6f;
+	auto setpoint = _motion_controller->update_trajectory(_current_boom_angle, dt);
+
+	// Estimate current velocity (simple derivative)
+	static float last_position = 0.0f;
+	float current_velocity = (_current_boom_angle - last_position) / dt;
+	last_position = _current_boom_angle;
+
+	// Compute control output
+	auto control_output = _motion_controller->compute_control(
+		setpoint,
+		_current_boom_angle,
+		current_velocity,
+		dt
+	);
+
+	// Send to actuator
+	BoomActuatorInterface::ActuatorCommand actuator_cmd{};
+	actuator_cmd.duty_cycle = control_output.duty_cycle;
+	actuator_cmd.enable = (state_info.state != BoomStateManager::OperationalState::ERROR);
+	actuator_cmd.mode = 0; // PWM mode
+
+	_actuator_interface->send_command(actuator_cmd);
+
+	perf_end(_control_latency_perf);
+}
+
+void BoomControl::publish_telemetry()
 {
 	boom_status_s status{};
 	status.timestamp = hrt_absolute_time();
 
-	// Position and velocity in radians and rad/s
-	status.angle = math::radians(_current_boom_angle);
-	status.velocity = _desired_velocity_m_s; // Using desired velocity as current velocity estimate
+	// Position and velocity
+	status.angle = _current_boom_angle;
 
-	// Load estimation (using motor output as proxy)
-	status.load = fabsf(_motor_output);
+	// Estimate velocity from change in position
+	static float last_angle = 0.0f;
+	static hrt_abstime last_time = 0;
+	hrt_abstime now = hrt_absolute_time();
+	if (last_time > 0) {
+		float dt = (now - last_time) * 1e-6f;
+		if (dt > 0.0f) {
+			status.velocity = (_current_boom_angle - last_angle) / dt;
+		}
+	}
+	last_angle = _current_boom_angle;
+	last_time = now;
 
-	// Motor information
-	status.motor_current = 0.0f; // Not available from H-bridge feedback yet
-	status.motor_voltage = 0.0f; // Not available from H-bridge feedback yet
-	status.motor_temperature_c = 0.0f; // Not available from H-bridge feedback yet
-	status.motor_fault = (_state == BoomState::ERROR);
-	status.encoder_fault = !_sensor_valid;
+	// Load estimation (simplified)
+	auto actuator_cmd = _actuator_interface->get_last_command();
+	status.load = fabsf(actuator_cmd.duty_cycle);
 
-	// Control state mapping
-	switch (_state) {
-		case BoomState::IDLE:
+	// Motor information from actuator interface
+	BoomActuatorInterface::ActuatorStatus actuator_status;
+	if (_actuator_interface->update_status(actuator_status)) {
+		status.motor_current = actuator_status.current;
+		status.motor_voltage = actuator_status.voltage;
+		status.motor_temperature_c = actuator_status.temperature;
+		status.motor_fault = actuator_status.fault;
+	}
+
+	// Sensor status
+	status.encoder_fault = !_sensor_interface->is_healthy();
+
+	// State mapping
+	auto state_info = _state_manager->get_state_info();
+	switch (state_info.state) {
+		case BoomStateManager::OperationalState::IDLE:
+		case BoomStateManager::OperationalState::HOLDING:
 			status.state = 2; // ready
 			break;
-		case BoomState::MOVING:
+		case BoomStateManager::OperationalState::MOVING:
 			status.state = 3; // moving
 			break;
-		case BoomState::HOLDING:
-			status.state = 2; // ready
-			break;
-		case BoomState::ERROR:
+		case BoomStateManager::OperationalState::ERROR:
+		case BoomStateManager::OperationalState::EMERGENCY_STOP:
 			status.state = 4; // error
+			break;
+		default:
+			status.state = 0; // unknown
 			break;
 	}
 
 	_boom_status_pub.publish(status);
 }
 
-void BoomControl::emergency_stop()
+void BoomControl::update_parameters()
 {
-	_motor_output = 0.0f;
-	_state = BoomState::ERROR;
+	updateParams();
+
+	// Propagate parameter updates to components
+	_kinematics->update_configuration();
+	// Components will update their own parameters through ModuleParams
+}
+
+void BoomControl::handle_emergency_stop()
+{
+	_state_manager->emergency_stop("Manual emergency stop");
+	_motion_controller->emergency_stop();
+	_actuator_interface->emergency_stop();
 	PX4_ERR("Emergency stop activated");
 }
 
-bool BoomControl::is_sensor_timeout()
+bool BoomControl::check_system_health()
 {
-	return (hrt_absolute_time() - _last_sensor_update) > 500_ms; // 500ms timeout
+	bool healthy = true;
+
+	// Check sensor health
+	if (!_sensor_interface->is_healthy()) {
+		PX4_WARN("Sensor unhealthy");
+		healthy = false;
+	}
+
+	// Check actuator health
+	if (!_actuator_interface->is_healthy()) {
+		PX4_WARN("Actuator unhealthy");
+		healthy = false;
+	}
+
+	// Check for sensor timeout
+	if (_sensor_interface->time_since_last_update() > BoomSensorInterface::SENSOR_TIMEOUT_US) {
+		PX4_WARN("Sensor timeout");
+		healthy = false;
+	}
+
+	return healthy;
 }
 
-void BoomControl::reset_trajectory()
+// Static methods for module management
+int BoomControl::task_spawn(int argc, char *argv[])
 {
-	// Reset trajectory to current position
-	// Note: PositionSmoothing doesn't have simple setters, so we reset our internal state
-	_desired_position_m = _current_actuator_length / 1000.0f;
-	_desired_velocity_m_s = 0.0f;
+	BoomControl *instance = new BoomControl();
+
+	if (instance) {
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
+
+		if (instance->init()) {
+			return PX4_OK;
+		}
+	} else {
+		PX4_ERR("alloc failed");
+	}
+
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
+
+	return PX4_ERROR;
+}
+
+int BoomControl::custom_command(int argc, char *argv[])
+{
+	if (!is_running()) {
+		print_usage("not running");
+		return 1;
+	}
+
+	if (argc > 0) {
+		if (strcmp(argv[0], "calibrate") == 0) {
+			// Trigger calibration
+			get_instance()->_state_manager->start_calibration();
+			return PX4_OK;
+		}
+
+		if (strcmp(argv[0], "emergency_stop") == 0) {
+			// Trigger emergency stop
+			get_instance()->handle_emergency_stop();
+			return PX4_OK;
+		}
+
+		if (strcmp(argv[0], "clear_emergency") == 0) {
+			// Clear emergency stop
+			if (get_instance()->_state_manager->clear_emergency_stop()) {
+				return PX4_OK;
+			} else {
+				return PX4_ERROR;
+			}
+		}
+
+		if (strcmp(argv[0], "status") == 0) {
+			// Print detailed status
+			auto state_info = get_instance()->_state_manager->get_state_info();
+			PX4_INFO("State: %d, Errors: 0x%lx, Message: %s",
+				 static_cast<int>(state_info.state),
+				 (unsigned long)state_info.error_flags,
+				 state_info.status_message ? state_info.status_message : "None");
+			return PX4_OK;
+		}
+	}
+
+	return print_usage("unknown command");
+}
+
+int BoomControl::print_usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
+
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Boom control module for wheel loader lifting system.
+
+This module manages the boom actuator control including:
+- Position and velocity control
+- Trajectory planning with jerk limiting
+- AS5600 magnetic encoder feedback
+- H-bridge motor driver interface
+- Safety monitoring and emergency stop
+
+### Implementation
+The module uses a component-based architecture with:
+- Kinematics calculations for actuator-to-angle conversion
+- Sensor interface for encoder reading and calibration
+- Motion controller for trajectory planning and PID control
+- Actuator interface for H-bridge communication
+- State manager for operational states and safety
+
+### Examples
+Start the module:
+$ boom_control start
+
+Stop the module:
+$ boom_control stop
+
+Trigger calibration:
+$ boom_control calibrate
+
+Emergency stop:
+$ boom_control emergency_stop
+
+Clear emergency stop:
+$ boom_control clear_emergency
+
+Check status:
+$ boom_control status
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("boom_control", "actuator");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_COMMAND("stop");
+	PRINT_MODULE_USAGE_COMMAND("calibrate");
+	PRINT_MODULE_USAGE_COMMAND("emergency_stop");
+	PRINT_MODULE_USAGE_COMMAND("clear_emergency");
+	PRINT_MODULE_USAGE_COMMAND("status");
+
+	return 0;
 }

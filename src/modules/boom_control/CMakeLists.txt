@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2024 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -30,16 +30,23 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 ############################################################################
+
 px4_add_module(
 	MODULE modules__boom_control
 	MAIN boom_control
+	STACK_MAIN 2048
 	SRCS
 		boom_control.cpp
 		boom_control_main.cpp
-		boom_calibration.cpp
+		boom_kinematics.cpp
+		boom_sensor_interface.cpp
+		boom_motion_controller.cpp
+		boom_actuator_interface.cpp
+		boom_state_manager.cpp
+	DEPENDS
+		mathlib
+		motion_planning
+		pid
 	MODULE_CONFIG
 		module.yaml
-	DEPENDS
-		PID
-		motion_planning
-	)
+)
