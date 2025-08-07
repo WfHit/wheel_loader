@@ -20,16 +20,37 @@ bool encoder_fault             # position encoder fault flag
 # Limit switches and zeroing
 bool limit_switch_coarse       # coarse limit switch state (down position)
 bool limit_switch_fine         # fine limit switch state (up position)
+bool limit_switch_load         # load limit switch state (bucket down)
+bool limit_switch_dump         # dump limit switch state (bucket up)
 bool zeroing_complete          # zeroing procedure completion status
+
+# Boom and machine angles
+float32 boom_angle             # boom angle (radians)
+float32 machine_pitch          # machine pitch angle (radians)
+float32 machine_roll           # machine roll angle (radians)
+
+# State management and calibration
+uint8 calibration_phase        # current calibration phase
+uint32 error_flags             # error flags bitmask
+uint8 calibration_progress     # calibration progress (0-100%)
+
+# Control and hardware status
+bool boom_compensation_enabled # boom angle compensation enabled
+bool motor_enabled             # motor enabled status
+bool encoder_valid             # encoder validity status
+bool limits_valid              # limit switches validity status
+float32 target_ground_angle    # target angle relative to ground (radians)
+
+# Performance metrics
+float32 position_error_rms     # position error RMS (mm)
+float32 velocity_error_rms     # velocity error RMS (mm/s)
+float32 control_effort         # control effort (0-1)
 
 # AHRS integration fields
 uint8 control_mode             # 0: Manual, 1: Auto-level, 2: Slope compensation, 3: Grading, 4: Transport
 float32 stability_factor       # dynamic stability factor (0.0 = unstable, 1.0 = stable)
 bool anti_spill_active         # anti-spill control active flag
 bool stability_warning         # stability warning flag
-float32 machine_pitch          # machine pitch angle (radians)
-float32 machine_roll           # machine roll angle (radians)
-float32 target_ground_angle    # target angle relative to ground (radians)
 
 # Load estimation
 float32 estimated_load_kg      # estimated load in bucket (kg)

@@ -14,9 +14,9 @@ float32 grading_angle          # override for grading angle (rad) - NaN to use p
 float32 transport_angle        # override for transport angle (rad) - NaN to use parameter
 float32 stability_threshold    # override for stability threshold (rad) - NaN to use parameter
 
-# Control mode constants
-uint8 MODE_MANUAL = 0
-uint8 MODE_AUTO_LEVEL = 1
-uint8 MODE_SLOPE_COMPENSATION = 2
-uint8 MODE_GRADING = 3
-uint8 MODE_TRANSPORT = 4
+# Control modes (only modes actually used in code)
+uint8 MODE_CALIBRATE = 0       # Calibration mode
+uint8 MODE_POSITION = 1        # Position control mode
+uint8 MODE_DIRECT = 2          # Direct actuator control
+uint8 MODE_STOP = 3            # Stop all movement
+uint8 MODE_EMERGENCY_STOP = 4  # Emergency stop

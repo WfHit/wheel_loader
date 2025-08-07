@@ -32,847 +32,511 @@
  ****************************************************************************/
 
 #include "bucket_control.hpp"
-#include <px4_platform_common/log.h>
-#include <lib/mathlib/mathlib.h>
+#include "bucket_kinematics.hpp"
+#include "bucket_hardware_interface.hpp"
+#include "bucket_motion_controller.hpp"
+#include "bucket_state_manager.hpp"
 
-using matrix::Vector3f;
+#include <px4_platform_common/log.h>
+#include <mathlib/mathlib.h>
+#include <perf/perf_counter.h>
+#include <cmath>
 
 BucketControl::BucketControl() :
-    ModuleParams(nullptr),
-    ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
+	ModuleParams(nullptr),
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
+	_cycle_perf(perf_alloc(PC_ELAPSED, MODULE_NAME))
 {
-    // Initialize motion planning components
-    _velocity_smoother.setMaxAccel(200.0f);  // mm/s²
-    _velocity_smoother.setMaxVel(100.0f);    // mm/s
-    _velocity_smoother.setMaxJerk(1000.0f);  // mm/s³
+	// Create component instances
+	_kinematics = new BucketKinematics(this);
+	_hardware = new BucketHardwareInterface(this);
+	_motion_controller = new BucketMotionController(this);
+	_state_manager = new BucketStateManager(this);
+}
 
-    // Initialize position smoother - using Z-axis for 1D motion
-    _position_smoother.setMaxAccelerationZ(200.0f); // mm/s²
-    _position_smoother.setMaxVelocityZ(100.0f);     // mm/s
-    _position_smoother.setMaxJerkZ(1000.0f);        // mm/s³
+BucketControl::~BucketControl()
+{
+	// Manual cleanup
+	delete _kinematics;
+	delete _hardware;
+	delete _motion_controller;
+	delete _state_manager;
+
+	perf_end(_cycle_perf);
+	perf_free(_cycle_perf);
 }
 
 bool BucketControl::init()
 {
-    // Initialize PID controllers
-    _position_pid.setGains(_param_pid_p.get(), _param_pid_i.get(), _param_pid_d.get());
-    _velocity_pid.setGains(_param_vel_pid_p.get(), _param_vel_pid_i.get(), _param_vel_pid_d.get());
+	// Load parameters first
+	update_parameters();
 
-    // Configure motion planning with parameters
-    _velocity_smoother.setMaxAccel(_param_max_acceleration.get());
-    _velocity_smoother.setMaxVel(_param_max_velocity.get());
-    _velocity_smoother.setMaxJerk(_param_jerk_limit.get());
+	// Check if module is enabled
+	if (_param_enabled.get() == 0) {
+		PX4_INFO("Bucket control module disabled");
+		return false;
+	}
 
-    _position_smoother.setMaxAccelerationZ(_param_max_acceleration.get());
-    _position_smoother.setMaxVelocityZ(_param_max_velocity.get());
-    _position_smoother.setMaxJerkZ(_param_jerk_limit.get());
+	// Initialize hardware interface
+	uint8_t motor_index = static_cast<uint8_t>(_param_motor_index.get());
+	uint8_t encoder_index = static_cast<uint8_t>(_param_encoder_index.get());
 
-    // Load kinematic parameters
-    updateKinematicParameters();
+	if (!_hardware->initialize(motor_index, encoder_index)) {
+		PX4_ERR("Failed to initialize hardware interface");
+		return false;
+	}
 
-    // Get motor and sensor indices
-    _motor_index = _param_motor_index.get();
+	// Validate and update kinematic configuration
+	_kinematics->update_configuration();
+	if (!_kinematics->validate_configuration()) {
+		PX4_ERR("Invalid kinematic configuration");
+		return false;
+	}
 
-    // Initialize boom angle monitoring
-    _current_boom_angle = 0.0f;
-    _target_absolute_bucket_angle = 0.0f;  // Start with horizontal bucket
-    _boom_angle_changed = false;
+	// Configure motion controller
+	BucketMotionController::ControllerConfig control_config;
+	control_config.position_p = 1.0f;
+	control_config.position_i = 0.1f;
+	control_config.position_d = 0.05f;
+	control_config.velocity_p = 2.0f;
+	control_config.velocity_i = 0.2f;
+	control_config.velocity_d = 0.01f;
+	control_config.max_velocity = 100.0f;        // mm/s
+	control_config.max_acceleration = 200.0f;    // mm/s²
+	control_config.max_jerk = 1000.0f;           // mm/s³
+	control_config.position_min = 0.0f;          // mm
+	control_config.position_max = 500.0f;        // mm
+	control_config.duty_cycle_limit = 1.0f;      // Maximum duty cycle
+	control_config.boom_derivative_gain = 0.1f;  // Boom compensation gain
+	control_config.boom_deadband = 0.001f;       // 0.057° deadband
 
-    // Get limit sensor instance IDs
-    uint8_t load_instance = _param_limit_load_idx.get();     // Load limit (bucket down)
-    uint8_t dump_instance = _param_limit_dump_idx.get();     // Dump limit (bucket up)
+	_motion_controller->initialize(control_config);
 
-    PX4_INFO("Using limit sensors: load=%d, dump=%d", load_instance, dump_instance);
-    PX4_INFO("Boom compensation mode enabled - bucket will maintain absolute angle");
+	// Perform hardware self-test
+	if (!_hardware->perform_self_test()) {
+		PX4_ERR("Hardware self-test failed");
+		return false;
+	}
 
-    // Validate geometry
-    if (_kinematics.bellcrank_length <= 0 || _kinematics.coupler_length <= 0) {
-        PX4_ERR("Invalid linkage lengths");
-        return false;
-    }
+	// Start periodic execution
+	float update_rate = _param_update_rate.get();
+	uint32_t interval_us = static_cast<uint32_t>(1000000.0f / update_rate);
+	interval_us = math::max(interval_us, CONTROL_INTERVAL_US);  // Minimum 50 Hz
 
-    // The DRV8701 driver should already be running as a separate module
-    // The quad encoder driver should already be running
-    // We just subscribe to their outputs and publish motor commands
+	ScheduleOnInterval(interval_us);
 
-    // Schedule work item
-    ScheduleOnInterval(10_ms); // 100Hz update rate
-
-    PX4_INFO("Bucket control initialized");
-    PX4_INFO("Bellcrank: %.1fmm, Coupler: %.1fmm, Boom: %.1fmm",
-             (double)_kinematics.bellcrank_length, (double)_kinematics.coupler_length, (double)_kinematics.boom_length);
-    PX4_INFO("Bellcrank internal angle: %.2f rad, Bucket arm: %.1fmm",
-             (double)_kinematics.bellcrank_internal_angle, (double)_kinematics.bucket_arm_length);
-
-    return true;
-}
-
-void BucketControl::updateKinematicParameters()
-{
-    // Load geometry from parameters
-    _kinematics.actuator_base_x = _param_actuator_base_x.get();
-    _kinematics.actuator_base_y = _param_actuator_base_y.get();
-    _kinematics.bellcrank_boom_x = _param_bellcrank_boom_x.get();
-    _kinematics.bellcrank_boom_y = _param_bellcrank_boom_y.get();
-    _kinematics.bucket_boom_pivot_x = _param_bucket_boom_pivot_x.get();
-    _kinematics.bucket_boom_pivot_y = _param_bucket_boom_pivot_y.get();
-
-    _kinematics.bellcrank_length = _param_bellcrank_length.get();
-    _kinematics.coupler_length = _param_coupler_length.get();
-    _kinematics.actuator_offset = _param_actuator_offset.get();
-    _kinematics.bucket_arm_length = _param_bucket_arm_length.get();
-    _kinematics.bellcrank_internal_angle = _param_bellcrank_internal_angle.get();
-    _kinematics.bucket_offset = _param_bucket_offset.get();
-    _kinematics.boom_length = _param_boom_length.get();
-
-    _kinematics.actuator_min_length = _param_actuator_min.get();
-    _kinematics.actuator_max_length = _param_actuator_max.get();
-}
-
-bool BucketControl::solveBucketLinkage(
-    float actuator_length,
-    float boom_angle,
-    float &bucket_angle,
-    float &bellcrank_angle,
-    float &coupler_angle)
-{
-    // Transform coordinates to account for boom rotation
-    float cos_boom = cosf(boom_angle);
-    float sin_boom = sinf(boom_angle);
-
-    // Actuator base is fixed to chassis, so it rotates relative to boom
-    float act_base_x_boom = _kinematics.actuator_base_x * cos_boom + _kinematics.actuator_base_y * sin_boom;
-    float act_base_y_boom = -_kinematics.actuator_base_x * sin_boom + _kinematics.actuator_base_y * cos_boom;
-
-    // Bellcrank pivot is fixed to boom (no transformation needed)
-    float bellcrank_pivot_x = _kinematics.bellcrank_boom_x;
-    float bellcrank_pivot_y = _kinematics.bellcrank_boom_y;
-
-    // Step 1: Solve for bellcrank angle using actuator triangle
-    // Triangle: actuator_base -> bellcrank_pivot -> actuator_attachment_on_bellcrank
-    float dx = bellcrank_pivot_x - act_base_x_boom;
-    float dy = bellcrank_pivot_y - act_base_y_boom;
-    float base_to_bellcrank_dist = sqrtf(dx*dx + dy*dy);
-
-    // Law of cosines to find angle at bellcrank pivot
-    float cos_bellcrank_angle = (base_to_bellcrank_dist*base_to_bellcrank_dist +
-                                _kinematics.actuator_offset*_kinematics.actuator_offset -
-                                actuator_length*actuator_length) /
-                               (2.0f * base_to_bellcrank_dist * _kinematics.actuator_offset);
-
-    if (fabsf(cos_bellcrank_angle) > 1.0f) {
-        // No valid solution - actuator cannot reach
-        return false;
-    }
-
-    float base_angle = atan2f(dy, dx);
-    bellcrank_angle = base_angle - acosf(cos_bellcrank_angle); // Subtract because actuator pulls
-
-    // Step 2: Find bellcrank coupler attachment point using internal angle
-    // The coupler attaches at an angle relative to the actuator arm
-    float coupler_arm_angle = bellcrank_angle + _kinematics.bellcrank_internal_angle;
-    float bellcrank_end_x = bellcrank_pivot_x + _kinematics.bellcrank_length * cosf(coupler_arm_angle);
-    float bellcrank_end_y = bellcrank_pivot_y + _kinematics.bellcrank_length * sinf(coupler_arm_angle);
-
-    // Step 3: Calculate bucket coupler attachment point
-    float bucket_pivot_x = _kinematics.bucket_boom_pivot_x;
-    float bucket_pivot_y = _kinematics.bucket_boom_pivot_y;
-
-    dx = bucket_pivot_x - bellcrank_end_x;
-    dy = bucket_pivot_y - bellcrank_end_y;
-    float coupler_required_length = sqrtf(dx*dx + dy*dy);
-
-    // Check if coupler can span the distance
-    if (fabsf(coupler_required_length - _kinematics.coupler_length) > 1.0f) { // 1mm tolerance
-        // Coupler cannot reach - invalid geometry
-        return false;
-    }
-
-    coupler_angle = atan2f(dy, dx);
-
-    // Step 4: Calculate bucket angle using bucket arm geometry
-    // The bucket arm extends from the bucket pivot at bucket_offset angle relative to coupler
-    float bucket_arm_angle = coupler_angle + (float)M_PI + _kinematics.bucket_offset; // +PI because coupler pulls bucket
-    bucket_angle = bucket_arm_angle; // This is the bucket's orientation
-
-    return true;
-}
-
-float BucketControl::actuatorLengthToBucketAngle(float actuator_length, float boom_angle)
-{
-    float bucket_angle, bellcrank_angle, coupler_angle;
-
-    if (solveBucketLinkage(actuator_length, boom_angle, bucket_angle, bellcrank_angle, coupler_angle)) {
-        return bucket_angle;
-    }
-
-    // Fallback to linear approximation if solver fails
-    float normalized = (actuator_length - _kinematics.actuator_min_length) /
-                      (_kinematics.actuator_max_length - _kinematics.actuator_min_length);
-    return _param_angle_min.get() + normalized * (_param_angle_max.get() - _param_angle_min.get());
-}
-
-float BucketControl::bucketAngleToActuatorLength(float bucket_angle, float boom_angle)
-{
-    // Use iterative solver (binary search) to find actuator length for desired bucket angle
-    float length_min = _kinematics.actuator_min_length;
-    float length_max = _kinematics.actuator_max_length;
-    float tolerance = 0.001f; // 0.001 rad tolerance
-    int max_iterations = 30;
-
-    for (int i = 0; i < max_iterations; i++) {
-        float length_mid = (length_min + length_max) / 2.0f;
-        float current_angle = actuatorLengthToBucketAngle(length_mid, boom_angle);
-        float error = bucket_angle - current_angle;
-
-        if (fabsf(error) < tolerance) {
-            return length_mid;
-        }
-
-        if (error > 0) {
-            // Need longer actuator
-            length_min = length_mid;
-        } else {
-            // Need shorter actuator
-            length_max = length_mid;
-        }
-    }
-
-    return (length_min + length_max) / 2.0f;
+	PX4_INFO("Bucket control initialized (update rate: %.1f Hz)", (double)update_rate);
+	return true;
 }
 
 void BucketControl::Run()
 {
-    if (should_exit()) {
-        ScheduleClear();
-        exit_and_cleanup();
-        return;
-    }
+	if (should_exit()) {
+		ScheduleClear();
+		exit_and_cleanup();
+		return;
+	}
 
-    // Update parameters if changed
-    parameter_update_s param_update;
-    if (_parameter_update_sub.update(&param_update)) {
-        updateParams();
-        updateKinematicParameters();
-        _motor_index = _param_motor_index.get();
-        // Control mode is fixed to BOOM_COMPENSATED
-    }
-
-    // Read sensors using EKF2-style instance discovery
-    updateEncoderData();
-    updateHBridgeStatus();
-    checkLimitSwitches();
-
-    // Monitor boom angle changes and update bucket compensation
-    updateBoomAngleMonitoring();
-
-    // Update current bucket angle for status
-    _current_bucket_angle = actuatorLengthToBucketAngle(_current_actuator_length, _current_boom_angle);
-
-    // Clean control architecture - 3 separate functions
-    monitorCommandTarget();     // Function 1: Monitor command target changes
-    monitorBoomChanges();       // Function 2: Monitor boom angle changes
-    updateActuatorTarget();     // Function 3: Calculate actuator target from both sources
-
-    // Update state machine
-    updateStateMachine();
-
-    // Publish status
-    publishStatus();
+	// Clean, sequential control flow
+	update_sensor_data();
+	process_commands();
+	execute_control();
+	publish_telemetry();
 }
 
-void BucketControl::updateStateMachine()
+void BucketControl::update_sensor_data()
 {
-    switch (_state) {
-        case State::UNINITIALIZED:
-            _state = State::ZEROING;
-            _zeroing_state = ZeroingState::MOVE_TO_LOAD_LIMIT;
-            _zeroing_start_time = hrt_absolute_time();
-            _zeroing_state_start_time = hrt_absolute_time();
-            PX4_INFO("Starting bucket zeroing operation - moving to load limit");
-            break;
+	// Check for parameter updates
+	parameter_update_s param_update;
+	if (_parameter_update_sub.update(&param_update)) {
+		update_parameters();
+		_kinematics->update_configuration();
 
-        case State::ZEROING:
-            performZeroing();
-            if (_zeroing_complete) {
-                _state = State::READY;
-                PX4_INFO("Bucket control ready");
-            }
-            break;
+		// Update motion controller configuration if needed
+		// This could reload PID gains, motion limits, etc.
+	}
 
-        case State::READY:
-        case State::MOVING:
-            updateMotionControl();
-            break;
+	// Read hardware sensors
+	BucketHardwareInterface::SensorData sensor_data;
+	bool sensors_valid = _hardware->update_sensors(sensor_data);
 
-        case State::ERROR:
-            // Stop actuator
-            setMotorCommand(0.0f);
-            break;
-    }
+	// Check for command timeout
+	bool command_timeout = false;
+	if (_last_command_time != 0) {
+		command_timeout = (hrt_elapsed_time(&_last_command_time) > COMMAND_TIMEOUT_US);
+	}
+
+	// Update state manager with sensor status
+	_state_manager->update(
+		sensors_valid,
+		_hardware->is_healthy(),
+		command_timeout,
+		sensor_data.actuator_position,
+		sensor_data.limit_switch_load,
+		sensor_data.limit_switch_dump
+	);
 }
 
-void BucketControl::performZeroing()
+void BucketControl::process_commands()
 {
-    float fast_speed = _param_zeroing_fast_speed.get();
-    float slow_speed = _param_zeroing_slow_speed.get();
+	bucket_command_s command;
+	bool new_command = _bucket_command_sub.update(&command);
 
-    switch (_zeroing_state) {
-        case ZeroingState::MOVE_TO_LOAD_LIMIT:
-        {
-            // Move down to load limit switch (bucket down position) at moderate speed
-            if (!_limit_switch_load) {
-                setMotorCommand(-fast_speed * 0.5f); // 50% of fast speed downward
-            } else {
-                // Load limit reached, start deceleration
-                _zeroing_state = ZeroingState::SETTLE_AT_LOAD;
-                _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Load limit reached, settling");
-            }
-            break;
-        }
+	if (!new_command) {
+		return;
+	}
 
-        case ZeroingState::SETTLE_AT_LOAD:
-        {
-            // Gradual stop to avoid overshoot
-            float settle_time = hrt_elapsed_time(&_zeroing_state_start_time) * 1e-6f;
-            float speed = -fast_speed * 0.5f * fmaxf(0.0f, 1.0f - settle_time / 0.5f); // 0.5s deceleration
+	_last_command_time = hrt_absolute_time();
 
-            if (settle_time > 0.5f) {
-                setMotorCommand(0.0f);
-                // Set target for fast move (90% of actuator range)
-                _zeroing_target = _current_actuator_length +
-                                 (_kinematics.actuator_max_length - _kinematics.actuator_min_length) * 0.9f;
-                _zeroing_state = ZeroingState::FAST_MOVE_TO_DUMP;
-                _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Moving to dump limit, target: %.1fmm", static_cast<double>(_zeroing_target));
-            } else {
-                setMotorCommand(speed);
-            }
-            break;
-        }
+	// Process command based on current state
+	auto state_info = _state_manager->get_state_info();
 
-        case ZeroingState::FAST_MOVE_TO_DUMP:
-        {
-            // Use PX4 motion planning library for smooth fast movement toward dump limit
-            float dt = 0.01f; // 100Hz control loop
+	// Handle calibration command regardless of state
+	if (command.control_mode == bucket_command_s::MODE_CALIBRATE) {
+		_state_manager->start_calibration();
+		return;
+	}
 
-            // Configure motion planning for zeroing (more aggressive parameters)
-            _position_smoother.setMaxAccelerationZ(_param_max_acceleration.get() * 2.0f); // Double acceleration for zeroing
-            _position_smoother.setMaxVelocityZ(_param_max_velocity.get() * 1.5f);         // 1.5x velocity for zeroing
-            _position_smoother.setMaxJerkZ(_param_jerk_limit.get() * 2.0f);               // Double jerk for faster response
+	// Check if system is operational for other commands
+	if (!_state_manager->is_operational()) {
+		PX4_WARN("Cannot process command - system not operational (state: %d)",
+			 static_cast<int>(state_info.state));
+		return;
+	}
 
-            // Use position smoother for trajectory generation (1D motion using Z-axis)
-            matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
-            matrix::Vector3f target_pos{0.0f, 0.0f, _zeroing_target};
-            matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+	// Handle different command types
+	switch (command.control_mode) {
+		case bucket_command_s::MODE_POSITION:
+			// Absolute bucket angle command (ground-relative)
+			_target_bucket_angle_absolute = command.target_angle;
+			_boom_compensation_enabled = true;
 
-            PositionSmoothing::PositionSmoothingSetpoints setpoints;
-            _position_smoother.generateSetpoints(current_pos, target_pos, feedforward_velocity,
-                                               dt, false, setpoints);
+			// Transition to active state
+			_state_manager->request_state_transition(
+				BucketStateManager::OperationalState::ACTIVE,
+				"Position command received"
+			);
 
-            // Get smoothed position and velocity setpoints from Z component
-            float position_setpoint = setpoints.position(2);
-            float velocity_setpoint = setpoints.velocity(2);
+			PX4_DEBUG("Absolute position command: %.2f°",
+				 (double)math::degrees(_target_bucket_angle_absolute));
+			break;
 
-            // Simple P control for zeroing with velocity feedforward
-            float position_error = position_setpoint - _current_actuator_length;
-            float control = math::constrain(position_error * 0.01f + velocity_setpoint * 0.005f, -fast_speed, fast_speed);
+		case bucket_command_s::MODE_DIRECT:
+			// Direct actuator position command (no boom compensation)
+			_commanded_actuator_position = command.target_angle;
+			_boom_compensation_enabled = false;
 
-            // Check if we're getting close to target or if dump limit is reached
-            if (_limit_switch_dump || fabsf(_zeroing_target - _current_actuator_length) < 10.0f) { // Within 10mm
-                _zeroing_state = ZeroingState::SLOW_APPROACH_DUMP;
-                _zeroing_state_start_time = hrt_absolute_time();
-                PX4_INFO("Slow approach to dump limit");
-            } else {
-                setMotorCommand(control);
-            }
-            break;
-        }
+			_state_manager->request_state_transition(
+				BucketStateManager::OperationalState::ACTIVE,
+				"Direct position command received"
+			);
 
-        case ZeroingState::SLOW_APPROACH_DUMP:
-        {
-            // Very slow movement to touch dump limit switch
-            if (!_limit_switch_dump) {
-                setMotorCommand(slow_speed); // Slow upward movement
-            } else {
-                // Dump limit reached - stop immediately and reset encoder using message
-                setMotorCommand(0.0f);
+			PX4_DEBUG("Direct position command: %.1f mm", (double)_commanded_actuator_position);
+			break;
 
-                // Send encoder reset command via uORB message
-                quad_encoder_reset_s reset_cmd{};
-                reset_cmd.timestamp = hrt_absolute_time();
-                reset_cmd.instance = _param_encoder_index.get();
+		case bucket_command_s::MODE_STOP:
+			// Stop command - transition to ready
+			_state_manager->request_state_transition(
+				BucketStateManager::OperationalState::READY,
+				"Stop command received"
+			);
+			break;
 
-                _quad_encoder_reset_pub.publish(reset_cmd);
+		case bucket_command_s::MODE_EMERGENCY_STOP:
+			// Emergency stop
+			_state_manager->trigger_emergency_stop("Command emergency stop");
+			break;
 
-                // Reset our internal tracking
-                _encoder_zero_offset = 0.0f;  // Reset since encoder driver will reset to 0
-                _current_actuator_length = _kinematics.actuator_max_length;
-                _zeroing_state = ZeroingState::COMPLETE;
-                _zeroing_complete = true;
-
-                PX4_INFO("Zeroing complete at dump limit - encoder reset command sent for instance %ld",
-                         static_cast<long>(_param_encoder_index.get()));
-            }
-
-            // Timeout protection for slow approach
-            if (hrt_elapsed_time(&_zeroing_state_start_time) > 15_s) {
-                PX4_ERR("Dump limit approach timeout");
-                _state = State::ERROR;
-                setMotorCommand(0.0f);
-            }
-            break;
-        }
-
-        case ZeroingState::COMPLETE:
-            // Zeroing done
-            break;
-    }
-
-    // Overall timeout protection
-    if (hrt_elapsed_time(&_zeroing_start_time) > 60_s) {
-        PX4_ERR("Zeroing operation timeout");
-        _state = State::ERROR;
-        setMotorCommand(0.0f);
-    }
+		default:
+			PX4_WARN("Unknown control mode: %d", command.control_mode);
+			break;
+	}
 }
 
-// Clean Control Architecture Implementation
-
-void BucketControl::monitorCommandTarget()
+void BucketControl::execute_control()
 {
-    // Function 1: Monitor bucket command target changes
-    bucket_command_s cmd;
-    if (_bucket_command_sub.update(&cmd)) {
-        // New command received - update target absolute bucket angle
-        _target_absolute_bucket_angle = cmd.target_angle;
+	auto state_info = _state_manager->get_state_info();
 
-        PX4_DEBUG("New bucket command: target=%.2f°",
-                 static_cast<double>(math::degrees(_target_absolute_bucket_angle)));
-    }
+	// Handle emergency stop
+	if (state_info.state == BucketStateManager::OperationalState::EMERGENCY_STOP) {
+		_hardware->emergency_stop();
+		return;
+	}
+
+	// Get current sensor data
+	BucketHardwareInterface::SensorData sensor_data;
+	if (!_hardware->update_sensors(sensor_data)) {
+		PX4_DEBUG("No valid sensor data for control");
+		return;
+	}
+
+	float target_actuator_position = 0.0f;
+	bool position_command_valid = false;
+
+	// Determine target position based on state and mode
+	if (state_info.state == BucketStateManager::OperationalState::CALIBRATING) {
+		// Use calibration command
+		float cal_pos, cal_vel;
+		if (_state_manager->get_calibration_command(cal_pos, cal_vel)) {
+			target_actuator_position = cal_pos;
+			position_command_valid = true;
+		}
+
+	} else if (state_info.state == BucketStateManager::OperationalState::ACTIVE) {
+		// Use operational commands
+		if (_boom_compensation_enabled) {
+			// Boom compensation mode: maintain absolute bucket angle
+			auto target_linkage = _kinematics->compute_inverse_kinematics(
+				_target_bucket_angle_absolute,
+				sensor_data.boom_angle
+			);
+
+			if (target_linkage.is_valid) {
+				target_actuator_position = target_linkage.actuator_length;
+				position_command_valid = true;
+			} else {
+				PX4_WARN("Cannot compute target actuator position for boom compensation");
+			}
+
+		} else {
+			// Direct mode: use commanded actuator position
+			target_actuator_position = _commanded_actuator_position;
+			position_command_valid = true;
+		}
+
+	} else if (state_info.state == BucketStateManager::OperationalState::READY) {
+		// Hold current position
+		target_actuator_position = sensor_data.actuator_position;
+		position_command_valid = true;
+	}
+
+	// Execute control if we have a valid target
+	if (!position_command_valid) {
+		// Send zero command if no valid target
+		BucketHardwareInterface::ActuatorCommand actuator_cmd{};
+		actuator_cmd.duty_cycle = 0.0f;
+		actuator_cmd.enable = false;
+		_hardware->send_actuator_command(actuator_cmd);
+		return;
+	}
+
+	// Plan smooth trajectory
+	const float dt = static_cast<float>(CONTROL_INTERVAL_US) * 1e-6f;
+	auto motion_setpoint = _motion_controller->plan_trajectory(
+		sensor_data.actuator_position,
+		target_actuator_position,
+		dt
+	);
+
+	// Configure boom compensation in motion controller
+	if (_boom_compensation_enabled) {
+		float compensation_factor = _kinematics->get_boom_compensation_factor(sensor_data.boom_angle);
+		_motion_controller->set_boom_compensation(true, sensor_data.boom_angle, compensation_factor);
+	} else {
+		_motion_controller->set_boom_compensation(false);
+	}
+
+	// Compute control output
+	auto control_output = _motion_controller->compute_control(
+		motion_setpoint,
+		sensor_data.actuator_position,
+		sensor_data.actuator_velocity,
+		sensor_data.boom_angle,
+		dt
+	);
+
+	// Send command to hardware
+	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
+	actuator_cmd.duty_cycle = control_output.duty_cycle;
+	actuator_cmd.enable = !control_output.safety_stop;
+
+	_hardware->send_actuator_command(actuator_cmd);
 }
 
-void BucketControl::monitorBoomChanges()
+void BucketControl::publish_telemetry()
 {
-    // Function 2: Monitor boom angle changes (already done in updateBoomAngleMonitoring)
-    // The boom angle monitoring is handled by updateBoomAngleMonitoring()
-    // which sets _boom_angle_changed flag when boom moves significantly
+	bucket_status_s status{};
+	status.timestamp = hrt_absolute_time();
 
-    if (_boom_angle_changed) {
-        PX4_DEBUG("Boom angle changed to %.2f°",
-                 static_cast<double>(math::degrees(_current_boom_angle)));
-    }
+	// Get state information
+	auto state_info = _state_manager->get_state_info();
+
+	// Get sensor data
+	BucketHardwareInterface::SensorData sensor_data;
+	bool sensors_valid = _hardware->update_sensors(sensor_data);
+
+	if (sensors_valid) {
+		// Compute current bucket angle using forward kinematics
+		auto linkage_state = _kinematics->compute_forward_kinematics(
+			sensor_data.actuator_position,
+			sensor_data.boom_angle
+		);
+
+		// Populate sensor data fields
+		status.bucket_angle = linkage_state.bucket_angle;
+		status.actuator_length = sensor_data.actuator_position;
+		status.target_actuator_length = _commanded_actuator_position;
+		status.velocity = sensor_data.actuator_velocity;
+		status.limit_switch_load = sensor_data.limit_switch_load;
+		status.limit_switch_dump = sensor_data.limit_switch_dump;
+		status.boom_angle = sensor_data.boom_angle;
+	}
+
+	// Populate state and control information
+	status.state = static_cast<uint8_t>(state_info.state);
+	status.calibration_phase = static_cast<uint8_t>(state_info.calibration_phase);
+	status.error_flags = state_info.error_flags;
+	status.calibration_progress = static_cast<uint8_t>(state_info.calibration_progress * 100.0f);
+
+	// Control mode information
+	status.boom_compensation_enabled = _boom_compensation_enabled;
+	status.target_ground_angle = _target_bucket_angle_absolute;
+
+	// Hardware status
+	bool motor_enabled, encoder_valid, limits_valid;
+	if (_hardware->get_hardware_status(motor_enabled, encoder_valid, limits_valid)) {
+		status.motor_enabled = motor_enabled;
+		status.encoder_valid = encoder_valid;
+		status.limits_valid = limits_valid;
+	}
+
+	// Performance metrics
+	float pos_rms_error, vel_rms_error, control_effort;
+	_motion_controller->get_performance_metrics(pos_rms_error, vel_rms_error, control_effort);
+	status.position_error_rms = pos_rms_error;
+	status.velocity_error_rms = vel_rms_error;
+	status.control_effort = control_effort;
+
+	_bucket_status_pub.publish(status);
 }
 
-void BucketControl::updateActuatorTarget()
+void BucketControl::update_parameters()
 {
-    // Function 3: Calculate actuator target from command target and boom angle
-    // This function consolidates both command changes and boom compensation
+	ModuleParams::updateParams();
 
-    // Calculate required actuator length for current absolute bucket angle and boom position
-    float target_bucket_relative_angle = _target_absolute_bucket_angle - _current_boom_angle;
-    float new_target_actuator_length = bucketAngleToActuatorLength(target_bucket_relative_angle, _current_boom_angle);
-
-    // Only update if the change is significant (avoid small oscillations)
-    float actuator_delta = fabsf(new_target_actuator_length - _target_actuator_length);
-    if (actuator_delta > 0.5f) { // 0.5mm threshold
-        _target_actuator_length = new_target_actuator_length;
-
-        PX4_DEBUG("Actuator target updated: absolute=%.2f°, relative=%.2f°, actuator=%.1fmm",
-                 static_cast<double>(math::degrees(_target_absolute_bucket_angle)),
-                 static_cast<double>(math::degrees(target_bucket_relative_angle)),
-                 static_cast<double>(_target_actuator_length));
-    }
-
-    // Reset boom change flag after processing
-    _boom_angle_changed = false;
+	// Update component configurations as needed
+	// Motion controller parameters are updated through the parameter system
 }
 
-void BucketControl::updateMotionControl()
+// Static methods for module management
+int BucketControl::task_spawn(int argc, char *argv[])
 {
-    // Check limits: load limit prevents downward motion, dump limit prevents upward motion
-    if ((_limit_switch_load && _control_output < 0) ||   // Load limit active, blocking downward
-        (_limit_switch_dump && _control_output > 0)) {   // Dump limit active, blocking upward
-        setMotorCommand(0.0f);
-        return;
-    }
+	BucketControl *instance = new BucketControl();
 
-    float dt = 0.01f; // 100Hz control loop
+	if (instance) {
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
 
-    // Step 1: Use smoother to generate smooth trajectory
-    // Configure motion planning constraints
-    _position_smoother.setMaxAccelerationZ(_param_max_acceleration.get());
-    _position_smoother.setMaxVelocityZ(_param_max_velocity.get());
-    _position_smoother.setMaxJerkZ(_param_jerk_limit.get());
+		if (instance->init()) {
+			return PX4_OK;
+		}
+	} else {
+		PX4_ERR("alloc failed");
+	}
 
-    // Generate smooth trajectory using position smoother (1D motion using Z-axis)
-    matrix::Vector3f current_pos{0.0f, 0.0f, _current_actuator_length};
-    matrix::Vector3f target_pos{0.0f, 0.0f, _target_actuator_length};
-    matrix::Vector3f feedforward_velocity{0.0f, 0.0f, 0.0f};
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
 
-    PositionSmoothing::PositionSmoothingSetpoints setpoints;
-    _position_smoother.generateSetpoints(current_pos, target_pos, feedforward_velocity,
-                                       dt, false, setpoints);
-
-    // Get smoothed trajectory setpoints from Z component
-    float smooth_position_setpoint = setpoints.position(2);
-    float smooth_velocity_setpoint = setpoints.velocity(2);
-
-    // Step 2: Cascade PID control to follow the trajectory
-    // Position PID tracks the smooth position setpoint and generates velocity command
-    _position_pid.setSetpoint(smooth_position_setpoint);
-    float velocity_command = _position_pid.update(_current_actuator_length, dt);
-
-    // Add velocity feedforward from smoother
-    velocity_command += smooth_velocity_setpoint;
-
-    // Constrain velocity command to limits
-    velocity_command = math::constrain(velocity_command,
-                                     -_param_max_velocity.get(),
-                                     _param_max_velocity.get());
-
-    // Step 3: Velocity PID follows velocity command and generates motor output
-    _velocity_pid.setSetpoint(velocity_command);
-    _control_output = _velocity_pid.update(_current_velocity, dt);
-
-    // Apply control output
-    setMotorCommand(_control_output);
-
-    // Update state
-    float position_error = _target_actuator_length - _current_actuator_length;
-    _state = (fabsf(position_error) < 2.0f) ? State::READY : State::MOVING; // 2mm tolerance
+	return PX4_ERROR;
 }
 
-void BucketControl::setMotorCommand(float command)
+int BucketControl::custom_command(int argc, char *argv[])
 {
-    // Publish HBridge command for bucket motor (EKF2 pattern)
-    hbridge_command_s cmd{};
-    cmd.timestamp = hrt_absolute_time();
-    cmd.instance = _motor_index;  // Instance info embedded in message data
-    cmd.duty_cycle = command;     // Use command directly as duty_cycle (-1.0 to 1.0)
-    cmd.enable = true;
+	if (!is_running()) {
+		print_usage("not running");
+		return 1;
+	}
 
-    // Publish using EKF2 pattern - no instance parameter needed
-    _hbridge_command_pub.publish(cmd);
+	if (argc > 0) {
+		if (strcmp(argv[0], "calibrate") == 0) {
+			// Trigger calibration
+			get_instance()->_state_manager->start_calibration();
+			return PX4_OK;
+		}
+
+		if (strcmp(argv[0], "emergency_stop") == 0) {
+			// Trigger emergency stop
+			get_instance()->_state_manager->trigger_emergency_stop("Manual emergency stop");
+			return PX4_OK;
+		}
+
+		if (strcmp(argv[0], "clear_emergency") == 0) {
+			// Clear emergency stop
+			if (get_instance()->_state_manager->clear_emergency_stop()) {
+				return PX4_OK;
+			} else {
+				return PX4_ERROR;
+			}
+		}
+
+		if (strcmp(argv[0], "status") == 0) {
+			// Print detailed status
+			auto state_info = get_instance()->_state_manager->get_state_info();
+			PX4_INFO("State: %d, Errors: 0x%lx, Message: %s",
+				 static_cast<int>(state_info.state),
+				 (unsigned long)state_info.error_flags,
+				 state_info.status_message);
+			return PX4_OK;
+		}
+	}
+
+	return print_usage("unknown command");
 }
 
-void BucketControl::readEncoderFeedback()
+int BucketControl::print_usage(const char *reason)
 {
-    // Read from sensor_quad_encoder topic published by quad encoder driver
-    uint8_t encoder_idx = _param_encoder_index.get();
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
 
-    // Check if we have a valid encoder instance
-    if (encoder_idx < _sensor_quad_encoder_sub.size()) {
-        sensor_quad_encoder_s encoder_data;
-        if (_sensor_quad_encoder_sub[encoder_idx].update(&encoder_data)) {
-            // Verify this is the correct instance
-            if (encoder_data.instance == encoder_idx) {
-                // Get actuator length directly from encoder position
-                // Position is in 1/million rad, convert to length using scale
-                float position_rad = static_cast<float>(encoder_data.position) * 1e-6f;
-                _current_actuator_length = (position_rad - _encoder_zero_offset) * _param_encoder_scale.get() + _kinematics.actuator_min_length;
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Bucket control module for wheel loader applications.
 
-                // Get velocity directly from encoder velocity
-                // Velocity is in 1/million rad/s, convert to mm/s
-                float velocity_rad_s = static_cast<float>(encoder_data.velocity) * 1e-6f;
-                _current_velocity = velocity_rad_s * _param_encoder_scale.get();
+This module manages the bucket actuator control including:
+- Kinematic calculations for bucket angle and linkage geometry
+- Motion planning with smooth trajectory generation
+- Boom angle compensation to maintain bucket orientation
+- Hardware interface for motors, encoders, and limit switches
+- State management with calibration and fault handling
+- Safety monitoring and emergency stop functionality
 
-                _last_encoder_time = encoder_data.timestamp;
-            }
-        }
-    }
-}
+### Implementation
+The module uses a component-based architecture with separate classes for:
+- BucketKinematics: Linkage geometry and angle calculations
+- BucketHardwareInterface: Hardware abstraction layer
+- BucketMotionController: Trajectory planning and control
+- BucketStateManager: State machine and fault handling
 
-void BucketControl::updateEncoderData()
-{
-    sensor_quad_encoder_s encoder_data;
+### Examples
+Start the module:
+$ bucket_control start
 
-    // If no specific instance selected, find our encoder's instance
-    if (_encoder_selected < 0) {
-        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
-        uint8_t target_encoder_idx = _param_encoder_index.get();
+Stop the module:
+$ bucket_control stop
 
-        if (_sensor_quad_encoder_sub.advertised()) {
-            for (unsigned i = 0; i < _sensor_quad_encoder_sub.size(); i++) {
-                if (_sensor_quad_encoder_sub[i].update(&encoder_data)) {
-                    // Check if this is our encoder's data
-                    if ((encoder_data.timestamp != 0) &&
-                        (encoder_data.timestamp > timestamp_stale) &&
-                        (encoder_data.instance == target_encoder_idx)) {
+Trigger calibration:
+$ bucket_control calibrate
 
-                        int nencoder = orb_group_count(ORB_ID(sensor_quad_encoder));
-                        if (nencoder > 1) {
-                            PX4_INFO("Bucket control selected encoder:%d (instance %d, %d advertised)",
-                                     i, target_encoder_idx, nencoder);
-                        }
+Emergency stop:
+$ bucket_control emergency_stop
 
-                        _encoder_selected = i;
-                        _last_encoder_update = encoder_data.timestamp;
-                        break;
-                    }
-                }
-            }
-        }
-    }
+Clear emergency stop:
+$ bucket_control clear_emergency
 
-    // Use the selected instance
-    if (_encoder_selected >= 0 &&
-        _sensor_quad_encoder_sub[_encoder_selected].update(&encoder_data)) {
+Check status:
+$ bucket_control status
+)DESCR_STR");
 
-        if (encoder_data.instance == _param_encoder_index.get()) {
-            // Process our encoder's data
-            _last_encoder_update = encoder_data.timestamp;
+	PRINT_MODULE_USAGE_NAME("bucket_control", "actuator");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_COMMAND("stop");
+	PRINT_MODULE_USAGE_COMMAND("calibrate");
+	PRINT_MODULE_USAGE_COMMAND("emergency_stop");
+	PRINT_MODULE_USAGE_COMMAND("clear_emergency");
+	PRINT_MODULE_USAGE_COMMAND("status");
 
-            // Get actuator length directly from encoder position
-            // Position is in 1/million rad, convert to length using scale
-            float position_rad = static_cast<float>(encoder_data.position) * 1e-6f;
-            _current_actuator_length = (position_rad - _encoder_zero_offset) * _param_encoder_scale.get() + _kinematics.actuator_min_length;
-
-            // Get velocity directly from encoder velocity
-            // Velocity is in 1/million rad/s, convert to mm/s
-            float velocity_rad_s = static_cast<float>(encoder_data.velocity) * 1e-6f;
-            _current_velocity = velocity_rad_s * _param_encoder_scale.get();
-
-            _last_encoder_time = encoder_data.timestamp;
-        }
-    }
-}
-
-bool BucketControl::checkLimitSwitches()
-{
-    limit_sensor_s limit_sensor_data;
-
-    // If no specific instances selected, find our limit sensor instances
-    if (_limit_load_selected < 0 || _limit_dump_selected < 0) {
-        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
-        uint8_t target_load_idx = _param_limit_load_idx.get();
-        uint8_t target_dump_idx = _param_limit_dump_idx.get();
-
-        if (_limit_sensor_sub.advertised()) {
-            for (unsigned i = 0; i < _limit_sensor_sub.size(); i++) {
-                if (_limit_sensor_sub[i].update(&limit_sensor_data)) {
-                    // Check if this is our load limit sensor's data
-                    if ((limit_sensor_data.timestamp != 0) &&
-                        (limit_sensor_data.timestamp > timestamp_stale) &&
-                        (limit_sensor_data.instance == target_load_idx) &&
-                        (_limit_load_selected < 0)) {
-
-                        int nlimit = orb_group_count(ORB_ID(limit_sensor));
-                        if (nlimit > 1) {
-                            PX4_INFO("Bucket control selected load limit sensor:%d (instance %d, %d advertised)",
-                                     i, target_load_idx, nlimit);
-                        }
-
-                        _limit_load_selected = i;
-                        _last_limit_load_update = limit_sensor_data.timestamp;
-                    }
-
-                    // Check if this is our dump limit sensor's data
-                    if ((limit_sensor_data.timestamp != 0) &&
-                        (limit_sensor_data.timestamp > timestamp_stale) &&
-                        (limit_sensor_data.instance == target_dump_idx) &&
-                        (_limit_dump_selected < 0)) {
-
-                        int nlimit = orb_group_count(ORB_ID(limit_sensor));
-                        if (nlimit > 1) {
-                            PX4_INFO("Bucket control selected dump limit sensor:%d (instance %d, %d advertised)",
-                                     i, target_dump_idx, nlimit);
-                        }
-
-                        _limit_dump_selected = i;
-                        _last_limit_dump_update = limit_sensor_data.timestamp;
-                    }
-                }
-            }
-        }
-    }
-
-    // Use the selected load limit instance
-    if (_limit_load_selected >= 0 &&
-        _limit_sensor_sub[_limit_load_selected].update(&limit_sensor_data)) {
-
-        if (limit_sensor_data.instance == _param_limit_load_idx.get()) {
-            // Process our load limit sensor's data
-            _last_limit_load_update = limit_sensor_data.timestamp;
-            _limit_switch_load = limit_sensor_data.state;
-        }
-    }
-
-    // Use the selected dump limit instance
-    if (_limit_dump_selected >= 0 &&
-        _limit_sensor_sub[_limit_dump_selected].update(&limit_sensor_data)) {
-
-        if (limit_sensor_data.instance == _param_limit_dump_idx.get()) {
-            // Process our dump limit sensor's data
-            _last_limit_dump_update = limit_sensor_data.timestamp;
-            _limit_switch_dump = limit_sensor_data.state;
-        }
-    }
-
-    return _limit_switch_load || _limit_switch_dump;
-}
-
-bool BucketControl::checkHBridgeStatus()
-{
-    // Check hbridge status for our motor instance using EKF2-style SubscriptionMultiArray
-    hbridge_status_s hbridge_status;
-    uint8_t hbridge_channel = static_cast<uint8_t>(_param_motor_index.get());
-
-    if (hbridge_channel < _hbridge_status_sub.size()) {
-        if (_hbridge_status_sub[hbridge_channel].update(&hbridge_status)) {
-            // Verify this is the correct instance
-            if (hbridge_status.instance == hbridge_channel) {
-                // Update our status based on hbridge feedback
-                // Could use this for fault detection, current monitoring, etc.
-                return hbridge_status.enabled;
-            }
-        }
-    }
-    return false;  // No status received or not enabled
-}
-
-void BucketControl::updateHBridgeStatus()
-{
-    hbridge_status_s hbridge_status;
-
-    // If no specific instance selected, find our motor's instance
-    if (_hbridge_status_selected < 0) {
-        const hrt_abstime timestamp_stale = math::max(hrt_absolute_time(), 100_ms) - 100_ms;
-
-        if (_hbridge_status_sub.advertised()) {
-            for (unsigned i = 0; i < _hbridge_status_sub.size(); i++) {
-                if (_hbridge_status_sub[i].update(&hbridge_status)) {
-                    // Check if this is our motor's status
-                    if ((hbridge_status.timestamp != 0) &&
-                        (hbridge_status.timestamp > timestamp_stale) &&
-                        (hbridge_status.instance == _motor_index)) {
-
-                        int nstatus = orb_group_count(ORB_ID(hbridge_status));
-                        if (nstatus > 1) {
-                            PX4_INFO("Bucket control selected hbridge_status:%d (motor %d, %d advertised)",
-                                     i, _motor_index, nstatus);
-                        }
-
-                        _hbridge_status_selected = i;
-                        _last_hbridge_status_update = hbridge_status.timestamp;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // Use the selected instance
-    if (_hbridge_status_selected >= 0 &&
-        _hbridge_status_sub[_hbridge_status_selected].update(&hbridge_status)) {
-
-        if (hbridge_status.instance == _motor_index) {
-            // Process our motor's status
-            _last_hbridge_status_update = hbridge_status.timestamp;
-
-            // Check if hbridge is disabled - this could indicate a problem
-            if (!hbridge_status.enabled) {
-                PX4_WARN("HBridge motor %d is disabled", _motor_index);
-            }
-
-            // Update internal state if needed
-            // _motor_current = hbridge_status.current;
-            // _motor_voltage = hbridge_status.voltage;
-        }
-    }
-}
-
-// Boom Angle Monitoring and Compensation Methods
-
-void BucketControl::updateBoomAngleMonitoring()
-{
-    // Get current boom angle from AS5600 magnetic encoder
-    sensor_mag_encoder_s mag_encoder_data;
-    float new_boom_angle = _current_boom_angle; // Default to previous value
-
-    // Read the latest magnetic encoder data for boom angle
-    if (_sensor_mag_encoder_sub.update(&mag_encoder_data)) {
-        // Validate sensor readings
-        if (mag_encoder_data.magnet_detected &&
-            !mag_encoder_data.magnet_too_strong &&
-            !mag_encoder_data.magnet_too_weak) {
-            new_boom_angle = mag_encoder_data.angle;
-        } else {
-            // Log sensor issues for debugging
-            if (!mag_encoder_data.magnet_detected) {
-                PX4_DEBUG("Boom AS5600: No magnet detected");
-            } else if (mag_encoder_data.magnet_too_strong) {
-                PX4_DEBUG("Boom AS5600: Magnet too strong");
-            } else if (mag_encoder_data.magnet_too_weak) {
-                PX4_DEBUG("Boom AS5600: Magnet too weak");
-            }
-        }
-    }
-
-    // Check if boom angle has changed significantly
-    float boom_angle_delta = fabsf(new_boom_angle - _previous_boom_angle);
-    _boom_angle_changed = (boom_angle_delta > _boom_angle_threshold);
-
-    if (_boom_angle_changed) {
-        PX4_DEBUG("Boom movement detected: %.3f° -> %.3f° (delta: %.3f°)",
-                 static_cast<double>(math::degrees(_previous_boom_angle)),
-                 static_cast<double>(math::degrees(new_boom_angle)),
-                 static_cast<double>(math::degrees(boom_angle_delta)));
-    }
-
-    // Update boom angle tracking
-    _previous_boom_angle = _current_boom_angle;
-    _current_boom_angle = new_boom_angle;
-}
-
-void BucketControl::compensateForBoomMovement()
-{
-    // When boom moves, adjust bucket actuator to maintain the same absolute bucket angle
-    // _target_absolute_bucket_angle remains constant
-    // We need to recalculate the required actuator length for the new boom position
-
-    float target_bucket_relative_angle = _target_absolute_bucket_angle - _current_boom_angle;
-    float new_target_actuator_length = bucketAngleToActuatorLength(target_bucket_relative_angle, _current_boom_angle);
-
-    // Only update if the change is significant (avoid small oscillations)
-    float actuator_delta = fabsf(new_target_actuator_length - _target_actuator_length);
-    if (actuator_delta > 1.0f) { // 1mm threshold
-        _target_actuator_length = new_target_actuator_length;
-
-        PX4_DEBUG("Boom compensation: absolute=%.2f°, relative=%.2f°, actuator=%.1fmm",
-                 static_cast<double>(math::degrees(_target_absolute_bucket_angle)),
-                 static_cast<double>(math::degrees(target_bucket_relative_angle)),
-                 static_cast<double>(_target_actuator_length));
-    }
-
-    // Reset the boom change flag
-    _boom_angle_changed = false;
-}
-
-void BucketControl::publishStatus()
-{
-    bucket_status_s status{};
-    status.timestamp = hrt_absolute_time();
-
-    // Basic status
-    status.state = static_cast<uint8_t>(_state);
-    status.actuator_length = _current_actuator_length;
-    status.target_actuator_length = _target_actuator_length;
-    status.bucket_angle = _current_bucket_angle;
-    status.velocity = _current_velocity;
-    status.control_output = _control_output;
-    status.limit_switch_coarse = _limit_switch_load;     // Load limit switch status
-    status.limit_switch_fine = _limit_switch_dump;       // Dump limit switch status
-    status.zeroing_complete = _zeroing_complete;
-
-    // Control mode status (simplified) - fixed to boom compensation mode
-    status.control_mode = 0;  // Always boom compensation mode
-    status.target_ground_angle = _target_absolute_bucket_angle;
-
-    // Boom tracking status (reuse existing fields for boom angle monitoring)
-    status.machine_pitch = _current_boom_angle;  // Use machine_pitch field to report boom angle
-    status.anti_spill_active = _boom_angle_changed;  // Use anti_spill_active to report boom movement
-
-    _bucket_status_pub.publish(status);
+	return 0;
 }
