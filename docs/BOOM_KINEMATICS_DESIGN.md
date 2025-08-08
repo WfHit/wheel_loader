@@ -8,29 +8,7 @@ The `BoomKinematics` class implements the kinematic model for a wheel loader boo
 
 ### Visual Representation
 
-![Boom Kinematics Diagram](../assets/diagrams/boom_kinematics_diagram.svg)
-
-The boom mechanism geometry showing the key points and relationships:
-
-```
-          boom_pivot ●O ────────────────● bucket_joint (C)
-                    /|\               /|
-                   / | \             / |
-                  /  |  \           /  |
-                 /   |   \         /   | bucket_height
-                /    |    \       /    |
-               /     |     \     /     |
-              /      |      \   /      |
-             /       |       \ /       |
-            /        |        ●        |
-           /         |   actuator_     |
-          /          |   boom_joint    |
-         /           |   (B)           |
-        /            |                 |
-       /             |                 |
- actuator_mount ●A   |                 ● ground_point (D)
-                     |               Ground
-```
+![Boom Kinematics Diagram](./assets/diagrams/boom_kinematics_diagram.svg)
 
 ### Point Definitions
 
@@ -44,7 +22,7 @@ The boom mechanism geometry showing the key points and relationships:
 
 - **Origin**: Located at boom_pivot (O)
 - **X-axis**: Horizontal, positive to the right
-- **Y-axis**: Vertical, positive upward
+- **Z-axis**: Vertical, positive upward
 - **Angles**: Measured counter-clockwise from positive X-axis
 
 ## Geometric Model
@@ -55,19 +33,19 @@ The boom mechanism consists of three key triangular relationships:
 
 #### 1. Variable Triangle: O-A-B (boom_pivot, actuator_mount, actuator_boom_joint)
 This triangle changes as the linear actuator extends and retracts:
-- **OA**: Fixed distance from pivot to actuator mount (calculated from A_x, A_y coordinates)
+- **OA**: Fixed distance from pivot to actuator mount (calculated from A_x, A_z coordinates)
 - **OB**: Fixed distance from pivot to actuator attachment on boom (`pivot_to_actuator_joint`)
 - **AB**: Variable actuator length (controlled by hydraulic system)
 
 #### 2. Fixed Triangle: O-B-C (boom_pivot, actuator_boom_joint, bucket_joint)
 This triangle is rigid, welded as part of the boom structure:
 - **OB**: Distance from pivot to actuator attachment (`pivot_to_actuator_joint`)
-- **OC**: Distance from pivot to bucket (`pivot_to_bucket`)
-- **Angle BOC**: Fixed angle between actuator joint and bucket joint (`actuator_joint_to_bucket_angle`)
+- **OC**: Length of boom (`boom_length`)
+- **Angle BOC**: Calculated angle between actuator attachment and boom centerline (`actuator_boom_angle`)
 
 #### 3. Ground Reference: O-C-D (boom_pivot, bucket_joint, ground_point)
 Used for bucket height and reach calculations:
-- **OC**: Distance from pivot to bucket (`pivot_to_bucket`)
+- **OC**: Length of boom (`boom_length`)
 - **OD**: Height of pivot from ground (`pivot_height_from_ground`)
 - **CD**: Calculated bucket height from ground
 
@@ -147,10 +125,12 @@ c = sqrt(a² + b² - 2ab·cos(C))
 | Parameter | Description | Units |
 |-----------|-------------|-------|
 | `actuator_mount_x` | X coordinate of actuator mount from pivot | mm |
-| `actuator_mount_y` | Y coordinate of actuator mount from pivot | mm |
+| `actuator_mount_z` | Z coordinate of actuator mount from pivot | mm |
 | `pivot_to_actuator_joint` | Distance from pivot to boom actuator attachment | mm |
-| `pivot_to_bucket` | Distance from pivot to bucket joint | mm |
-| `actuator_joint_to_bucket_angle` | Fixed angle between actuator and bucket attachments | rad |
+| `boom_length` | Length of boom from pivot to bucket joint | mm |
+| `actuator_to_bucket_length` | Distance between actuator joint and bucket attachment | mm |
+| `actuator_length_at_zero` | Actuator length when boom is at zero angle | mm |
+| `actuator_boom_angle` | Calculated angle between actuator and boom centerline | rad |
 | `pivot_height_from_ground` | Height of boom pivot from ground level | mm |
 
 ### Operational Limits

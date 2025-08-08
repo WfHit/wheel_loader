@@ -36,9 +36,10 @@
 #include <mathlib/mathlib.h>
 
 BoomKinematics::BoomKinematics(ModuleParams* parent) :
-	ModuleParams(parent)
+    ModuleParams(parent)
 {
-	update_configuration();
+    // Initialize configuration
+    update_configuration();
 }
 
 float BoomKinematics::actuator_to_boom_angle(float actuator_length) const
@@ -46,22 +47,22 @@ float BoomKinematics::actuator_to_boom_angle(float actuator_length) const
 	// Forward kinematics: Given actuator length, find boom angle
 	// Using triangle formed by boom_pivot, actuator_mount, and actuator_boom_joint
 
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;      // Distance from pivot to actuator joint
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float actuator_to_pivot_dist = _config.actuator_to_pivot_length;      // Distance from actuator to pivot
 	float mount_to_joint_dist = actuator_length;                      // Actuator length
 
 	// Use law of cosines to find angle at boom pivot
-	float angle_at_pivot = law_of_cosines_angle(pivot_to_mount_dist, pivot_to_actuator_joint_dist, mount_to_joint_dist);
+	float angle_at_pivot = law_of_cosines_angle(pivot_to_mount_dist, actuator_to_pivot_dist, mount_to_joint_dist);
 
 	// Use cached angle of pivot-to-mount line from horizontal
-	float mount_angle = _config.mount_angle_from_horizontal;
+	float mount_angle = _config.actuator_mount_angle;
 
 	// Calculate angle of pivot-to-actuator-joint line from horizontal
 	float actuator_joint_angle = mount_angle + angle_at_pivot;
 
 	// Calculate boom angle (pivot-to-bucket line from horizontal)
 	// Add the fixed angle between actuator joint and bucket joint
-	float boom_angle = actuator_joint_angle + _config.actuator_joint_to_bucket_angle;
+	float boom_angle = actuator_joint_angle + _config.actuator_boom_angle;
 
 	return boom_angle;
 }
@@ -71,19 +72,19 @@ float BoomKinematics::boom_angle_to_actuator(float boom_angle) const
 	// Inverse kinematics: Given boom angle, find required actuator length
 
 	// Calculate angle of actuator joint line from horizontal
-	float actuator_joint_angle = boom_angle - _config.actuator_joint_to_bucket_angle;
+	float actuator_joint_angle = boom_angle - _config.actuator_boom_angle;
 
 	// Use cached angle of actuator mount line from horizontal
-	float mount_angle = _config.mount_angle_from_horizontal;
+	float mount_angle = _config.actuator_mount_angle;
 
 	// Calculate angle at boom pivot
 	float angle_at_pivot = actuator_joint_angle - mount_angle;
 
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float actuator_to_pivot_dist = _config.actuator_to_pivot_length;
 
 	// Use law of cosines to find actuator length
-	float actuator_length = law_of_cosines_side(pivot_to_mount_dist, pivot_to_actuator_joint_dist, angle_at_pivot);
+	float actuator_length = law_of_cosines_side(pivot_to_mount_dist, actuator_to_pivot_dist, angle_at_pivot);
 
 	return actuator_length;
 }
@@ -98,11 +99,11 @@ float BoomKinematics::encoder_to_actuator_length(float encoder_angle) const
 	float angle_oab = encoder_angle - _config.encoder_angle_at_min;
 
 	// Convert geometric angle OAB to actuator length using law of cosines
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // OA
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;  // OB
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // OA
+	float actuator_to_pivot_dist = _config.actuator_to_pivot_length;  // OB
 
 	// Use law of cosines: AB = sqrt(OA² + OB² - 2*OA*OB*cos(angle_OAB))
-	float actuator_length = law_of_cosines_side(pivot_to_mount_dist, pivot_to_actuator_joint_dist, angle_oab);
+	float actuator_length = law_of_cosines_side(pivot_to_mount_dist, actuator_to_pivot_dist, angle_oab);
 
 	return actuator_length;
 }
@@ -111,30 +112,30 @@ float BoomKinematics::actuator_length_to_encoder(float actuator_length) const
 {
 	// Convert actuator length to boom angle using inverse kinematics
 	float boom_angle = actuator_to_boom_angle(actuator_length);
-	
+
 	// Calculate encoder angle: Direct offset relationship with AS5600
 	float encoder_angle = math::degrees(boom_angle) + _config.encoder_angle_at_min;
-	
+
 	// Wrap to 0-360 degrees for encoder
 	encoder_angle = fmodf(encoder_angle + 360.0f, 360.0f);
-	
+
 	return encoder_angle;
 }
 
-void BoomKinematics::calculate_bucket_position(float boom_angle, float& x_pos, float& y_pos) const
+void BoomKinematics::calculate_bucket_position(float boom_angle, float& x_pos, float& z_pos) const
 {
 	// Calculate bucket position from boom angle
-	float pivot_to_bucket_dist = _config.pivot_to_bucket;
+	float boom_length_dist = _config.boom_length;
 
-	x_pos = pivot_to_bucket_dist * cosf(boom_angle);
-	y_pos = pivot_to_bucket_dist * sinf(boom_angle);
+	x_pos = boom_length_dist * cosf(boom_angle);
+	z_pos = boom_length_dist * sinf(boom_angle);
 }
 
 float BoomKinematics::calculate_bucket_height(float boom_angle) const
 {
 	// Calculate bucket height from ground
-	float bucket_y_from_pivot = _config.pivot_to_bucket * sinf(boom_angle);
-	float bucket_height = _config.pivot_height_from_ground + bucket_y_from_pivot;
+	float bucket_z_from_pivot = _config.boom_length * sinf(boom_angle);
+	float bucket_height = _config.pivot_height_from_ground + bucket_z_from_pivot;
 
 	return bucket_height;
 }
@@ -142,19 +143,18 @@ float BoomKinematics::calculate_bucket_height(float boom_angle) const
 float BoomKinematics::calculate_mechanical_advantage(float boom_angle) const
 {
 	// Calculate mechanical advantage at current boom position
-	float actuator_length = boom_angle_to_actuator(boom_angle);
 
 	// Calculate moment arms
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float actuator_joint_angle = boom_angle - _config.actuator_joint_to_bucket_angle;
-	float mount_angle = _config.mount_angle_from_horizontal;  // Use cached value
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float actuator_joint_angle = boom_angle - _config.actuator_boom_angle;
+	float mount_angle = _config.actuator_mount_angle;  // Use parameter value
 	float angle_at_pivot = actuator_joint_angle - mount_angle;
 
 	// Actuator moment arm
 	float actuator_moment_arm = pivot_to_mount_dist * sinf(angle_at_pivot);
 
 	// Boom moment arm (distance to load application point)
-	float boom_moment_arm = _config.pivot_to_bucket * sinf(boom_angle);
+	float boom_moment_arm = _config.boom_length * sinf(boom_angle);
 
 	// Mechanical advantage
 	float mechanical_advantage = actuator_moment_arm / boom_moment_arm;
@@ -171,8 +171,8 @@ BoomKinematics::KinematicState BoomKinematics::get_kinematic_state(float actuato
 	state.actuator_length = actuator_length;
 
 	// Calculate bucket position
-	float x_pos, y_pos;
-	calculate_bucket_position(state.boom_angle, x_pos, y_pos);
+	float x_pos, z_pos;
+	calculate_bucket_position(state.boom_angle, x_pos, z_pos);
 	state.bucket_reach = x_pos;
 	state.bucket_height = calculate_bucket_height(state.boom_angle);
 
@@ -206,12 +206,12 @@ bool BoomKinematics::is_position_valid(float boom_angle) const
 	}
 
 	// Check for physical constraints (triangle inequality)
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float actuator_to_pivot_dist = _config.actuator_to_pivot_length;
 	float mount_to_joint_dist = required_actuator_length;
 
-	if (mount_to_joint_dist > (pivot_to_mount_dist + pivot_to_actuator_joint_dist) ||
-	    mount_to_joint_dist < fabsf(pivot_to_mount_dist - pivot_to_actuator_joint_dist)) {
+	if (mount_to_joint_dist > (pivot_to_mount_dist + actuator_to_pivot_dist) ||
+	    mount_to_joint_dist < fabsf(pivot_to_mount_dist - actuator_to_pivot_dist)) {
 		return false;
 	}
 
@@ -220,32 +220,52 @@ bool BoomKinematics::is_position_valid(float boom_angle) const
 
 void BoomKinematics::update_configuration()
 {
-	updateParams();
+    // Load configuration parameters using DEFINE_PARAMETERS approach
+    _config.boom_pivot_to_bucket = _param_boom_length.get();
+    _config.actuator_pivot_distance = _param_actuator_to_pivot_length.get();
+    _config.actuator_mount_distance = _param_pivot_mount_length.get();
+    _config.sensor_boom_offset = _param_sensor_boom_offset.get();
+    _config.encoder_angle_at_zero = _param_encoder_zero_angle.get();
 
-	_config.actuator_mount_x = _param_actuator_mount_x.get();
-	_config.actuator_mount_y = _param_actuator_mount_y.get();
-	_config.pivot_to_actuator_joint = _param_pivot_to_actuator.get();
-	_config.pivot_to_bucket = _param_pivot_to_bucket.get();
-	_config.actuator_joint_to_bucket_angle = math::radians(_param_actuator_bucket_angle.get());
-	_config.pivot_height_from_ground = _param_pivot_height.get();
-	_config.actuator_min_length = _param_actuator_min.get();
-	_config.actuator_max_length = _param_actuator_max.get();
-	_config.boom_angle_min = math::radians(_param_angle_min.get());
-	_config.boom_angle_max = math::radians(_param_angle_max.get());
-	_config.encoder_angle_at_min = _param_encoder_min_angle.get();
-	_config.encoder_angle_at_max = _param_encoder_max_angle.get();
+    // Calculate actuator mount angle (angle AOB) using triangle geometry
+    _config.actuator_mount_angle = calculate_actuator_mount_angle();
+}
 
-	// Compute and cache derived values that don't change unless parameters change
-	_config.pivot_to_mount_distance = sqrtf(_config.actuator_mount_x * _config.actuator_mount_x +
-	                                       _config.actuator_mount_y * _config.actuator_mount_y);
-	_config.mount_angle_from_horizontal = atan2f(_config.actuator_mount_y, _config.actuator_mount_x);
+float BoomKinematics::calculate_actuator_mount_angle()
+{
+    // Calculate angle AOB using triangle geometry
+    // A = boom pivot point (0,0)
+    // O = actuator pivot point on boom (actuator_pivot_distance along boom)
+    // B = actuator base mount point (actuator_mount_distance from pivot)
+
+    // The angle AOB is the angle between:
+    // - Line AO (boom arm to actuator pivot)
+    // - Line AB (boom pivot to actuator base mount)
+
+    // Since we only have distances, we use the relationship:
+    // The mount angle is the angle from boom arm to the line connecting
+    // boom pivot to actuator base mount
+
+    float ao = _config.actuator_pivot_distance;  // Distance along boom to actuator pivot
+    float ab = _config.actuator_mount_distance;  // Distance from boom pivot to base mount
+
+    // For a right triangle approximation (common in wheel loader geometry):
+    // The actuator base is typically mounted perpendicular to the boom pivot axis
+    // So angle AOB can be calculated as: arctan(perpendicular_distance / boom_distance)
+
+    // Assuming the base mount is positioned to create optimal geometry:
+    float angle_aob_rad = atanf(ab / ao);
+    return math::degrees(angle_aob_rad);
 }
 
 bool BoomKinematics::validate_configuration() const
 {
 	// Check for reasonable values
-	if (_config.pivot_to_actuator_joint <= 0.0f ||
-	    _config.pivot_to_bucket <= 0.0f ||
+	if (_config.boom_length <= 0.0f ||
+		_config.actuator_to_pivot_length <= 0.0f ||
+		_config.actuator_mount_distance <= 0.0f ||
+	    _config.actuator_to_bucket_length <= 0.0f ||
+	    _config.actuator_length_at_zero <= 0.0f ||
 	    _config.actuator_min_length <= 0.0f ||
 	    _config.actuator_max_length <= _config.actuator_min_length ||
 	    _config.pivot_height_from_ground <= 0.0f) {
@@ -253,16 +273,29 @@ bool BoomKinematics::validate_configuration() const
 		return false;
 	}
 
-	// Check triangle inequality for extreme positions
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	// Check triangle inequality for boom structure (pivot, actuator joint, bucket)
+	float boom_length = _config.boom_length;
+	float actuator_to_pivot = _config.actuator_to_pivot_length;
+	float actuator_to_bucket = _config.actuator_to_bucket_length;
 
-	if (_config.actuator_max_length > (pivot_to_mount_dist + pivot_to_actuator_joint_dist)) {
+	// Triangle inequality: sum of any two sides must be greater than third side
+	if ((actuator_to_pivot + boom_length <= actuator_to_bucket) ||
+	    (actuator_to_pivot + actuator_to_bucket <= boom_length) ||
+	    (boom_length + actuator_to_bucket <= actuator_to_pivot)) {
+		PX4_ERR("Invalid boom geometry - triangle inequality violated");
+		return false;
+	}
+
+	// Check triangle inequality for extreme positions
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float actuator_to_pivot_dist = _config.actuator_to_pivot_length;
+
+	if (_config.actuator_max_length > (pivot_to_mount_dist + actuator_to_pivot_dist)) {
 		PX4_WARN("Maximum actuator length exceeds geometric limits");
 		return false;
 	}
 
-	if (_config.actuator_min_length < fabsf(pivot_to_mount_dist - pivot_to_actuator_joint_dist)) {
+	if (_config.actuator_min_length < fabsf(pivot_to_mount_dist - actuator_to_pivot_dist)) {
 		PX4_WARN("Minimum actuator length below geometric limits");
 		return false;
 	}
@@ -279,8 +312,8 @@ bool BoomKinematics::validate_configuration() const
 float BoomKinematics::calculate_pivot_angle_in_actuator_triangle(float actuator_length) const
 {
 	// Calculate angle at boom pivot in actuator triangle
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float pivot_to_actuator_joint_dist = _config.actuator_to_pivot_length;
 	float mount_to_joint_dist = actuator_length;
 
 	return law_of_cosines_angle(pivot_to_mount_dist, pivot_to_actuator_joint_dist, mount_to_joint_dist);
@@ -289,8 +322,8 @@ float BoomKinematics::calculate_pivot_angle_in_actuator_triangle(float actuator_
 float BoomKinematics::calculate_mount_angle_in_actuator_triangle(float actuator_length) const
 {
 	// Calculate angle at actuator mount in actuator triangle
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float pivot_to_actuator_joint_dist = _config.actuator_to_pivot_length;
 	float mount_to_joint_dist = actuator_length;
 
 	return law_of_cosines_angle(pivot_to_mount_dist, mount_to_joint_dist, pivot_to_actuator_joint_dist);
@@ -299,8 +332,8 @@ float BoomKinematics::calculate_mount_angle_in_actuator_triangle(float actuator_
 float BoomKinematics::calculate_boom_joint_angle_in_actuator_triangle(float actuator_length) const
 {
 	// Calculate angle at boom joint in actuator triangle
-	float pivot_to_mount_dist = _config.pivot_to_mount_distance;  // Use cached value
-	float pivot_to_actuator_joint_dist = _config.pivot_to_actuator_joint;
+	float pivot_to_mount_dist = _config.actuator_mount_distance;  // Use parameter value
+	float pivot_to_actuator_joint_dist = _config.actuator_to_pivot_length;
 	float mount_to_joint_dist = actuator_length;
 
 	return law_of_cosines_angle(pivot_to_actuator_joint_dist, mount_to_joint_dist, pivot_to_mount_dist);
@@ -310,7 +343,7 @@ float BoomKinematics::calculate_actuator_joint_angle(float actuator_length) cons
 {
 	// Calculate angle of actuator joint line from horizontal
 	float angle_at_pivot = calculate_pivot_angle_in_actuator_triangle(actuator_length);
-	float mount_angle = _config.mount_angle_from_horizontal;  // Use cached value
+	float mount_angle = _config.actuator_mount_angle;  // Use parameter value
 
 	return mount_angle + angle_at_pivot;
 }
@@ -331,12 +364,36 @@ float BoomKinematics::law_of_cosines_side(float side1, float side2, float includ
 
 float BoomKinematics::calculate_pivot_to_mount_distance() const
 {
-	// Return cached value - this function kept for backward compatibility
-	return _config.pivot_to_mount_distance;
+	// Return parameter value - this function kept for backward compatibility
+	return _config.actuator_mount_distance;
 }
 
 float BoomKinematics::calculate_mount_angle_from_horizontal() const
 {
-	// Return cached value - this function kept for backward compatibility
-	return _config.mount_angle_from_horizontal;
+	// Return parameter value - this function kept for backward compatibility
+	return _config.actuator_mount_angle;
+}
+
+float BoomKinematics::calculate_actuator_boom_angle() const
+{
+	// Calculate the angle between the actuator attachment line and boom centerline
+	// This is a fixed geometric relationship on the boom structure.
+	//
+	// We have a triangle formed by:
+	// - O: Boom pivot point
+	// - B: Actuator attachment point on boom (distance: actuator_to_pivot_length)
+	// - C: Bucket attachment point (distance: boom_length)
+	//
+	// The angle we want is angle BOC (between OB and OC)
+	// Now we can calculate this accurately using the third side BC (actuator_to_bucket_length)
+
+	float actuator_to_pivot = _config.actuator_to_pivot_length;  // OB distance
+	float boom_length = _config.boom_length;                     // OC distance
+	float actuator_to_bucket = _config.actuator_to_bucket_length; // BC distance
+
+	// Use law of cosines to find angle BOC
+	// cos(angle_BOC) = (OB² + OC² - BC²) / (2 * OB * OC)
+	float angle_BOC = law_of_cosines_angle(actuator_to_pivot, boom_length, actuator_to_bucket);
+
+	return angle_BOC;
 }
