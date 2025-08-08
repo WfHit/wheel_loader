@@ -44,6 +44,94 @@ parameters:
           unit: mm
           decimal: 1
 
+        BOOM_ACT_MOUNT_X:
+          description:
+            short: Actuator mount X position
+            long: X coordinate of actuator base mount point relative to boom pivot
+          type: float
+          default: 500.0
+          min: 0.0
+          max: 2000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_ACT_MOUNT_Y:
+          description:
+            short: Actuator mount Y position
+            long: Y coordinate of actuator base mount point relative to boom pivot
+          type: float
+          default: 300.0
+          min: 0.0
+          max: 2000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_PIVOT_ACT_LEN:
+          description:
+            short: Pivot to actuator joint distance
+            long: Distance from boom pivot point to actuator joint on boom
+          type: float
+          default: 800.0
+          min: 100.0
+          max: 3000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_PIVOT_BUCKET_LEN:
+          description:
+            short: Pivot to bucket distance
+            long: Distance from boom pivot point to bucket attachment point
+          type: float
+          default: 1200.0
+          min: 200.0
+          max: 5000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_ACT_BUCKET_ANG:
+          description:
+            short: Actuator joint to bucket angle
+            long: Fixed angle between actuator joint line and bucket line
+          type: float
+          default: 30.0
+          min: -90.0
+          max: 90.0
+          unit: deg
+          decimal: 1
+
+        BOOM_PIVOT_HEIGHT:
+          description:
+            short: Pivot height from ground
+            long: Height of boom pivot point above ground level
+          type: float
+          default: 1500.0
+          min: 0.0
+          max: 5000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_ENC_MIN_ANG:
+          description:
+            short: Encoder angle at minimum position
+            long: AS5600 encoder reading when actuator is at minimum length
+          type: float
+          default: 45.0
+          min: 0.0
+          max: 360.0
+          unit: deg
+          decimal: 1
+
+        BOOM_ENC_MAX_ANG:
+          description:
+            short: Encoder angle at maximum position
+            long: AS5600 encoder reading when actuator is at maximum length
+          type: float
+          default: 135.0
+          min: 0.0
+          max: 360.0
+          unit: deg
+          decimal: 1
+
         BOOM_KIN_B_ANG:
           description:
             short: Actuator base angle

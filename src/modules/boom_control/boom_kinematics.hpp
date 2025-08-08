@@ -160,12 +160,15 @@ public:
 		// AS5600 encoder calibration
 		float encoder_angle_at_min;          // deg - Encoder reading at minimum extension
 		float encoder_angle_at_max;          // deg - Encoder reading at maximum extension
+
+		// Computed values (cached when parameters change)
+		float pivot_to_mount_distance;       // mm - Computed distance from pivot to actuator mount
+		float mount_angle_from_horizontal;   // rad - Computed angle of pivot-to-mount line from horizontal
 	};
 
 	struct KinematicState {
 		float boom_angle;                    // rad - Boom centerline angle from horizontal
 		float actuator_length;               // mm - Current cylinder extension
-		float actuator_rotation_angle;       // rad - Cylinder rotation angle at mount point
 		float bucket_height;                 // mm - Bucket height from ground
 		float bucket_reach;                  // mm - Horizontal distance from pivot to bucket
 		float mechanical_advantage;          // Force multiplication ratio
@@ -204,20 +207,6 @@ public:
 	 * @return Expected encoder angle in degrees
 	 */
 	float actuator_length_to_encoder(float actuator_length) const;
-
-	/**
-	 * @brief Calculate the rotation angle of cylinder at mount point
-	 * @param actuator_length Cylinder extension in mm
-	 * @return Rotation angle from reference in radians
-	 */
-	float calculate_actuator_rotation_angle(float actuator_length) const;
-
-	/**
-	 * @brief Calculate actuator length from its rotation angle
-	 * @param rotation_angle Cylinder rotation at mount in radians
-	 * @return Cylinder extension in mm
-	 */
-	float rotation_angle_to_actuator_length(float rotation_angle) const;
 
 	/**
 	 * @brief Calculate bucket position from boom angle
