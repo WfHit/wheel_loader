@@ -101,12 +101,12 @@ private:
 	void handle_emergency_stop();
 	bool check_system_health();
 
-	// Core components
-	BoomKinematics* _kinematics{nullptr};
-	BoomSensorInterface* _sensor_interface{nullptr};
-	BoomMotionController* _motion_controller{nullptr};
-	BoomActuatorInterface* _actuator_interface{nullptr};
-	BoomStateManager* _state_manager{nullptr};
+	// Core components (using composition instead of raw pointers)
+	BoomKinematics _kinematics;
+	BoomSensorInterface _sensor_interface;
+	BoomMotionController _motion_controller;
+	BoomActuatorInterface _actuator_interface;
+	BoomStateManager _state_manager;
 
 	// Current system state
 	float _current_boom_angle{0.0f};          // rad
