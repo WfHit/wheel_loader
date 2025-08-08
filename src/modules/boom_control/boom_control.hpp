@@ -52,12 +52,12 @@
 // Using declarations
 using namespace time_literals;
 
-// Forward declarations
-class BoomKinematics;
-class BoomSensorInterface;
-class BoomMotionController;
-class BoomActuatorInterface;
-class BoomStateManager;
+// Component includes (required for composition)
+#include "boom_kinematics.hpp"
+#include "boom_sensor_interface.hpp" 
+#include "boom_motion_controller.hpp"
+#include "boom_actuator_interface.hpp"
+#include "boom_state_manager.hpp"
 
 /**
  * @brief Main boom control module for wheel loader lifting system

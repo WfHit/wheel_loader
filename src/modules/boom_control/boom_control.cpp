@@ -32,11 +32,6 @@
  ****************************************************************************/
 
 #include "boom_control.hpp"
-#include "boom_kinematics.hpp"
-#include "boom_sensor_interface.hpp"
-#include "boom_motion_controller.hpp"
-#include "boom_actuator_interface.hpp"
-#include "boom_state_manager.hpp"
 
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
