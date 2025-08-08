@@ -33,19 +33,23 @@
 
 #pragma once
 
+// System includes first
 #include <drivers/drv_hrt.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
+// Library includes
+#include <perf/perf_counter.h>
+
+// uORB includes (use lowercase topic names)
 #include <uORB/Publication.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/parameter_update.h>
 
-#include <perf/perf_counter.h>
-
+// Using declarations
 using namespace time_literals;
 
 // Forward declarations
@@ -58,12 +62,22 @@ class BoomStateManager;
 /**
  * @brief Main boom control module for wheel loader lifting system
  *
- * Coordinates boom actuator components:
- * - Sensor reading and processing
- * - Kinematic calculations
- * - Motion planning and control
- * - Actuator commanding
- * - State management and safety
+ * Coordinates boom actuator components through a well-defined architecture:
+ * - Sensor reading and processing (BoomSensorInterface)
+ * - Kinematic calculations (BoomKinematics) 
+ * - Motion planning and control (BoomMotionController)
+ * - Actuator commanding (BoomActuatorInterface)
+ * - State management and safety (BoomStateManager)
+ *
+ * The module uses composition over inheritance for better maintainability
+ * and follows RAII principles for resource management. All components are
+ * constructed as member objects to ensure proper lifetime management.
+ *
+ * @note This implementation follows PX4 coding standards including:
+ * - Tab-based indentation (4-space display width)
+ * - Composition over inheritance architecture
+ * - Proper uORB message handling
+ * - Parameter validation and bounds checking
  */
 class BoomControl final : public ModuleBase<BoomControl>,
                           public ModuleParams,
