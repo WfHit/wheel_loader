@@ -40,6 +40,7 @@
 
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
+#include <math.h>
 
 BoomControl::BoomControl() :
 	ModuleParams(nullptr),
@@ -97,6 +98,13 @@ bool BoomControl::init()
 
 	// Start periodic execution at configured rate
 	float update_rate = _param_update_rate.get();
+	
+	// Validate update rate parameter
+	if (update_rate <= 0.0f || update_rate > 200.0f) {
+		PX4_WARN("Invalid update rate %.1f Hz, using default 50.0 Hz", (double)update_rate);
+		update_rate = 50.0f;
+	}
+	
 	uint32_t interval_us = static_cast<uint32_t>(1000000.0f / update_rate);
 	interval_us = math::max(interval_us, CONTROL_INTERVAL_US);  // Minimum 50 Hz
 
@@ -175,6 +183,13 @@ void BoomControl::process_commands()
 		// Process based on control mode
 		switch (command.control_mode) {
 		case 0: // Position control
+			// Validate position command bounds
+			if (!isfinite(command.lift_angle_cmd) || 
+			    fabsf(command.lift_angle_cmd) > M_PI_F) {
+				PX4_WARN("Invalid position command: %.2f rad", (double)command.lift_angle_cmd);
+				break;
+			}
+			
 			_target_boom_angle = command.lift_angle_cmd;
 			_motion_controller.set_mode(BoomMotionController::ControlMode::POSITION);
 			_motion_controller.set_target_position(_target_boom_angle, command.max_lift_velocity);
@@ -182,6 +197,13 @@ void BoomControl::process_commands()
 			break;
 
 		case 1: // Velocity control
+			// Validate velocity command bounds  
+			if (!isfinite(command.lift_velocity_cmd) || 
+			    fabsf(command.lift_velocity_cmd) > 5.0f) { // 5 rad/s max
+				PX4_WARN("Invalid velocity command: %.2f rad/s", (double)command.lift_velocity_cmd);
+				break;
+			}
+			
 			_motion_controller.set_mode(BoomMotionController::ControlMode::VELOCITY);
 			_motion_controller.set_target_velocity(command.lift_velocity_cmd);
 			_state_manager.request_transition(BoomStateManager::OperationalState::MOVING);

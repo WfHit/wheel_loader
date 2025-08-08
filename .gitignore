@@ -3,6 +3,7 @@
 *.gch
 *.pyc
 *~
+*.bak
 .*.swp
 .context
 .cproject
