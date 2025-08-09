@@ -101,6 +101,13 @@ private:
 
 	/**
 	 * @brief Main control pipeline stages
+	 *
+	 * The control loop executes these stages sequentially at 50Hz:
+	 * 1. update_sensors() - Read encoder and actuator status
+	 * 2. process_commands() - Handle incoming boom commands via uORB
+	 * 3. update_motion_planning() - Generate smooth trajectories
+	 * 4. execute_control() - Compute motor commands using PID control
+	 * 5. publish_telemetry() - Send status updates via uORB
 	 */
 	void update_sensors();
 	void process_commands();
@@ -109,29 +116,32 @@ private:
 	void publish_telemetry();
 
 	/**
-	 * @brief System management
+	 * @brief System management and safety functions
+	 *
+	 * These functions handle parameter updates, emergency conditions,
+	 * and overall system health monitoring for safe boom operation.
 	 */
 	void update_parameters();
 	void handle_emergency_stop();
 	bool check_system_health();
 
-	// Core components (using composition instead of raw pointers)
-	BoomKinematics _kinematics;
-	BoomSensorInterface _sensor_interface;
-	BoomMotionController _motion_controller;
-	BoomActuatorInterface _actuator_interface;
-	BoomStateManager _state_manager;
+	// Core components (using composition for better maintainability and testing)
+	BoomKinematics _kinematics;                    // Forward/inverse kinematics calculations
+	BoomSensorInterface _sensor_interface;         // AS5600 encoder reading and processing  
+	BoomMotionController _motion_controller;       // Trajectory generation and PID control
+	BoomActuatorInterface _actuator_interface;     // H-bridge motor driver interface
+	BoomStateManager _state_manager;               // State machine and safety management
 
-	// Current system state
-	float _current_boom_angle{0.0f};          // rad
-	float _current_actuator_length{0.0f};     // mm
-	float _target_boom_angle{0.0f};           // rad
-	hrt_abstime _last_command_time{0};
+	// Current system state (updated each control cycle)
+	float _current_boom_angle{0.0f};               // Current boom angle (rad)
+	float _current_actuator_length{0.0f};          // Current hydraulic cylinder length (mm)
+	float _target_boom_angle{0.0f};                // Commanded target boom angle (rad)
+	hrt_abstime _last_command_time{0};             // Timestamp of last received command
 
-	// uORB interface
-	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};
-	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)};
+	// uORB interface (using modern uORB::Publication/Subscription classes)
+	uORB::Subscription _boom_command_sub{ORB_ID(boom_command)};           // Incoming position/velocity commands
+	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};   // Parameter change notifications
+	uORB::Publication<boom_status_s> _boom_status_pub{ORB_ID(boom_status)}; // Outgoing status telemetry
 
 	// Performance monitoring
 	perf_counter_t _cycle_perf;

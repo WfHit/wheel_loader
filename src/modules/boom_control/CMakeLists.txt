@@ -31,6 +31,12 @@
 #
 ############################################################################
 
+# Boom Control Module for Wheel Loader
+# 
+# Controls the hydraulic boom lifting system using composition-based architecture
+# with separate interfaces for sensors, motion control, actuators, and state management.
+# Supports position and velocity control modes with safety features.
+
 px4_add_module(
 	MODULE modules__boom_control
 	MAIN boom_control
