@@ -129,7 +129,7 @@ private:
 
 	// uORB interface
 	uORB::SubscriptionMultiArray<hbridge_status_s, 4> _hbridge_status_sub{ORB_ID::hbridge_status};
-	uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
+	orb_advert_t _hbridge_command_pub{nullptr};
 
 	// Actuator parameters
 	DEFINE_PARAMETERS(

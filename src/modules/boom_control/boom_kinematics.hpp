@@ -111,13 +111,12 @@
  *
  * @section parameters Key Parameters
  *
- * - `actuator_mount_distance`: Distance from boom pivot to actuator mount point
- * - `actuator_mount_angle`: Angle of actuator mount from horizontal
- * - `actuator_to_pivot_length`: Distance from actuator attachment to boom pivot
- * - `boom_length`: Length of boom from pivot to bucket attachment
- * - `actuator_to_bucket_length`: Distance between actuator joint and bucket
+ * - `actuator_base_to_pivot_length`: Distance from boom pivot to actuator base mount point
+ * - `actuator_base_to_pivot_angle`: Angle of actuator base mount from horizontal
+ * - `actuator_joint_to_pivot_length`: Distance from actuator joint attachment to boom pivot
+ * - `actuator_joint_to_boom_end_length`: Distance between actuator joint and boom end
  * - `actuator_length_at_zero`: Actuator length when boom is at zero angle
- * - `actuator_boom_angle`: Calculated angle between actuator and boom centerline
+ * - `actuator_joint_to_boom_diff_angle`: Calculated angle between actuator joint and boom centerline
  * - `encoder_angle_at_min/max`: AS5600 calibration points
  *
  * @section usage Usage Example
@@ -141,16 +140,13 @@ class BoomKinematics : public ModuleParams
 public:
 	struct Configuration {
 		// Chassis mounting points (mm from boom_pivot origin)
-		float actuator_mount_distance;       // mm - Distance from boom pivot to actuator mount point
+		float actuator_base_to_pivot_length;   // mm - Distance from boom pivot to actuator base mount point
 
 		// Boom geometry
 		float boom_length;                   // mm - Length of boom from pivot to bucket joint
-		float actuator_to_pivot_length;      // mm - Distance from actuator attachment to boom pivot
-		float actuator_to_bucket_length;     // mm - Length between actuator joint and bucket attachment
+		float actuator_joint_to_pivot_length;      // mm - Distance from actuator joint attachment to boom pivot
+		float actuator_joint_to_boom_end_length;     // mm - Length between actuator joint and boom end attachment
 		float actuator_length_at_zero;       // mm - Actuator length when boom is at zero angle
-		float actuator_boom_angle;           // rad - Calculated angle between actuator joint and boom centerline
-		float boom_angle_min;                // rad - Minimum boom angle (lowest position)
-		float boom_angle_max;                // rad - Maximum boom angle (highest position)
 
 		// AS5600 encoder calibration
 		float encoder_angle_at_min;          // deg - Encoder reading at minimum extension
@@ -160,21 +156,9 @@ public:
 		// System dimensions
 		float pivot_height_from_ground;      // mm - Height of boom pivot from ground level
 
-		// Actuator limits
-		float actuator_min_length;           // mm - Minimum cylinder extension
-		float actuator_max_length;           // mm - Maximum cylinder extension
-
-		// Boom angle limits (boom centerline from horizontal)
-		float boom_angle_min;                // rad - Minimum boom angle (lowest position)
-		float boom_angle_max;                // rad - Maximum boom angle (highest position)
-
-		// AS5600 encoder calibration
-		float encoder_angle_at_min;          // deg - Encoder reading at minimum extension
-		float encoder_angle_at_max;          // deg - Encoder reading at maximum extension
-
 		// Computed values (cached when parameters change)
-		float actuator_mount_angle;          // rad - Calculated angle AOB (actuator_mount, boom_pivot, actuator_boom_joint)
-		float actuator_boom_angle;           // rad - Calculated angle between actuator joint and boom centerline
+		float actuator_base_to_pivot_angle;          // rad - Calculated angle AOB (actuator_base, boom_pivot, actuator_joint)
+		float actuator_joint_to_boom_diff_angle;           // rad - Calculated angle between actuator joint and boom centerline
 
 	};
 
@@ -281,10 +265,10 @@ private:
 
 	// Kinematic parameters
 	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::BOOM_ACT_MOUNT_DIST>) _param_pivot_mount_length,
+		(ParamFloat<px4::params::BOOM_PIV_ACT_BASE_LEN>) _param_actuator_base_to_pivot_length,
 		(ParamFloat<px4::params::BOOM_PIV_BUK_LEN>) _param_boom_length,
-		(ParamFloat<px4::params::BOOM_ACT_PIV_LEN>) _param_actuator_to_pivot_length,
-		(ParamFloat<px4::params::BOOM_ACT_BUK_LEN>) _param_actuator_to_bucket_length,
+		(ParamFloat<px4::params::BOOM_ACT_JNT_PIV_LEN>) _param_actuator_joint_to_pivot_length,
+		(ParamFloat<px4::params::BOOM_ACT_JNT_BOOM_END_LEN>) _param_actuator_joint_to_boom_end_length,
 		(ParamFloat<px4::params::BOOM_ACT_ZERO_LEN>) _param_actuator_zero_length,
 		(ParamFloat<px4::params::BOOM_PIV_HEIGHT>) _param_pivot_height,
 		(ParamFloat<px4::params::BOOM_SENS_OFFSET>) _param_sensor_boom_offset,
@@ -301,18 +285,18 @@ private:
 	float calculate_pivot_angle_in_actuator_triangle(float actuator_length) const;
 
 	/**
-	 * @brief Calculate angle at actuator mount in actuator triangle
+	 * @brief Calculate angle at actuator base mount in actuator triangle
 	 * @param actuator_length Cylinder extension in mm
-	 * @return Angle at actuator mount in radians
+	 * @return Angle at actuator base mount in radians
 	 */
-	float calculate_mount_angle_in_actuator_triangle(float actuator_length) const;
+	float calculate_base_mount_angle_in_actuator_triangle(float actuator_length) const;
 
 	/**
 	 * @brief Calculate angle at boom joint in actuator triangle
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Angle at boom joint in radians
 	 */
-	float calculate_boom_joint_angle_in_actuator_triangle(float actuator_length) const;
+	float calculate_actuator_joint_angle_in_actuator_triangle(float actuator_length) const;
 
 	/**
 	 * @brief Calculate angle of actuator joint from horizontal
@@ -340,26 +324,20 @@ private:
 	float law_of_cosines_side(float a, float b, float gamma_angle) const;
 
 	/**
-	 * @brief Calculate distance from pivot to actuator mount
+	 * @brief Calculate actuator joint to boom differential angle using triangle geometry
+	 * @return Angle in radians
+	 */
+	float calculate_actuator_joint_to_boom_diff_angle() const;
+
+	/**
+	 * @brief Calculate actuator base to pivot angle using triangle geometry
+	 * @return Angle in radians
+	 */
+	float calculate_actuator_base_to_pivot_angle() const;
+
+	/**
+	 * @brief Get actuator base to pivot distance
 	 * @return Distance in mm
 	 */
-	float calculate_pivot_to_mount_distance() const;
-
-	/**
-	 * @brief Calculate angle of actuator mount from horizontal
-	 * @return Angle in radians
-	 */
-	float calculate_mount_angle_from_horizontal() const;
-
-	/**
-	 * @brief Calculate actuator boom angle using triangle geometry
-	 * @return Angle in radians
-	 */
-	float calculate_actuator_boom_angle() const;
-
-	/**
-	 * @brief Calculate actuator mount angle AOB using triangle geometry
-	 * @return Angle in radians
-	 */
-	float calculate_actuator_mount_angle() const;
+	float get_actuator_base_to_pivot_length() const;
 };

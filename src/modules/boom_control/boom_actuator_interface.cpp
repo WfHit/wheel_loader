@@ -82,7 +82,11 @@ bool BoomActuatorInterface::send_command(const ActuatorCommand &command)
 	}
 
 	// Publish command
-	_hbridge_command_pub.publish(hbridge_cmd);
+	if (_hbridge_command_pub == nullptr) {
+		_hbridge_command_pub = orb_advertise(ORB_ID(hbridge_command), &hbridge_cmd);
+	} else {
+		orb_publish(ORB_ID(hbridge_command), _hbridge_command_pub, &hbridge_cmd);
+	}
 
 	_last_command = command;
 	_last_command_time = hrt_absolute_time();
