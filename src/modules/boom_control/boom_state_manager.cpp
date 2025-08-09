@@ -34,7 +34,7 @@
 #include "boom_state_manager.hpp"
 #include <px4_platform_common/log.h>
 
-BoomStateManager::BoomStateManager(ModuleParams* parent) :
+BoomStateManager::BoomStateManager(ModuleParams *parent) :
 	ModuleParams(parent)
 {
 	_state_entry_time = hrt_absolute_time();
@@ -44,60 +44,69 @@ void BoomStateManager::update(bool sensor_valid, bool actuator_healthy, bool at_
 {
 	// State machine logic
 	switch (_current_state) {
-		case OperationalState::UNINITIALIZED:
-			if (sensor_valid && actuator_healthy) {
-				if (_param_calibration_required.get() && _calibration_state == CalibrationState::NOT_CALIBRATED) {
-					request_transition(OperationalState::CALIBRATING);
-				} else {
-					request_transition(OperationalState::IDLE);
-				}
-			}
-			break;
+	case OperationalState::UNINITIALIZED:
+		if (sensor_valid && actuator_healthy) {
+			if (_param_calibration_required.get() && _calibration_state == CalibrationState::NOT_CALIBRATED) {
+				request_transition(OperationalState::CALIBRATING);
 
-		case OperationalState::CALIBRATING:
-			// Calibration logic would go here
-			// For now, just timeout after a while
-			if (hrt_elapsed_time(&_state_entry_time) > (_param_calibration_timeout.get() * 1000000)) {
-				_calibration_state = CalibrationState::COMPLETE;
+			} else {
 				request_transition(OperationalState::IDLE);
 			}
-			break;
+		}
 
-		case OperationalState::IDLE:
-			// Ready to accept commands
-			break;
+		break;
 
-		case OperationalState::MOVING:
-			if (at_target) {
-				request_transition(OperationalState::HOLDING);
-			}
-			break;
+	case OperationalState::CALIBRATING:
 
-		case OperationalState::HOLDING:
-			// Maintaining position
-			break;
+		// Calibration logic would go here
+		// For now, just timeout after a while
+		if (hrt_elapsed_time(&_state_entry_time) > (_param_calibration_timeout.get() * 1000000)) {
+			_calibration_state = CalibrationState::COMPLETE;
+			request_transition(OperationalState::IDLE);
+		}
 
-		case OperationalState::ERROR:
-			// Check if errors are cleared
-			if (sensor_valid && actuator_healthy && (_error_flags == 0)) {
-				request_transition(OperationalState::IDLE);
-			}
-			break;
+		break;
 
-		case OperationalState::EMERGENCY_STOP:
-			// Emergency stop - can only be cleared manually
-			break;
+	case OperationalState::IDLE:
+		// Ready to accept commands
+		break;
+
+	case OperationalState::MOVING:
+		if (at_target) {
+			request_transition(OperationalState::HOLDING);
+		}
+
+		break;
+
+	case OperationalState::HOLDING:
+		// Maintaining position
+		break;
+
+	case OperationalState::ERROR:
+
+		// Check if errors are cleared
+		if (sensor_valid && actuator_healthy && (_error_flags == 0)) {
+			request_transition(OperationalState::IDLE);
+		}
+
+		break;
+
+	case OperationalState::EMERGENCY_STOP:
+		// Emergency stop - can only be cleared manually
+		break;
 	}
 
 	// Monitor system health
 	if (!sensor_valid) {
 		set_error(ERROR_SENSOR_FAULT, "Sensor fault");
+
 	} else {
 		clear_error(ERROR_SENSOR_FAULT);
 	}
 
 	if (!actuator_healthy) {
 		set_error(ERROR_ACTUATOR_FAULT, "Actuator fault");
+
 	} else {
 		clear_error(ERROR_ACTUATOR_FAULT);
 	}
@@ -145,39 +154,43 @@ bool BoomStateManager::update_calibration(float position, bool at_limit)
 
 	// Simple calibration state machine
 	switch (_calibration_state) {
-		case CalibrationState::FINDING_MIN:
-			if (at_limit) {
-				_calibration_min = position;
-				_calibration_state = CalibrationState::FINDING_MAX;
-			}
-			break;
+	case CalibrationState::FINDING_MIN:
+		if (at_limit) {
+			_calibration_min = position;
+			_calibration_state = CalibrationState::FINDING_MAX;
+		}
 
-		case CalibrationState::FINDING_MAX:
-			if (at_limit) {
-				_calibration_max = position;
-				_calibration_range = _calibration_max - _calibration_min;
-				_calibration_state = CalibrationState::SETTLING;
-			}
-			break;
+		break;
 
-		case CalibrationState::SETTLING:
-			// Wait for system to settle
-			if (hrt_elapsed_time(&_calibration_start_time) > (_param_settle_time.get() * 1000000)) {
-				_calibration_state = CalibrationState::COMPLETE;
-				request_transition(OperationalState::IDLE);
-				PX4_INFO("Calibration complete: range = %.2f", (double)_calibration_range);
-				return false; // Calibration finished
-			}
-			break;
+	case CalibrationState::FINDING_MAX:
+		if (at_limit) {
+			_calibration_max = position;
+			_calibration_range = _calibration_max - _calibration_min;
+			_calibration_state = CalibrationState::SETTLING;
+		}
 
-		default:
-			break;
+		break;
+
+	case CalibrationState::SETTLING:
+
+		// Wait for system to settle
+		if (hrt_elapsed_time(&_calibration_start_time) > (_param_settle_time.get() * 1000000)) {
+			_calibration_state = CalibrationState::COMPLETE;
+			request_transition(OperationalState::IDLE);
+			PX4_INFO("Calibration complete: range = %.2f", (double)_calibration_range);
+			return false; // Calibration finished
+		}
+
+		break;
+
+	default:
+		break;
 	}
 
 	return true; // Continue calibration
 }
 
-void BoomStateManager::emergency_stop(const char* reason)
+void BoomStateManager::emergency_stop(const char *reason)
 {
 	_current_state = OperationalState::EMERGENCY_STOP;
 	_state_entry_time = hrt_absolute_time();
@@ -211,8 +224,8 @@ BoomStateManager::StateInfo BoomStateManager::get_state_info() const
 bool BoomStateManager::is_operational() const
 {
 	return (_current_state == OperationalState::IDLE ||
-	        _current_state == OperationalState::MOVING ||
-	        _current_state == OperationalState::HOLDING);
+		_current_state == OperationalState::MOVING ||
+		_current_state == OperationalState::HOLDING);
 }
 
 float BoomStateManager::get_calibration_progress() const
@@ -223,16 +236,20 @@ float BoomStateManager::get_calibration_progress() const
 
 	// Simple progress calculation
 	switch (_calibration_state) {
-		case CalibrationState::FINDING_MIN:
-			return 25.0f;
-		case CalibrationState::FINDING_MAX:
-			return 50.0f;
-		case CalibrationState::SETTLING:
-			return 75.0f;
-		case CalibrationState::COMPLETE:
-			return 100.0f;
-		default:
-			return 0.0f;
+	case CalibrationState::FINDING_MIN:
+		return 25.0f;
+
+	case CalibrationState::FINDING_MAX:
+		return 50.0f;
+
+	case CalibrationState::SETTLING:
+		return 75.0f;
+
+	case CalibrationState::COMPLETE:
+		return 100.0f;
+
+	default:
+		return 0.0f;
 	}
 }
 
@@ -240,38 +257,38 @@ bool BoomStateManager::is_transition_valid(OperationalState from, OperationalSta
 {
 	// Define valid state transitions
 	switch (from) {
-		case OperationalState::UNINITIALIZED:
-			return (to == OperationalState::CALIBRATING || to == OperationalState::IDLE ||
-			        to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::UNINITIALIZED:
+		return (to == OperationalState::CALIBRATING || to == OperationalState::IDLE ||
+			to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::CALIBRATING:
-			return (to == OperationalState::IDLE || to == OperationalState::ERROR ||
-			        to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::CALIBRATING:
+		return (to == OperationalState::IDLE || to == OperationalState::ERROR ||
+			to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::IDLE:
-			return (to == OperationalState::MOVING || to == OperationalState::CALIBRATING ||
-			        to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::IDLE:
+		return (to == OperationalState::MOVING || to == OperationalState::CALIBRATING ||
+			to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::MOVING:
-			return (to == OperationalState::HOLDING || to == OperationalState::IDLE ||
-			        to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::MOVING:
+		return (to == OperationalState::HOLDING || to == OperationalState::IDLE ||
+			to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::HOLDING:
-			return (to == OperationalState::MOVING || to == OperationalState::IDLE ||
-			        to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::HOLDING:
+		return (to == OperationalState::MOVING || to == OperationalState::IDLE ||
+			to == OperationalState::ERROR || to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::ERROR:
-			return (to == OperationalState::IDLE || to == OperationalState::EMERGENCY_STOP);
+	case OperationalState::ERROR:
+		return (to == OperationalState::IDLE || to == OperationalState::EMERGENCY_STOP);
 
-		case OperationalState::EMERGENCY_STOP:
-			return (to == OperationalState::IDLE); // Only through clear_emergency_stop()
+	case OperationalState::EMERGENCY_STOP:
+		return (to == OperationalState::IDLE); // Only through clear_emergency_stop()
 
-		default:
-			return false;
+	default:
+		return false;
 	}
 }
 
-void BoomStateManager::set_error(uint32_t flag, const char* message)
+void BoomStateManager::set_error(uint32_t flag, const char *message)
 {
 	_error_flags |= flag;
 	_last_error_message = message;

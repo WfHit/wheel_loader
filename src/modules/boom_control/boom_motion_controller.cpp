@@ -35,7 +35,7 @@
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
 
-BoomMotionController::BoomMotionController(ModuleParams* parent) :
+BoomMotionController::BoomMotionController(ModuleParams *parent) :
 	ModuleParams(parent)
 {
 }
@@ -93,8 +93,7 @@ BoomMotionController::update_trajectory(float current_position, float dt)
 	}
 
 	switch (_mode) {
-		case ControlMode::POSITION:
-		{
+	case ControlMode::POSITION: {
 			// Update trajectory generator
 			Vector3f current_pos(current_position, 0.0f, 0.0f);
 			Vector3f current_vel(_current_traj_vel(0), 0.0f, 0.0f);
@@ -109,62 +108,62 @@ BoomMotionController::update_trajectory(float current_position, float dt)
 				max_vel(0) = _velocity_limit_override;
 			}
 
-		_trajectory_generator.setMaxVelocity(max_vel);
-		_trajectory_generator.setMaxAcceleration(max_acc);
-		_trajectory_generator.setMaxJerk(max_jerk(0)); // Use first component only
+			_trajectory_generator.setMaxVelocity(max_vel);
+			_trajectory_generator.setMaxAcceleration(max_acc);
+			_trajectory_generator.setMaxJerk(max_jerk(0)); // Use first component only
 
-		// Update trajectory using PositionSmoothing
-		current_pos = Vector3f(current_position, 0.0f, 0.0f);
-		Vector3f waypoints[3] = {
-			current_pos,                                    // past waypoint
-			Vector3f(_target_position, 0.0f, 0.0f),       // target
-			Vector3f(_target_position, 0.0f, 0.0f)        // next target (same as current for simplicity)
-		};
-		Vector3f ff_velocity(0.0f, 0.0f, 0.0f);
-		PositionSmoothing::PositionSmoothingSetpoints setpoints;
+			// Update trajectory using PositionSmoothing
+			current_pos = Vector3f(current_position, 0.0f, 0.0f);
+			Vector3f waypoints[3] = {
+				current_pos,                                    // past waypoint
+				Vector3f(_target_position, 0.0f, 0.0f),       // target
+				Vector3f(_target_position, 0.0f, 0.0f)        // next target (same as current for simplicity)
+			};
+			Vector3f ff_velocity(0.0f, 0.0f, 0.0f);
+			PositionSmoothing::PositionSmoothingSetpoints setpoints;
 
-		_trajectory_generator.generateSetpoints(current_pos, waypoints, ff_velocity, dt, false, setpoints);
+			_trajectory_generator.generateSetpoints(current_pos, waypoints, ff_velocity, dt, false, setpoints);
 
-		// Extract trajectory output (use only x-axis since boom is 1D)
-		_current_traj_pos = Vector3f(setpoints.position(0), 0.0f, 0.0f);
-		_current_traj_vel = Vector3f(setpoints.velocity(0), 0.0f, 0.0f);
-		_current_traj_acc = Vector3f(setpoints.acceleration(0), 0.0f, 0.0f);
+			// Extract trajectory output (use only x-axis since boom is 1D)
+			_current_traj_pos = Vector3f(setpoints.position(0), 0.0f, 0.0f);
+			_current_traj_vel = Vector3f(setpoints.velocity(0), 0.0f, 0.0f);
+			_current_traj_acc = Vector3f(setpoints.acceleration(0), 0.0f, 0.0f);
 
-		setpoint.position = _current_traj_pos(0);
-		setpoint.velocity = _current_traj_vel(0);
-		setpoint.acceleration = _current_traj_acc(0);
-		setpoint.feedforward = calculate_feedforward(setpoint);
+			setpoint.position = _current_traj_pos(0);
+			setpoint.velocity = _current_traj_vel(0);
+			setpoint.acceleration = _current_traj_acc(0);
+			setpoint.feedforward = calculate_feedforward(setpoint);
 			break;
 		}
 
-		case ControlMode::VELOCITY:
-			setpoint.position = current_position; // Don't care about position
-			setpoint.velocity = _target_velocity;
-			setpoint.acceleration = 0.0f;
-			setpoint.feedforward = 0.0f;
-			break;
+	case ControlMode::VELOCITY:
+		setpoint.position = current_position; // Don't care about position
+		setpoint.velocity = _target_velocity;
+		setpoint.acceleration = 0.0f;
+		setpoint.feedforward = 0.0f;
+		break;
 
-		case ControlMode::MANUAL:
-			// Manual mode handled elsewhere
-			setpoint.position = current_position;
-			setpoint.velocity = 0.0f;
-			setpoint.acceleration = 0.0f;
-			setpoint.feedforward = 0.0f;
-			break;
+	case ControlMode::MANUAL:
+		// Manual mode handled elsewhere
+		setpoint.position = current_position;
+		setpoint.velocity = 0.0f;
+		setpoint.acceleration = 0.0f;
+		setpoint.feedforward = 0.0f;
+		break;
 
-		default:
-			setpoint.position = current_position;
-			setpoint.velocity = 0.0f;
-			setpoint.acceleration = 0.0f;
-			setpoint.feedforward = 0.0f;
-			break;
+	default:
+		setpoint.position = current_position;
+		setpoint.velocity = 0.0f;
+		setpoint.acceleration = 0.0f;
+		setpoint.feedforward = 0.0f;
+		break;
 	}
 
 	return setpoint;
 }
 
 BoomMotionController::ControlOutput BoomMotionController::compute_control(
-	const MotionSetpoint& setpoint,
+	const MotionSetpoint &setpoint,
 	float current_position,
 	float current_velocity,
 	float dt)
@@ -182,8 +181,7 @@ BoomMotionController::ControlOutput BoomMotionController::compute_control(
 	float control_output = 0.0f;
 
 	switch (_mode) {
-		case ControlMode::POSITION:
-		{
+	case ControlMode::POSITION: {
 			// Position control with velocity feedforward
 			float position_error = setpoint.position - current_position;
 
@@ -201,12 +199,11 @@ BoomMotionController::ControlOutput BoomMotionController::compute_control(
 			static constexpr float POSITION_TOLERANCE = 0.01f; // ~0.5 degrees
 			static constexpr float VELOCITY_TOLERANCE = 0.001f;
 			output.at_target = (fabsf(position_error) < POSITION_TOLERANCE &&
-			                    fabsf(current_velocity) < VELOCITY_TOLERANCE);
+					    fabsf(current_velocity) < VELOCITY_TOLERANCE);
 			break;
 		}
 
-		case ControlMode::VELOCITY:
-		{
+	case ControlMode::VELOCITY: {
 			_velocity_controller.setSetpoint(setpoint.velocity);
 			control_output = _velocity_controller.update(current_velocity, dt);
 			control_output += _load_compensation;
@@ -215,18 +212,17 @@ BoomMotionController::ControlOutput BoomMotionController::compute_control(
 			break;
 		}
 
-		case ControlMode::MANUAL:
-		{
+	case ControlMode::MANUAL: {
 			// Manual mode - pass through (would be handled by external command)
 			control_output = 0.0f;
 			output.at_target = true;
 			break;
 		}
 
-		default:
-			control_output = 0.0f;
-			output.at_target = true;
-			break;
+	default:
+		control_output = 0.0f;
+		output.at_target = true;
+		break;
 	}
 
 	// Apply deadzone compensation
@@ -264,6 +260,7 @@ void BoomMotionController::emergency_stop()
 float BoomMotionController::apply_deadzone_compensation(float output) const
 {
 	float deadzone = _param_deadzone.get();
+
 	if (fabsf(output) < deadzone) {
 		return 0.0f;
 	}
@@ -271,6 +268,7 @@ float BoomMotionController::apply_deadzone_compensation(float output) const
 	// Compensate for deadzone by shifting output
 	if (output > 0.0f) {
 		return output + deadzone;
+
 	} else {
 		return output - deadzone;
 	}
@@ -281,7 +279,7 @@ float BoomMotionController::apply_limits(float output) const
 	return math::constrain(output, -1.0f, 1.0f);
 }
 
-float BoomMotionController::calculate_feedforward(const MotionSetpoint& setpoint) const
+float BoomMotionController::calculate_feedforward(const MotionSetpoint &setpoint) const
 {
 	// Simple feedforward based on acceleration
 	return setpoint.acceleration * _param_feedforward_gain.get();
