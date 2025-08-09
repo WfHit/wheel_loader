@@ -61,7 +61,7 @@ public:
 		hrt_abstime timestamp;    // Data timestamp
 	};
 
-	explicit BoomSensorInterface(ModuleParams* parent);
+	explicit BoomSensorInterface(ModuleParams *parent);
 
 	/**
 	 * @brief Initialize sensor interface
@@ -75,7 +75,7 @@ public:
 	 * @param data Output sensor data structure
 	 * @return True if new valid data available
 	 */
-	bool update(SensorData& data);
+	bool update(SensorData &data);
 
 	/**
 	 * @brief Perform sensor calibration
@@ -136,5 +136,5 @@ private:
 	 * @param data Sensor data to validate
 	 * @return True if data is valid
 	 */
-	bool validate_data(const SensorData& data) const;
+	bool validate_data(const SensorData &data) const;
 };

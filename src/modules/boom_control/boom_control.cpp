@@ -83,6 +83,7 @@ bool BoomControl::init()
 
 	// Update configurations
 	_kinematics.update_configuration();
+
 	if (!_kinematics.validate_configuration()) {
 		PX4_ERR("Invalid kinematic configuration");
 		return false;
@@ -93,13 +94,13 @@ bool BoomControl::init()
 
 	// Start periodic execution at configured rate
 	float update_rate = _param_update_rate.get();
-	
+
 	// Validate update rate parameter
 	if (update_rate <= 0.0f || update_rate > 200.0f) {
 		PX4_WARN("Invalid update rate %.1f Hz, using default 50.0 Hz", (double)update_rate);
 		update_rate = 50.0f;
 	}
-	
+
 	uint32_t interval_us = static_cast<uint32_t>(1000000.0f / update_rate);
 	interval_us = math::max(interval_us, CONTROL_INTERVAL_US);  // Minimum 50 Hz
 
@@ -133,12 +134,14 @@ void BoomControl::update_sensors()
 {
 	// Check for parameter updates
 	parameter_update_s param_update;
+
 	if (_parameter_update_sub.update(&param_update)) {
 		update_parameters();
 	}
 
 	// Update sensor readings
 	BoomSensorInterface::SensorData sensor_data;
+
 	if (_sensor_interface.update(sensor_data)) {
 		// Convert to boom angle using kinematics
 		_current_actuator_length = sensor_data.actuator_length;
@@ -160,6 +163,7 @@ void BoomControl::update_sensors()
 void BoomControl::process_commands()
 {
 	boom_command_s command;
+
 	if (_boom_command_sub.update(&command)) {
 		_last_command_time = hrt_absolute_time();
 
@@ -178,13 +182,14 @@ void BoomControl::process_commands()
 		// Process based on control mode
 		switch (command.control_mode) {
 		case 0: // Position control
+
 			// Validate position command bounds
-			if (!isfinite(command.lift_angle_cmd) || 
+			if (!isfinite(command.lift_angle_cmd) ||
 			    fabsf(command.lift_angle_cmd) > M_PI_F) {
 				PX4_WARN("Invalid position command: %.2f rad", (double)command.lift_angle_cmd);
 				break;
 			}
-			
+
 			_target_boom_angle = command.lift_angle_cmd;
 			_motion_controller.set_mode(BoomMotionController::ControlMode::POSITION);
 			_motion_controller.set_target_position(_target_boom_angle, command.max_lift_velocity);
@@ -192,13 +197,14 @@ void BoomControl::process_commands()
 			break;
 
 		case 1: // Velocity control
-			// Validate velocity command bounds  
-			if (!isfinite(command.lift_velocity_cmd) || 
+
+			// Validate velocity command bounds
+			if (!isfinite(command.lift_velocity_cmd) ||
 			    fabsf(command.lift_velocity_cmd) > 5.0f) { // 5 rad/s max
 				PX4_WARN("Invalid velocity command: %.2f rad/s", (double)command.lift_velocity_cmd);
 				break;
 			}
-			
+
 			_motion_controller.set_mode(BoomMotionController::ControlMode::VELOCITY);
 			_motion_controller.set_target_velocity(command.lift_velocity_cmd);
 			_state_manager.request_transition(BoomStateManager::OperationalState::MOVING);
@@ -217,6 +223,7 @@ void BoomControl::process_commands()
 
 	// Check for command timeout
 	static constexpr hrt_abstime COMMAND_TIMEOUT_US = 1000000; // 1 second
+
 	if ((hrt_absolute_time() - _last_command_time) > COMMAND_TIMEOUT_US) {
 		if (_state_manager.get_state_info().state == BoomStateManager::OperationalState::MOVING) {
 			_state_manager.request_transition(BoomStateManager::OperationalState::HOLDING);
@@ -244,6 +251,7 @@ void BoomControl::update_motion_planning()
 		// Check if at target
 		static constexpr float POSITION_TOLERANCE = 0.01f; // ~0.5 degrees
 		static constexpr float VELOCITY_TOLERANCE = 0.001f;
+
 		if (fabsf(setpoint.position - _current_boom_angle) < POSITION_TOLERANCE &&
 		    fabsf(setpoint.velocity) < VELOCITY_TOLERANCE) {
 			_state_manager.request_transition(BoomStateManager::OperationalState::HOLDING);
@@ -285,11 +293,11 @@ void BoomControl::execute_control()
 
 	// Compute control output
 	auto control_output = _motion_controller.compute_control(
-		setpoint,
-		_current_boom_angle,
-		current_velocity,
-		dt
-	);
+				      setpoint,
+				      _current_boom_angle,
+				      current_velocity,
+				      dt
+			      );
 
 	// Send to actuator
 	BoomActuatorInterface::ActuatorCommand actuator_cmd{};
@@ -314,12 +322,15 @@ void BoomControl::publish_telemetry()
 	static float last_angle = 0.0f;
 	static hrt_abstime last_time = 0;
 	hrt_abstime now = hrt_absolute_time();
+
 	if (last_time > 0) {
 		float dt = (now - last_time) * 1e-6f;
+
 		if (dt > 0.0f) {
 			status.velocity = (_current_boom_angle - last_angle) / dt;
 		}
 	}
+
 	last_angle = _current_boom_angle;
 	last_time = now;
 
@@ -329,6 +340,7 @@ void BoomControl::publish_telemetry()
 
 	// Motor information from actuator interface
 	BoomActuatorInterface::ActuatorStatus actuator_status;
+
 	if (_actuator_interface.update_status(actuator_status)) {
 		status.motor_current = actuator_status.current;
 		status.motor_voltage = actuator_status.voltage;
@@ -341,21 +353,25 @@ void BoomControl::publish_telemetry()
 
 	// State mapping
 	auto state_info = _state_manager.get_state_info();
+
 	switch (state_info.state) {
-		case BoomStateManager::OperationalState::IDLE:
-		case BoomStateManager::OperationalState::HOLDING:
-			status.state = 2; // ready
-			break;
-		case BoomStateManager::OperationalState::MOVING:
-			status.state = 3; // moving
-			break;
-		case BoomStateManager::OperationalState::ERROR:
-		case BoomStateManager::OperationalState::EMERGENCY_STOP:
-			status.state = 4; // error
-			break;
-		default:
-			status.state = 0; // unknown
-			break;
+	case BoomStateManager::OperationalState::IDLE:
+	case BoomStateManager::OperationalState::HOLDING:
+		status.state = 2; // ready
+		break;
+
+	case BoomStateManager::OperationalState::MOVING:
+		status.state = 3; // moving
+		break;
+
+	case BoomStateManager::OperationalState::ERROR:
+	case BoomStateManager::OperationalState::EMERGENCY_STOP:
+		status.state = 4; // error
+		break;
+
+	default:
+		status.state = 0; // unknown
+		break;
 	}
 
 	_boom_status_pub.publish(status);
@@ -415,6 +431,7 @@ int BoomControl::task_spawn(int argc, char *argv[])
 		if (instance->init()) {
 			return PX4_OK;
 		}
+
 	} else {
 		PX4_ERR("alloc failed");
 	}
@@ -450,6 +467,7 @@ int BoomControl::custom_command(int argc, char *argv[])
 			// Clear emergency stop
 			if (get_instance()->_state_manager.clear_emergency_stop()) {
 				return PX4_OK;
+
 			} else {
 				return PX4_ERROR;
 			}

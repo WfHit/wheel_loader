@@ -77,11 +77,11 @@ public:
 		OperationalState state;
 		CalibrationState calibration_state;
 		uint32_t error_flags;
-		const char* status_message;
+		const char *status_message;
 		hrt_abstime state_entry_time;
 	};
 
-	explicit BoomStateManager(ModuleParams* parent);
+	explicit BoomStateManager(ModuleParams *parent);
 
 	/**
 	 * @brief Update state machine
@@ -116,7 +116,7 @@ public:
 	 * @brief Trigger emergency stop
 	 * @param reason Reason for emergency stop
 	 */
-	void emergency_stop(const char* reason);
+	void emergency_stop(const char *reason);
 
 	/**
 	 * @brief Clear emergency stop
@@ -156,7 +156,7 @@ private:
 
 	// Error tracking
 	uint32_t _error_flags{0};
-	const char* _last_error_message{nullptr};
+	const char *_last_error_message{nullptr};
 
 	// State management parameters
 	DEFINE_PARAMETERS(
@@ -178,7 +178,7 @@ private:
 	 * @param flag Error flag to set
 	 * @param message Error message
 	 */
-	void set_error(uint32_t flag, const char* message);
+	void set_error(uint32_t flag, const char *message);
 
 	/**
 	 * @brief Clear error flag

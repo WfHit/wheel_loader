@@ -54,7 +54,7 @@ using namespace time_literals;
 
 // Component includes (required for composition)
 #include "boom_kinematics.hpp"
-#include "boom_sensor_interface.hpp" 
+#include "boom_sensor_interface.hpp"
 #include "boom_motion_controller.hpp"
 #include "boom_actuator_interface.hpp"
 #include "boom_state_manager.hpp"
@@ -64,7 +64,7 @@ using namespace time_literals;
  *
  * Coordinates boom actuator components through a well-defined architecture:
  * - Sensor reading and processing (BoomSensorInterface)
- * - Kinematic calculations (BoomKinematics) 
+ * - Kinematic calculations (BoomKinematics)
  * - Motion planning and control (BoomMotionController)
  * - Actuator commanding (BoomActuatorInterface)
  * - State management and safety (BoomStateManager)
@@ -80,8 +80,8 @@ using namespace time_literals;
  * - Parameter validation and bounds checking
  */
 class BoomControl final : public ModuleBase<BoomControl>,
-                          public ModuleParams,
-                          public px4::ScheduledWorkItem
+	public ModuleParams,
+	public px4::ScheduledWorkItem
 {
 public:
 	static constexpr uint32_t CONTROL_INTERVAL_US = 20000; // 50 Hz

@@ -71,7 +71,7 @@ public:
 		hrt_abstime timestamp;
 	};
 
-	explicit BoomActuatorInterface(ModuleParams* parent);
+	explicit BoomActuatorInterface(ModuleParams *parent);
 
 	/**
 	 * @brief Initialize actuator interface
@@ -85,14 +85,14 @@ public:
 	 * @param command Command to send
 	 * @return True if command sent successfully
 	 */
-	bool send_command(const ActuatorCommand& command);
+	bool send_command(const ActuatorCommand &command);
 
 	/**
 	 * @brief Update actuator status
 	 * @param status Output status structure
 	 * @return True if new status available
 	 */
-	bool update_status(ActuatorStatus& status);
+	bool update_status(ActuatorStatus &status);
 
 	/**
 	 * @brief Emergency stop - disable motor immediately
@@ -129,7 +129,7 @@ private:
 
 	// uORB interface
 	uORB::SubscriptionMultiArray<hbridge_status_s, 4> _hbridge_status_sub{ORB_ID::hbridge_status};
-	orb_advert_t _hbridge_command_pub{nullptr};
+	uORB::Publication<hbridge_command_s> _hbridge_command_pub{ORB_ID(hbridge_command)};
 
 	// Actuator parameters
 	DEFINE_PARAMETERS(
@@ -150,5 +150,5 @@ private:
 	 * @param current Current motor current
 	 * @return Limited command
 	 */
-	ActuatorCommand apply_current_limit(const ActuatorCommand& command, float current) const;
+	ActuatorCommand apply_current_limit(const ActuatorCommand &command, float current) const;
 };

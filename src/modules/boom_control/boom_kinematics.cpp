@@ -35,11 +35,11 @@
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
 
-BoomKinematics::BoomKinematics(ModuleParams* parent) :
-    ModuleParams(parent)
+BoomKinematics::BoomKinematics(ModuleParams *parent) :
+	ModuleParams(parent)
 {
-    // Initialize configuration
-    update_configuration();
+	// Initialize configuration
+	update_configuration();
 }
 
 float BoomKinematics::actuator_to_boom_angle(float actuator_length) const
@@ -122,7 +122,7 @@ float BoomKinematics::actuator_length_to_encoder(float actuator_length) const
 	return encoder_angle;
 }
 
-void BoomKinematics::calculate_bucket_position(float boom_angle, float& x_pos, float& z_pos) const
+void BoomKinematics::calculate_bucket_position(float boom_angle, float &x_pos, float &z_pos) const
 {
 	// Calculate bucket position from boom angle
 	float boom_length_dist = _config.boom_length;
@@ -200,6 +200,7 @@ bool BoomKinematics::is_position_valid(float boom_angle) const
 
 	// Check actuator length limits
 	float required_actuator_length = boom_angle_to_actuator(boom_angle);
+
 	if (required_actuator_length < _config.actuator_min_length ||
 	    required_actuator_length > _config.actuator_max_length) {
 		return false;
@@ -220,50 +221,50 @@ bool BoomKinematics::is_position_valid(float boom_angle) const
 
 void BoomKinematics::update_configuration()
 {
-    // Load configuration parameters using DEFINE_PARAMETERS approach
-    _config.boom_pivot_to_bucket = _param_boom_length.get();
-    _config.actuator_pivot_distance = _param_actuator_to_pivot_length.get();
-    _config.actuator_mount_distance = _param_pivot_mount_length.get();
-    _config.sensor_boom_offset = _param_sensor_boom_offset.get();
-    _config.encoder_angle_at_zero = _param_encoder_zero_angle.get();
+	// Load configuration parameters using DEFINE_PARAMETERS approach
+	_config.boom_pivot_to_bucket = _param_boom_length.get();
+	_config.actuator_pivot_distance = _param_actuator_to_pivot_length.get();
+	_config.actuator_mount_distance = _param_pivot_mount_length.get();
+	_config.sensor_boom_offset = _param_sensor_boom_offset.get();
+	_config.encoder_angle_at_zero = _param_encoder_zero_angle.get();
 
-    // Calculate actuator mount angle (angle AOB) using triangle geometry
-    _config.actuator_mount_angle = calculate_actuator_mount_angle();
+	// Calculate actuator mount angle (angle AOB) using triangle geometry
+	_config.actuator_mount_angle = calculate_actuator_mount_angle();
 }
 
 float BoomKinematics::calculate_actuator_mount_angle()
 {
-    // Calculate angle AOB using triangle geometry
-    // A = boom pivot point (0,0)
-    // O = actuator pivot point on boom (actuator_pivot_distance along boom)
-    // B = actuator base mount point (actuator_mount_distance from pivot)
+	// Calculate angle AOB using triangle geometry
+	// A = boom pivot point (0,0)
+	// O = actuator pivot point on boom (actuator_pivot_distance along boom)
+	// B = actuator base mount point (actuator_mount_distance from pivot)
 
-    // The angle AOB is the angle between:
-    // - Line AO (boom arm to actuator pivot)
-    // - Line AB (boom pivot to actuator base mount)
+	// The angle AOB is the angle between:
+	// - Line AO (boom arm to actuator pivot)
+	// - Line AB (boom pivot to actuator base mount)
 
-    // Since we only have distances, we use the relationship:
-    // The mount angle is the angle from boom arm to the line connecting
-    // boom pivot to actuator base mount
+	// Since we only have distances, we use the relationship:
+	// The mount angle is the angle from boom arm to the line connecting
+	// boom pivot to actuator base mount
 
-    float ao = _config.actuator_pivot_distance;  // Distance along boom to actuator pivot
-    float ab = _config.actuator_mount_distance;  // Distance from boom pivot to base mount
+	float ao = _config.actuator_pivot_distance;  // Distance along boom to actuator pivot
+	float ab = _config.actuator_mount_distance;  // Distance from boom pivot to base mount
 
-    // For a right triangle approximation (common in wheel loader geometry):
-    // The actuator base is typically mounted perpendicular to the boom pivot axis
-    // So angle AOB can be calculated as: arctan(perpendicular_distance / boom_distance)
+	// For a right triangle approximation (common in wheel loader geometry):
+	// The actuator base is typically mounted perpendicular to the boom pivot axis
+	// So angle AOB can be calculated as: arctan(perpendicular_distance / boom_distance)
 
-    // Assuming the base mount is positioned to create optimal geometry:
-    float angle_aob_rad = atanf(ab / ao);
-    return math::degrees(angle_aob_rad);
+	// Assuming the base mount is positioned to create optimal geometry:
+	float angle_aob_rad = atanf(ab / ao);
+	return math::degrees(angle_aob_rad);
 }
 
 bool BoomKinematics::validate_configuration() const
 {
 	// Check for reasonable values
 	if (_config.boom_length <= 0.0f ||
-		_config.actuator_to_pivot_length <= 0.0f ||
-		_config.actuator_mount_distance <= 0.0f ||
+	    _config.actuator_to_pivot_length <= 0.0f ||
+	    _config.actuator_mount_distance <= 0.0f ||
 	    _config.actuator_to_bucket_length <= 0.0f ||
 	    _config.actuator_length_at_zero <= 0.0f ||
 	    _config.actuator_min_length <= 0.0f ||

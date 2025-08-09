@@ -73,7 +73,7 @@ public:
 		bool limited;         // True if output was limited
 	};
 
-	explicit BoomMotionController(ModuleParams* parent);
+	explicit BoomMotionController(ModuleParams *parent);
 
 	/**
 	 * @brief Initialize controller
@@ -116,10 +116,10 @@ public:
 	 * @param dt Time step in seconds
 	 * @return Control output
 	 */
-	ControlOutput compute_control(const MotionSetpoint& setpoint,
-	                              float current_position,
-	                              float current_velocity,
-	                              float dt);
+	ControlOutput compute_control(const MotionSetpoint &setpoint,
+				      float current_position,
+				      float current_velocity,
+				      float dt);
 
 	/**
 	 * @brief Set load compensation
@@ -197,5 +197,5 @@ private:
 	 * @param setpoint Motion setpoint
 	 * @return Feedforward control term
 	 */
-	float calculate_feedforward(const MotionSetpoint& setpoint) const;
+	float calculate_feedforward(const MotionSetpoint &setpoint) const;
 };

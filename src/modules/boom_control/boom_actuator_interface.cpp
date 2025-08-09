@@ -35,7 +35,7 @@
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
 
-BoomActuatorInterface::BoomActuatorInterface(ModuleParams* parent) :
+BoomActuatorInterface::BoomActuatorInterface(ModuleParams *parent) :
 	ModuleParams(parent)
 {
 }
@@ -47,6 +47,7 @@ bool BoomActuatorInterface::initialize(int motor_instance)
 
 	// Select H-bridge instance
 	_hbridge_selected = select_hbridge_instance();
+
 	if (_hbridge_selected < 0) {
 		PX4_ERR("No suitable H-bridge found for motor instance %d", motor_instance);
 		return false;
@@ -59,7 +60,7 @@ bool BoomActuatorInterface::initialize(int motor_instance)
 	return true;
 }
 
-bool BoomActuatorInterface::send_command(const ActuatorCommand& command)
+bool BoomActuatorInterface::send_command(const ActuatorCommand &command)
 {
 	if (!_initialized) {
 		return false;
@@ -75,16 +76,13 @@ bool BoomActuatorInterface::send_command(const ActuatorCommand& command)
 
 	// Apply duty cycle limit
 	float max_duty = _param_duty_max.get();
+
 	if (fabsf(hbridge_cmd.duty_cycle) > max_duty) {
 		hbridge_cmd.duty_cycle = (hbridge_cmd.duty_cycle > 0.0f) ? max_duty : -max_duty;
 	}
 
 	// Publish command
-	if (_hbridge_command_pub == nullptr) {
-		_hbridge_command_pub = orb_advertise(ORB_ID(hbridge_command), &hbridge_cmd);
-	} else {
-		orb_publish(ORB_ID(hbridge_command), _hbridge_command_pub, &hbridge_cmd);
-	}
+	_hbridge_command_pub.publish(hbridge_cmd);
 
 	_last_command = command;
 	_last_command_time = hrt_absolute_time();
@@ -92,7 +90,7 @@ bool BoomActuatorInterface::send_command(const ActuatorCommand& command)
 	return true;
 }
 
-bool BoomActuatorInterface::update_status(ActuatorStatus& status)
+bool BoomActuatorInterface::update_status(ActuatorStatus &status)
 {
 	if (!_initialized) {
 		return false;
@@ -100,6 +98,7 @@ bool BoomActuatorInterface::update_status(ActuatorStatus& status)
 
 	// Get H-bridge status - use index for the configured H-bridge instance
 	hbridge_status_s hbridge_status;
+
 	if (_hbridge_status_sub[_hbridge_selected].updated() && _hbridge_status_sub[_hbridge_selected].copy(&hbridge_status)) {
 		// Update status from H-bridge
 		status.enabled = hbridge_status.enabled;
@@ -115,9 +114,11 @@ bool BoomActuatorInterface::update_status(ActuatorStatus& status)
 		// Update health status
 		if (status.fault) {
 			_fault_count++;
+
 			if (_fault_count >= MAX_FAULT_COUNT) {
 				_is_healthy = false;
 			}
+
 		} else {
 			_fault_count = 0;
 			_is_healthy = true;
@@ -164,12 +165,13 @@ int BoomActuatorInterface::select_hbridge_instance()
 	return _param_motor_index.get();
 }
 
-BoomActuatorInterface::ActuatorCommand BoomActuatorInterface::apply_current_limit(const ActuatorCommand& command,
+BoomActuatorInterface::ActuatorCommand BoomActuatorInterface::apply_current_limit(const ActuatorCommand &command,
 		float current) const
 {
 	ActuatorCommand limited_cmd = command;
 
 	float current_limit = _param_current_limit.get();
+
 	if (fabsf(current) > current_limit) {
 		// Reduce duty cycle proportionally
 		float reduction_factor = current_limit / fabsf(current);

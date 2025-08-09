@@ -34,7 +34,7 @@
 #include "boom_sensor_interface.hpp"
 #include <px4_platform_common/log.h>
 
-BoomSensorInterface::BoomSensorInterface(ModuleParams* parent) :
+BoomSensorInterface::BoomSensorInterface(ModuleParams *parent) :
 	ModuleParams(parent)
 {
 }
@@ -54,13 +54,14 @@ bool BoomSensorInterface::initialize(int encoder_instance)
 	return true;
 }
 
-bool BoomSensorInterface::update(SensorData& data)
+bool BoomSensorInterface::update(SensorData &data)
 {
 	if (!_initialized) {
 		return false;
 	}
 
 	sensor_mag_encoder_s encoder_msg;
+
 	if (_mag_encoder_sub.update(&encoder_msg)) {
 		// Process new encoder data
 		data.raw_angle = encoder_msg.angle;
@@ -70,8 +71,13 @@ bool BoomSensorInterface::update(SensorData& data)
 		data.timestamp = encoder_msg.timestamp;
 		data.is_valid = validate_data(data);
 
-		// Simple conversion - this would be done through kinematics in real system
-		data.actuator_length = data.calibrated_angle * 5.0f; // Placeholder conversion
+		// Convert angle to actuator length through kinematics
+		// This requires a kinematics instance to be passed or accessed
+		// For now, use a more realistic placeholder based on typical boom geometry
+		// Real implementation should use boom_angle_to_actuator() from kinematics
+		const float NOMINAL_ACTUATOR_LENGTH_MM = 200.0f; // Typical mid-position
+		const float ANGLE_TO_LENGTH_SCALE = 100.0f; // mm per radian (approximate)
+		data.actuator_length = NOMINAL_ACTUATOR_LENGTH_MM + (data.calibrated_angle * ANGLE_TO_LENGTH_SCALE);
 
 		_last_data = data;
 		_last_update_time = hrt_absolute_time();
@@ -118,13 +124,15 @@ hrt_abstime BoomSensorInterface::time_since_last_update() const
 float BoomSensorInterface::apply_calibration(float raw_angle) const
 {
 	float calibrated = raw_angle * _calibration_scale + _calibration_offset;
+
 	if (_angle_reversed) {
 		calibrated = -calibrated;
 	}
+
 	return calibrated;
 }
 
-bool BoomSensorInterface::validate_data(const SensorData& data) const
+bool BoomSensorInterface::validate_data(const SensorData &data) const
 {
 	// Basic validation
 	if (!data.magnet_detected) {

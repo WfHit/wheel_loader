@@ -187,7 +187,7 @@ public:
 		bool is_valid;                      // True if within all limits
 	};
 
-	explicit BoomKinematics(ModuleParams* parent);
+	explicit BoomKinematics(ModuleParams *parent);
 
 	/**
 	 * @brief Convert actuator length to boom angle
@@ -226,7 +226,7 @@ public:
 	 * @param x_pos Output: Horizontal position of bucket
 	 * @param z_pos Output: Vertical position of bucket
 	 */
-	void calculate_bucket_position(float boom_angle, float& x_pos, float& z_pos) const;
+	void calculate_bucket_position(float boom_angle, float &x_pos, float &z_pos) const;
 
 	/**
 	 * @brief Calculate bucket height from ground
@@ -274,7 +274,7 @@ public:
 	 */
 	bool validate_configuration() const;
 
-	const Configuration& get_configuration() const { return _config; }
+	const Configuration &get_configuration() const { return _config; }
 
 private:
 	Configuration _config;
