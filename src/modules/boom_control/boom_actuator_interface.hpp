@@ -42,7 +42,7 @@
 #include <uORB/topics/hbridge_status.h>
 
 /**
- * @brief Actuator interface for boom motor control
+ * @brief H-bridge interface for boom motor control
  *
  * Manages H-bridge motor driver interface:
  * - Command publishing
@@ -56,13 +56,13 @@ public:
 	static constexpr hrt_abstime STATUS_TIMEOUT_US = 100000; // 100ms
 	static constexpr uint32_t MAX_FAULT_COUNT = 5;
 
-	struct ActuatorCommand {
+	struct HbridgeCommand {
 		float duty_cycle;      // -1 to 1
 		bool enable;          // Enable motor
 		uint8_t mode;         // Control mode
 	};
 
-	struct ActuatorStatus {
+	struct HbridgeStatus {
 		bool enabled;         // Motor enabled
 		bool fault;          // Fault detected
 		float current;       // Motor current (A)
@@ -74,25 +74,25 @@ public:
 	explicit BoomActuatorInterface(ModuleParams *parent);
 
 	/**
-	 * @brief Initialize actuator interface
+	 * @brief Initialize H-bridge interface
 	 * @param motor_instance H-bridge instance to use
 	 * @return True if initialization successful
 	 */
 	bool initialize(int motor_instance);
 
 	/**
-	 * @brief Send actuator command
+	 * @brief Send H-bridge command
 	 * @param command Command to send
 	 * @return True if command sent successfully
 	 */
-	bool send_command(const ActuatorCommand &command);
+	bool send_command(const HbridgeCommand &command);
 
 	/**
-	 * @brief Update actuator status
+	 * @brief Update H-bridge status
 	 * @param status Output status structure
 	 * @return True if new status available
 	 */
-	bool update_status(ActuatorStatus &status);
+	bool update_status(HbridgeStatus &status);
 
 	/**
 	 * @brief Emergency stop - disable motor immediately
@@ -100,16 +100,16 @@ public:
 	void emergency_stop();
 
 	/**
-	 * @brief Check if actuator is healthy
-	 * @return True if actuator is operational
+	 * @brief Check if H-bridge is healthy
+	 * @return True if H-bridge is operational
 	 */
 	bool is_healthy() const;
 
 	/**
 	 * @brief Get last command sent
-	 * @return Last actuator command
+	 * @return Last H-bridge command
 	 */
-	ActuatorCommand get_last_command() const { return _last_command; }
+	HbridgeCommand get_last_command() const { return _last_command; }
 
 private:
 	// Configuration
@@ -118,8 +118,8 @@ private:
 	bool _initialized{false};
 
 	// State tracking
-	ActuatorCommand _last_command{};
-	ActuatorStatus _last_status{};
+	HbridgeCommand _last_command{};
+	HbridgeStatus _last_status{};
 	hrt_abstime _last_command_time{0};
 	hrt_abstime _last_status_time{0};
 
@@ -131,7 +131,7 @@ private:
 	uORB::SubscriptionMultiArray<hbridge_status_s, 4> _hbridge_status_sub{ORB_ID::hbridge_status};
 	orb_advert_t _hbridge_command_pub{nullptr};
 
-	// Actuator parameters
+	// H-bridge parameters
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::BOOM_MOTOR_IDX>) _param_motor_index,
 		(ParamFloat<px4::params::BOOM_CUR_LIM>) _param_current_limit,
@@ -150,5 +150,5 @@ private:
 	 * @param current Current motor current
 	 * @return Limited command
 	 */
-	ActuatorCommand apply_current_limit(const ActuatorCommand &command, float current) const;
+	HbridgeCommand apply_current_limit(const HbridgeCommand &command, float current) const;
 };

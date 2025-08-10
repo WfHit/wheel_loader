@@ -56,11 +56,11 @@ bool BoomActuatorInterface::initialize(int motor_instance)
 	_initialized = true;
 	_is_healthy = true;
 
-	PX4_INFO("Boom actuator interface initialized (H-bridge: %d)", _hbridge_selected);
+	PX4_INFO("Boom H-bridge interface initialized (H-bridge: %d)", _hbridge_selected);
 	return true;
 }
 
-bool BoomActuatorInterface::send_command(const ActuatorCommand &command)
+bool BoomActuatorInterface::send_command(const HbridgeCommand &command)
 {
 	if (!_initialized) {
 		return false;
@@ -94,7 +94,7 @@ bool BoomActuatorInterface::send_command(const ActuatorCommand &command)
 	return true;
 }
 
-bool BoomActuatorInterface::update_status(ActuatorStatus &status)
+bool BoomActuatorInterface::update_status(HbridgeStatus &status)
 {
 	if (!_initialized) {
 		return false;
@@ -103,7 +103,8 @@ bool BoomActuatorInterface::update_status(ActuatorStatus &status)
 	// Get H-bridge status - use index for the configured H-bridge instance
 	hbridge_status_s hbridge_status;
 
-	if (_hbridge_status_sub[_hbridge_selected].updated() && _hbridge_status_sub[_hbridge_selected].copy(&hbridge_status)) {
+	if (_hbridge_status_sub[_hbridge_selected].updated() &&
+		_hbridge_status_sub[_hbridge_selected].copy(&hbridge_status)) {
 		// Update status from H-bridge
 		status.enabled = hbridge_status.enabled;
 		status.fault = hbridge_status.forward_limit || hbridge_status.reverse_limit; // Use limits as fault indicators
@@ -136,7 +137,7 @@ bool BoomActuatorInterface::update_status(ActuatorStatus &status)
 
 void BoomActuatorInterface::emergency_stop()
 {
-	ActuatorCommand stop_cmd{};
+	HbridgeCommand stop_cmd{};
 	stop_cmd.duty_cycle = 0.0f;
 	stop_cmd.enable = false;
 	stop_cmd.mode = 0;
@@ -144,7 +145,7 @@ void BoomActuatorInterface::emergency_stop()
 	send_command(stop_cmd);
 	_is_healthy = false;
 
-	PX4_WARN("Actuator emergency stop activated");
+	PX4_WARN("H-bridge emergency stop activated");
 }
 
 bool BoomActuatorInterface::is_healthy() const
@@ -169,10 +170,10 @@ int BoomActuatorInterface::select_hbridge_instance()
 	return _param_motor_index.get();
 }
 
-BoomActuatorInterface::ActuatorCommand BoomActuatorInterface::apply_current_limit(const ActuatorCommand &command,
-		float current) const
+BoomActuatorInterface::HbridgeCommand
+BoomActuatorInterface::apply_current_limit(const HbridgeCommand &command, float current) const
 {
-	ActuatorCommand limited_cmd = command;
+	HbridgeCommand limited_cmd = command;
 
 	float current_limit = _param_current_limit.get();
 

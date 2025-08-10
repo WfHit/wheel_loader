@@ -148,9 +148,9 @@ void BoomControl::update_sensors()
 		_current_boom_angle = _kinematics.actuator_length_to_boom_angle(_current_actuator_length);
 	}
 
-	// Update actuator status
-	BoomActuatorInterface::ActuatorStatus actuator_status;
-	_actuator_interface.update_status(actuator_status);
+	// Update H-bridge status
+	BoomActuatorInterface::HbridgeStatus hbridge_status;
+	_actuator_interface.update_status(hbridge_status);
 
 	// Update state manager with system health
 	_state_manager.update(
@@ -274,7 +274,7 @@ void BoomControl::execute_control()
 
 	// Skip control if not operational
 	if (!_state_manager.is_operational()) {
-		BoomActuatorInterface::ActuatorCommand cmd{};
+		BoomActuatorInterface::HbridgeCommand cmd{};
 		cmd.duty_cycle = 0.0f;
 		cmd.enable = false;
 		_actuator_interface.send_command(cmd);
@@ -299,13 +299,13 @@ void BoomControl::execute_control()
 				      dt
 			      );
 
-	// Send to actuator
-	BoomActuatorInterface::ActuatorCommand actuator_cmd{};
-	actuator_cmd.duty_cycle = control_output.duty_cycle;
-	actuator_cmd.enable = (state_info.state != BoomStateManager::OperationalState::ERROR);
-	actuator_cmd.mode = 0; // PWM mode
+	// Send to H-bridge
+	BoomActuatorInterface::HbridgeCommand hbridge_cmd{};
+	hbridge_cmd.duty_cycle = control_output.duty_cycle;
+	hbridge_cmd.enable = (state_info.state != BoomStateManager::OperationalState::ERROR);
+	hbridge_cmd.mode = 0; // PWM mode
 
-	_actuator_interface.send_command(actuator_cmd);
+	_actuator_interface.send_command(hbridge_cmd);
 
 	perf_end(_control_latency_perf);
 }
@@ -338,14 +338,14 @@ void BoomControl::publish_telemetry()
 	auto actuator_cmd = _actuator_interface.get_last_command();
 	status.load = fabsf(actuator_cmd.duty_cycle);
 
-	// Motor information from actuator interface
-	BoomActuatorInterface::ActuatorStatus actuator_status;
+	// Motor information from H-bridge interface
+	BoomActuatorInterface::HbridgeStatus hbridge_status;
 
-	if (_actuator_interface.update_status(actuator_status)) {
-		status.motor_current = actuator_status.current;
-		status.motor_voltage = actuator_status.voltage;
-		status.motor_temperature_c = actuator_status.temperature;
-		status.motor_fault = actuator_status.fault;
+	if (_actuator_interface.update_status(hbridge_status)) {
+		status.motor_current = hbridge_status.current;
+		status.motor_voltage = hbridge_status.voltage;
+		status.motor_temperature_c = hbridge_status.temperature;
+		status.motor_fault = hbridge_status.fault;
 	}
 
 	// Sensor status
