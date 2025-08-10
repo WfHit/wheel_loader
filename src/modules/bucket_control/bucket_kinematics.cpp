@@ -175,9 +175,7 @@ float BucketKinematics::get_boom_compensation_factor(float boom_angle) const
 {
 	// Since the drive kinematics no longer provides boom compensation,
 	// return a default value or implement alternative compensation logic
-	const float BASE_FACTOR = 200.0f;  // mm/rad
-	const float ANGLE_SENSITIVITY = 0.15f;
-	return BASE_FACTOR * (1.0f + ANGLE_SENSITIVITY * fabsf(boom_angle));
+	return BOOM_COMPENSATION_BASE_FACTOR * (1.0f + BOOM_COMPENSATION_ANGLE_SENSITIVITY * fabsf(boom_angle));
 }
 
 // =========================
@@ -191,10 +189,10 @@ float BucketKinematics::encoder_angle_to_actuator_length(float encoder_angle) co
 	// Convert to radians
 	float geometric_angle_rad = math::radians(geometric_angle);
 
-	// Use law of cosines to get actuator length
-	// For this example, use hardcoded geometry (should be replaced with config fields)
-	float OA = 100.0f; // mm, pivot to actuator base
-	float OB = 150.0f; // mm, pivot to actuator joint
+	// Use law of cosines to get actuator length from drive kinematics configuration
+	// OA = motor_base distance from boom pivot, OB = crank_joint_to_pivot_length
+	float OA = _drive_kinematics.get_configuration().motor_base.norm(); // mm, pivot to actuator base
+	float OB = _drive_kinematics.get_configuration().crank_joint_to_pivot_length; // mm, pivot to crank joint
 	// AB = sqrt(OA^2 + OB^2 - 2*OA*OB*cos(angle))
 	float actuator_length = sqrtf(OA*OA + OB*OB - 2.0f*OA*OB*cosf(geometric_angle_rad));
 	return actuator_length;

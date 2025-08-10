@@ -198,6 +198,15 @@ private:
 	 */
 	bool is_triangle_valid(float a, float b, float c) const;
 
+	/**
+	 * @brief Calculate angle using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
+	 * @param side_a Length of side a
+	 * @param side_b Length of side b
+	 * @param side_c Length of side c (opposite to angle C)
+	 * @return Angle C in radians, or NaN if triangle impossible
+	 */
+	float law_of_cosines_angle(float side_a, float side_b, float side_c) const;
+
 	// Tilt kinematic parameters (following 16-char limit)
 	DEFINE_PARAMETERS(
 		// Stage 2 - Bucket Tilt Linkage (Boom-End Frame)
