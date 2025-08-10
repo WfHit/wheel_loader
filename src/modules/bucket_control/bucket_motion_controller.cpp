@@ -33,6 +33,7 @@
 
 #include "bucket_motion_controller.hpp"
 #include <px4_platform_common/log.h>
+#include <cstdint>
 
 BucketMotionController::BucketMotionController(ModuleParams *parent) :
 	ModuleParams(parent)
@@ -140,7 +141,6 @@ BucketMotionController::ControlOutput BucketMotionController::compute_control(
 	const MotionSetpoint& setpoint,
 	float current_position,
 	float current_velocity,
-	float boom_angle,
 	float dt)
 {
 	ControlOutput output{};
@@ -150,16 +150,8 @@ BucketMotionController::ControlOutput BucketMotionController::compute_control(
 		return output;
 	}
 
-	// Create working copy of setpoint for boom compensation
-	MotionSetpoint compensated_setpoint = setpoint;
-
-	// Apply boom compensation if enabled
-	if (_boom_compensation.enabled) {
-		apply_boom_compensation(compensated_setpoint, boom_angle, dt);
-	}
-
 	// Check safety constraints
-	bool safe = check_safety_constraints(current_position, current_velocity, compensated_setpoint);
+	bool safe = check_safety_constraints(current_position, current_velocity, setpoint);
 	if (!safe) {
 		output.safety_stop = true;
 		output.duty_cycle = 0.0f;
@@ -167,12 +159,12 @@ BucketMotionController::ControlOutput BucketMotionController::compute_control(
 	}
 
 	// Cascade control: Position controller generates velocity command
-	float position_error = compensated_setpoint.position - current_position;
-	_position_controller.setSetpoint(compensated_setpoint.position);
+	float position_error = setpoint.position - current_position;
+	_position_controller.setSetpoint(setpoint.position);
 	float velocity_command = _position_controller.update(current_position, dt);
 
 	// Add velocity feedforward from trajectory
-	velocity_command += compensated_setpoint.velocity;
+	velocity_command += setpoint.velocity;
 
 	// Constrain velocity command
 	velocity_command = math::constrain(velocity_command, -_config.max_velocity, _config.max_velocity);
@@ -183,7 +175,7 @@ BucketMotionController::ControlOutput BucketMotionController::compute_control(
 	float duty_cycle = _velocity_controller.update(current_velocity, dt);
 
 	// Add feedforward for better performance
-	duty_cycle += compute_feedforward(compensated_setpoint);
+	duty_cycle += compute_feedforward(setpoint);
 
 	// Apply duty cycle limits
 	duty_cycle = math::constrain(duty_cycle, -_config.duty_cycle_limit, _config.duty_cycle_limit);
@@ -198,82 +190,6 @@ BucketMotionController::ControlOutput BucketMotionController::compute_control(
 	update_performance_metrics(position_error, velocity_error, duty_cycle);
 
 	return output;
-}
-
-void BucketMotionController::apply_boom_compensation(MotionSetpoint& setpoint, float boom_angle, float dt)
-{
-	if (!_boom_compensation.enabled) {
-		return;
-	}
-
-	// Calculate boom angle change since last update
-	float boom_delta = boom_angle - _boom_compensation.previous_angle;
-
-	// Check if boom has moved significantly (deadband to avoid noise)
-	if (fabsf(boom_delta) < _config.boom_deadband) {
-		return;
-	}
-
-	// Update compensation factor based on current boom angle
-	_boom_compensation.compensation_factor = update_compensation_factor(boom_angle);
-
-	// Calculate required actuator adjustment
-	float actuator_compensation = -boom_delta * _boom_compensation.compensation_factor;
-
-	// Apply compensation to position setpoint
-	setpoint.position += actuator_compensation;
-
-	// Apply derivative compensation for smooth motion during boom movement
-	if (_config.boom_derivative_gain > 0.0f && dt > 0.0f) {
-		// Estimate boom angular velocity
-		float boom_velocity = boom_delta / dt;
-
-		// Add velocity feedforward to match boom motion
-		float velocity_compensation = -boom_velocity * _boom_compensation.compensation_factor *
-					      _config.boom_derivative_gain;
-		setpoint.velocity += velocity_compensation;
-	}
-
-	// Update previous boom angle for next iteration
-	_boom_compensation.previous_angle = boom_angle;
-	_boom_compensation.last_update = hrt_absolute_time();
-
-	// Log significant compensations for debugging
-	if (fabsf(actuator_compensation) > 1.0f) {
-		PX4_DEBUG("Boom compensation: Δboom=%.3f rad, Δactuator=%.1f mm",
-			  (double)boom_delta, (double)actuator_compensation);
-	}
-}
-
-float BucketMotionController::update_compensation_factor(float boom_angle)
-{
-	// Use parameter-based compensation factor with boom angle adjustment
-	float base_factor = _param_boom_compensation_factor.get();
-
-	// Simple linear adjustment based on boom angle
-	// (More sophisticated models could use the kinematic Jacobian)
-	const float ANGLE_SENSITIVITY = 0.2f;  // Factor change per radian
-	float factor = base_factor * (1.0f + ANGLE_SENSITIVITY * boom_angle);
-
-	// Limit factor to reasonable range
-	return math::constrain(factor, 100.0f, 400.0f);
-}
-
-void BucketMotionController::set_boom_compensation(bool enable, float reference_boom_angle,
-						   float compensation_factor)
-{
-	_boom_compensation.enabled = enable;
-	_boom_compensation.reference_angle = reference_boom_angle;
-	_boom_compensation.previous_angle = reference_boom_angle;
-	_boom_compensation.compensation_factor = compensation_factor;
-	_boom_compensation.last_update = hrt_absolute_time();
-
-	if (enable) {
-		PX4_INFO("Boom compensation enabled: ref_angle=%.2f rad, factor=%.1f mm/rad",
-			 (double)reference_boom_angle, (double)compensation_factor);
-	} else {
-		PX4_INFO("Boom compensation disabled");
-	}
 }
 
 bool BucketMotionController::check_safety_constraints(float position, float velocity,

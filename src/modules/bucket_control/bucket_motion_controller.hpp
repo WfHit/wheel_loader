@@ -55,7 +55,7 @@ using namespace matrix;
  * This class provides:
  * - Smooth trajectory generation with jerk limiting
  * - Cascade PID control (position + velocity)
- * - Boom compensation for maintaining bucket angle
+
  * - Safety monitoring and constraint enforcement
  */
 class BucketMotionController : public ModuleParams
@@ -97,22 +97,8 @@ public:
 		// Safety limits
 		float position_min, position_max;  // mm
 		float duty_cycle_limit;            // Maximum duty cycle
-
-		// Boom compensation
-		float boom_derivative_gain;        // Boom velocity feedforward gain
-		float boom_deadband;              // Boom movement deadband (rad)
 	};
 
-	/**
-	 * @brief Boom compensation state
-	 */
-	struct BoomCompensationState {
-		bool enabled;                 // Compensation enabled
-		float reference_angle;        // Reference boom angle (rad)
-		float previous_angle;         // Previous boom angle (rad)
-		float compensation_factor;    // Current compensation factor (mm/rad)
-		hrt_abstime last_update;     // Last compensation update time
-	};
 
 	explicit BucketMotionController(ModuleParams *parent);
 
@@ -138,11 +124,10 @@ public:
 	MotionSetpoint plan_trajectory(float current_position, float target_position, float dt);
 
 	/**
-	 * @brief Compute control output with boom compensation
+	 * @brief Compute control output
 	 * @param setpoint Motion setpoint from trajectory planner
 	 * @param current_position Current actuator position (mm)
 	 * @param current_velocity Current actuator velocity (mm/s)
-	 * @param boom_angle Current boom angle (rad)
 	 * @param dt Control loop time step (s)
 	 * @return Control output
 	 */
@@ -150,18 +135,10 @@ public:
 		const MotionSetpoint& setpoint,
 		float current_position,
 		float current_velocity,
-		float boom_angle,
 		float dt
 	);
 
-	/**
-	 * @brief Enable/disable boom compensation
-	 * @param enable True to enable compensation
-	 * @param reference_boom_angle Reference boom angle for compensation (rad)
-	 * @param compensation_factor Compensation factor (mm/rad)
-	 */
-	void set_boom_compensation(bool enable, float reference_boom_angle = 0.0f,
-				   float compensation_factor = 250.0f);
+
 
 	/**
 	 * @brief Reset controller state (clear integrators, etc.)
@@ -175,17 +152,7 @@ public:
 	 */
 	void set_safety_limits(float min_position, float max_position);
 
-	/**
-	 * @brief Get current boom compensation state
-	 * @return Current boom compensation state
-	 */
-	const BoomCompensationState& get_boom_compensation_state() const { return _boom_compensation; }
 
-	/**
-	 * @brief Check if boom compensation is enabled
-	 * @return True if boom compensation is active
-	 */
-	bool is_boom_compensation_enabled() const { return _boom_compensation.enabled; }
 
 	/**
 	 * @brief Get controller performance metrics
@@ -207,9 +174,6 @@ private:
 	ControllerConfig _config;
 	bool _initialized{false};
 
-	// Boom compensation state
-	BoomCompensationState _boom_compensation{};
-
 	// Performance tracking
 	struct PerformanceMetrics {
 		float position_error_sum_squared{0.0f};
@@ -223,20 +187,7 @@ private:
 	float _position_min_safe{0.0f};
 	float _position_max_safe{1000.0f};
 
-	/**
-	 * @brief Apply boom compensation to motion setpoint
-	 * @param setpoint Input/output motion setpoint
-	 * @param boom_angle Current boom angle (rad)
-	 * @param dt Time step (s)
-	 */
-	void apply_boom_compensation(MotionSetpoint& setpoint, float boom_angle, float dt);
 
-	/**
-	 * @brief Update boom compensation factor based on current position
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Updated compensation factor (mm/rad)
-	 */
-	float update_compensation_factor(float boom_angle);
 
 	/**
 	 * @brief Check safety constraints
@@ -278,11 +229,6 @@ private:
 		(ParamFloat<px4::params::BCT_MAX_VEL>) _param_max_velocity,
 		(ParamFloat<px4::params::BCT_MAX_ACC>) _param_max_acceleration,
 		(ParamFloat<px4::params::BCT_MAX_JERK>) _param_max_jerk,
-
-		// Boom compensation
-		(ParamFloat<px4::params::BCT_BOOM_GAIN>) _param_boom_derivative_gain,
-		(ParamFloat<px4::params::BCT_BOOM_DEAD>) _param_boom_deadband,
-		(ParamFloat<px4::params::BCT_BOOM_FACT>) _param_boom_compensation_factor,
 
 		// Safety limits
 		(ParamFloat<px4::params::BCT_DUTY_LIM>) _param_duty_cycle_limit

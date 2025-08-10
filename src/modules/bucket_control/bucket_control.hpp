@@ -57,11 +57,10 @@ class BucketStateManager;
  * @brief Main bucket control module for PX4
  *
  * This module orchestrates bucket control by coordinating:
- * - Kinematic calculations for bucket linkage
+ * - Kinematic calculations for bucket linkage with integrated boom compensation
  * - Hardware interface management
  * - Motion control with trajectory planning
  * - State management and fault handling
- * - Boom compensation for maintaining bucket angle
  */
 class BucketControl final : public ModuleBase<BucketControl>,
                             public ModuleParams,
@@ -95,12 +94,6 @@ private:
 	 */
 	void update_parameters();
 
-	/**
-	 * @brief Boom compensation control
-	 */
-	void enable_boom_compensation();
-	void disable_boom_compensation();
-
 	// Core components
 	BucketKinematics* _kinematics{nullptr};
 	BucketHardwareInterface* _hardware{nullptr};
@@ -115,7 +108,6 @@ private:
 	// Control state
 	float _target_bucket_angle_absolute{0.0f};  // Target bucket angle (ground-relative)
 	float _commanded_actuator_position{0.0f};   // Direct actuator position command
-	bool _boom_compensation_enabled{false};     // Boom compensation state
 	hrt_abstime _last_command_time{0};          // Last command timestamp
 
 	// Performance monitoring

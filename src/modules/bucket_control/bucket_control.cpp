@@ -107,8 +107,6 @@ bool BucketControl::init()
 	control_config.position_min = 0.0f;          // mm
 	control_config.position_max = 500.0f;        // mm
 	control_config.duty_cycle_limit = 1.0f;      // Maximum duty cycle
-	control_config.boom_derivative_gain = 0.1f;  // Boom compensation gain
-	control_config.boom_deadband = 0.001f;       // 0.057° deadband
 
 	_motion_controller->initialize(control_config);
 
@@ -209,7 +207,6 @@ void BucketControl::process_commands()
 		case bucket_command_s::MODE_POSITION:
 			// Absolute bucket angle command (ground-relative)
 			_target_bucket_angle_absolute = command.target_angle;
-			_boom_compensation_enabled = true;
 
 			// Transition to active state
 			_state_manager->request_state_transition(
@@ -222,9 +219,8 @@ void BucketControl::process_commands()
 			break;
 
 		case bucket_command_s::MODE_DIRECT:
-			// Direct actuator position command (no boom compensation)
+			// Direct actuator position command
 			_commanded_actuator_position = command.target_angle;
-			_boom_compensation_enabled = false;
 
 			_state_manager->request_state_transition(
 				BucketStateManager::OperationalState::ACTIVE,
@@ -283,9 +279,9 @@ void BucketControl::execute_control()
 		}
 
 	} else if (state_info.state == BucketStateManager::OperationalState::ACTIVE) {
-		// Use operational commands
-		if (_boom_compensation_enabled) {
-			// Boom compensation mode: maintain absolute bucket angle
+		// Use operational commands - determine if it's position or direct mode based on which variable is set
+		if (_target_bucket_angle_absolute != 0.0f) {
+			// Position mode: maintain absolute bucket angle using kinematics
 			auto target_linkage = _kinematics->compute_inverse_kinematics(
 				_target_bucket_angle_absolute,
 				sensor_data.boom_angle
@@ -295,7 +291,7 @@ void BucketControl::execute_control()
 				target_actuator_position = target_linkage.actuator_length;
 				position_command_valid = true;
 			} else {
-				PX4_WARN("Cannot compute target actuator position for boom compensation");
+				PX4_WARN("Cannot compute target actuator position for bucket angle");
 			}
 
 		} else {
@@ -327,14 +323,6 @@ void BucketControl::execute_control()
 		target_actuator_position,
 		dt
 	);
-
-	// Configure boom compensation in motion controller
-	if (_boom_compensation_enabled) {
-		float compensation_factor = _kinematics->get_boom_compensation_factor(sensor_data.boom_angle);
-		_motion_controller->set_boom_compensation(true, sensor_data.boom_angle, compensation_factor);
-	} else {
-		_motion_controller->set_boom_compensation(false);
-	}
 
 	// Compute control output
 	auto control_output = _motion_controller->compute_control(
@@ -389,7 +377,6 @@ void BucketControl::publish_telemetry()
 	status.calibration_progress = static_cast<uint8_t>(state_info.calibration_progress * 100.0f);
 
 	// Control mode information
-	status.boom_compensation_enabled = _boom_compensation_enabled;
 	status.target_ground_angle = _target_bucket_angle_absolute;
 
 	// Hardware status
@@ -498,7 +485,7 @@ Bucket control module for wheel loader applications.
 This module manages the bucket actuator control including:
 - Kinematic calculations for bucket angle and linkage geometry
 - Motion planning with smooth trajectory generation
-- Boom angle compensation to maintain bucket orientation
+- Integrated boom angle compensation within kinematics
 - Hardware interface for motors, encoders, and limit switches
 - State management with calibration and fault handling
 - Safety monitoring and emergency stop functionality

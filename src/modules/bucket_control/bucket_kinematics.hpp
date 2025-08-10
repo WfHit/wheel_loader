@@ -73,8 +73,8 @@ public:
 		// Primary outputs
 		float actuator_length;     // mm - linear actuator extension
 		float bucket_angle;        // rad - final bucket angle (ground-relative)
-		float bellcrank_angle_s1;  // rad - Stage 1 bellcrank angle ∠OCB₁
-		float bellcrank_angle_s2;  // rad - Stage 2 bellcrank angle ∠OCB₂
+		float bellcrank_angle_drive;  // rad - Stage 1 bellcrank angle ∠OCB₁
+		float bellcrank_angle_tilt;  // rad - Stage 2 bellcrank angle ∠OCB₂
 
 		// Secondary outputs
 		float coupler_angle;       // rad - coupler link angle
@@ -85,8 +85,8 @@ public:
 		float condition_number;   // Linkage condition (singularity detection)
 
 		// Joint positions for visualization/debugging
-		matrix::Vector2f joint_B_s1;  // Stage 1 joint B position
-		matrix::Vector2f joint_B_s2;  // Stage 2 joint B position
+		matrix::Vector2f joint_B_drive;  // Stage 1 joint B position
+		matrix::Vector2f joint_B_tilt;  // Stage 2 joint B position
 	};
 
 	explicit BucketKinematics(ModuleParams *parent);
@@ -144,6 +144,17 @@ public:
 	 */
 	const BucketKinematicsTilt& get_tilt_kinematics() const { return _tilt_kinematics; }
 
+public:
+	// AS5600 calibration/configuration fields (degrees)
+	float encoder_angle_at_min = 0.0f;
+	float encoder_angle_at_max = 360.0f;
+	float encoder_angle_at_zero = 0.0f;
+
+	// Conversion functions
+	float encoder_angle_to_actuator_length(float encoder_angle) const;
+	float encoder_angle_to_boom_angle(float encoder_angle) const;
+	LinkageState get_kinematic_state_from_encoder(float encoder_angle) const;
+
 private:
 	BucketKinematicsDrive _drive_kinematics;
 	BucketKinematicsTilt _tilt_kinematics;
@@ -155,5 +166,5 @@ private:
 	 * @return Combined linkage state
 	 */
 	LinkageState combine_states(const BucketKinematicsDrive::DriveState& drive_state,
-	                           const BucketKinematicsTilt::TiltState& tilt_state) const;
+				      const BucketKinematicsTilt::TiltState& tilt_state) const;
 };

@@ -2,7 +2,9 @@
  *
  *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
+ * Redistribution and use in so	// =========================
+	// VALIDATION AND ANALYSIS
+	// =========================forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
@@ -107,11 +109,11 @@ public:
 	/**
 	 * @brief Forward kinematics: bellcrank angle -> bucket angle
 	 * Uses analytical trigonometric solution (O(1) complexity)
-	 * @param bellcrank_angle_s1 Stage 1 bellcrank angle (from drive stage)
+	 * @param bellcrank_angle_drive Stage 1 bellcrank angle (from drive stage)
 	 * @param boom_angle Current boom angle (rad)
 	 * @return Tilt linkage state
 	 */
-	TiltState compute_forward_kinematics(float bellcrank_angle_s1, float boom_angle = 0.0f) const;
+	TiltState compute_forward_kinematics(float bellcrank_angle_drive, float boom_angle = 0.0f) const;
 
 	/**
 	 * @brief Inverse kinematics: bucket angle -> bellcrank angle
@@ -140,17 +142,17 @@ public:
 
 	/**
 	 * @brief Apply mechanical coupling from Stage 1 to Stage 2
-	 * @param bellcrank_angle_s1 Stage 1 bellcrank angle
+	 * @param bellcrank_angle_drive Stage 1 bellcrank angle
 	 * @return Stage 2 bellcrank angle with coupling offset
 	 */
-	float apply_stage_coupling(float bellcrank_angle_s1) const;
+	float apply_stage_coupling(float bellcrank_angle_drive) const;
 
 	/**
 	 * @brief Get Stage 1 angle from Stage 2 angle (inverse coupling)
-	 * @param bellcrank_angle_s2 Stage 2 bellcrank angle
+	 * @param bellcrank_angle_tilt Stage 2 bellcrank angle
 	 * @return Stage 1 bellcrank angle
 	 */
-	float remove_stage_coupling(float bellcrank_angle_s2) const;
+	float remove_stage_coupling(float bellcrank_angle_tilt) const;
 
 private:
 	TiltConfiguration _config;
@@ -160,14 +162,13 @@ private:
 	// =========================
 
 	/**
-	 * @brief Solve Stage 2 linkage using coordinate geometry
-	 * Boom-end frame: Bellcrank angle → final bucket angle
-	 * @param bellcrank_angle_s2 Stage 2 bellcrank angle
+	 * @brief Stage 2 forward trigonometric solution
+	 * @param bellcrank_angle_tilt Stage 2 bellcrank angle
 	 * @param boom_angle Current boom angle (rad)
 	 * @param state Output tilt state
 	 * @return True if valid solution found
 	 */
-	bool solve_trigonometric(float bellcrank_angle_s2, float boom_angle, TiltState& state) const;
+	bool solve_trigonometric(float bellcrank_angle_tilt, float boom_angle, TiltState& state) const;
 
 	/**
 	 * @brief Inverse Stage 2: Required bellcrank angle for bucket angle
@@ -176,23 +177,6 @@ private:
 	 * @return Required bellcrank angle, or NaN if no valid solution
 	 */
 	float solve_inverse_trigonometric(float bucket_angle, float boom_angle) const;
-
-	// =========================
-	// GEOMETRIC HELPER FUNCTIONS
-	// =========================
-
-	/**
-	 * @brief Find intersection points of two circles
-	 * @param c1 Center of circle 1
-	 * @param r1 Radius of circle 1
-	 * @param c2 Center of circle 2
-	 * @param r2 Radius of circle 2
-	 * @param solution_select 0=first solution, 1=second solution
-	 * @return Intersection point, or {NaN, NaN} if no intersection
-	 */
-	matrix::Vector2f circle_intersection(const matrix::Vector2f& c1, float r1,
-	                                   const matrix::Vector2f& c2, float r2,
-	                                   int solution_select = 0) const;
 
 	// =========================
 	// VALIDATION AND ANALYSIS

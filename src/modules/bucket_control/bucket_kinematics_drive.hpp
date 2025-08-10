@@ -66,16 +66,16 @@ public:
 	 */
 	struct DriveConfiguration {
 		// Attachment points (mm, relative to boom pivot)
-		matrix::Vector2f actuator_base;
-		matrix::Vector2f bellcrank_boom;
+		matrix::Vector2f motor_base;                    // Motor base position (point A)
+		float crank_joint_to_pivot_length;             // OC length parameter
+		float crank_joint_to_pivot_angle;              // Precalculated crank joint to pivot angle
 
 		// Linkage dimensions (mm)
-		float bellcrank_length;
-		float actuator_offset;
+		float drive_bellcrank_length;                  // BC length parameter
 
 		// Physical limits
-		float actuator_min_length;
-		float actuator_max_length;
+		float actuator_min_length;                     // AB minimum length from quad encoder
+		float actuator_max_length;                     // AB maximum length from quad encoder
 	};
 
 	/**
@@ -86,15 +86,9 @@ public:
 		float actuator_length;     // mm - linear actuator extension
 		float bellcrank_angle;     // rad - Stage 1 bellcrank angle ∠OCB₁
 
-		// Secondary outputs
-		float transmission_angle;  // rad - linkage transmission angle
-
 		// Validation
 		bool is_valid;            // True if within mechanical limits
 		float condition_number;   // Linkage condition (singularity detection)
-
-		// Joint positions for visualization/debugging
-		matrix::Vector2f joint_B;  // Stage 1 joint B position
 	};
 
 	explicit BucketKinematicsDrive(ModuleParams *parent);
@@ -102,8 +96,8 @@ public:
 	/**
 	 * @brief Forward kinematics: actuator length -> bellcrank angle
 	 * Uses analytical trigonometric solution (O(1) complexity)
-	 * @param actuator_length Actuator extension length (mm)
-	 * @param boom_angle Current boom angle (rad)
+	 * @param actuator_length AB length from quad encoder (mm)
+	 * @param boom_angle Current boom angle from AS5600 (rad)
 	 * @return Drive linkage state
 	 */
 	DriveState compute_forward_kinematics(float actuator_length, float boom_angle = 0.0f) const;
@@ -112,7 +106,7 @@ public:
 	 * @brief Inverse kinematics: bellcrank angle -> actuator length
 	 * Uses analytical trigonometric solution (O(1) complexity)
 	 * @param bellcrank_angle Desired bellcrank angle (rad)
-	 * @param boom_angle Current boom angle (rad)
+	 * @param boom_angle Current boom angle from AS5600 (rad)
 	 * @return Required actuator length, or -1 if no valid solution
 	 */
 	float compute_inverse_kinematics(float bellcrank_angle, float boom_angle = 0.0f) const;
@@ -140,54 +134,50 @@ public:
 	 */
 	const DriveConfiguration& get_configuration() const { return _config; }
 
-	/**
-	 * @brief Get boom compensation factor
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Compensation factor (mm/rad)
-	 */
-	float get_boom_compensation_factor(float boom_angle) const;
-
 private:
 	DriveConfiguration _config;
+
+	// Drive kinematic parameters (following 16-char limit)
+	DEFINE_PARAMETERS(
+		// Stage 1 - Bucket Actuation Linkage (Machine Body Frame)
+		(ParamFloat<px4::params::BCT_MOTOR_BASE_X>) _param_motor_base_x,
+		(ParamFloat<px4::params::BCT_MOTOR_BASE_Y>) _param_motor_base_y,
+		(ParamFloat<px4::params::BCT_CRANK_PIVOT_LEN>) _param_crank_pivot_len,
+		(ParamFloat<px4::params::BCT_CRANK_PIVOT_ANG>) _param_crank_pivot_ang,
+
+		// Link dimensions
+		(ParamFloat<px4::params::BCT_DRIVE_BC_LEN>) _param_drive_bc_len,
+
+		// Physical and safety limits from quad encoder
+		(ParamFloat<px4::params::BCT_AB_MIN>) _param_actuator_min,
+		(ParamFloat<px4::params::BCT_AB_MAX>) _param_actuator_max
+	);
 
 	// =========================
 	// TRIGONOMETRIC SOLUTION METHODS
 	// =========================
 
 	/**
-	 * @brief Solve Stage 1 linkage using law of cosines
-	 * Machine body frame: Actuator + boom angle → bellcrank angle
-	 * @param actuator_length Current actuator length (mm)
-	 * @param boom_angle Current boom angle (rad)
+	 * @brief Solve Stage 1 linkage using trigonometric approach
+	 * Machine body frame: AB length + boom angle → bellcrank angle
+	 * @param actuator_length Current AB length from quad encoder (mm)
+	 * @param boom_angle Current boom angle from AS5600 (rad)
 	 * @param state Output drive state
 	 * @return True if valid solution found
 	 */
 	bool solve_trigonometric(float actuator_length, float boom_angle, DriveState& state) const;
 
 	/**
-	 * @brief Inverse solve: Required actuator length for bellcrank angle
+	 * @brief Inverse solve: Required AB length for bellcrank angle
 	 * @param bellcrank_angle Required bellcrank angle (rad)
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Required actuator length, or -1 if no valid solution
+	 * @param boom_angle Current boom angle from AS5600 (rad)
+	 * @return Required AB length, or -1 if no valid solution
 	 */
 	float solve_inverse_trigonometric(float bellcrank_angle, float boom_angle) const;
 
 	// =========================
 	// GEOMETRIC HELPER FUNCTIONS
 	// =========================
-
-	/**
-	 * @brief Find intersection points of two circles
-	 * @param c1 Center of circle 1
-	 * @param r1 Radius of circle 1
-	 * @param c2 Center of circle 2
-	 * @param r2 Radius of circle 2
-	 * @param solution_select 0=first solution, 1=second solution
-	 * @return Intersection point, or {NaN, NaN} if no intersection
-	 */
-	matrix::Vector2f circle_intersection(const matrix::Vector2f& c1, float r1,
-	                                   const matrix::Vector2f& c2, float r2,
-	                                   int solution_select = 0) const;
 
 	/**
 	 * @brief Calculate angle using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
@@ -199,11 +189,19 @@ private:
 	float law_of_cosines_angle(float side_a, float side_b, float side_c) const;
 
 	/**
-	 * @brief Calculate boom geometry parameters based on boom angle
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Effective boom span distance for Stage 1
+	 * @brief Calculate bellcrank joint (point C) position from boom angle
+	 * @param boom_angle Current boom angle from AS5600 (rad)
+	 * @return Point C position in machine body frame
 	 */
-	float calculate_boom_span(float boom_angle) const;
+	matrix::Vector2f calculate_bellcrank_joint_position(float boom_angle) const;
+
+	/**
+	 * @brief Calculate angle OCA (angle at point C between OC and CA)
+	 * @param point_C Bellcrank joint position
+	 * @param point_A Motor base position
+	 * @return Angle OCA in radians
+	 */
+	float calculate_angle_OCA(const matrix::Vector2f& point_C, const matrix::Vector2f& point_A) const;
 
 	// =========================
 	// VALIDATION AND ANALYSIS
@@ -216,12 +214,7 @@ private:
 	 */
 	bool check_mechanical_limits(const DriveState& state) const;
 
-	/**
-	 * @brief Compute transmission angle for singularity detection
-	 * @param state Current drive state
-	 * @return Transmission angle in radians (closer to 0° or 180° = worse)
-	 */
-	float compute_transmission_angle(const DriveState& state) const;
+
 
 	/**
 	 * @brief Compute drive condition number for sensitivity analysis
@@ -239,26 +232,8 @@ private:
 	 */
 	bool is_triangle_valid(float a, float b, float c) const;
 
-	// Drive kinematic parameters (following 16-char limit)
-	DEFINE_PARAMETERS(
-		// Stage 1 - Bucket Actuation Linkage (Machine Body Frame)
-		(ParamFloat<px4::params::BCT_ACT_BASE_X>) _param_actuator_base_x,
-		(ParamFloat<px4::params::BCT_ACT_BASE_Y>) _param_actuator_base_y,
-		(ParamFloat<px4::params::BCT_BCK_BOOM_X>) _param_bellcrank_boom_x,
-		(ParamFloat<px4::params::BCT_BCK_BOOM_Y>) _param_bellcrank_boom_y,
-
-		// Link dimensions
-		(ParamFloat<px4::params::BCT_BCK_LEN>) _param_bellcrank_length,
-		(ParamFloat<px4::params::BCT_ACT_OFF>) _param_actuator_offset,
-
-		// Physical and safety limits
-		(ParamFloat<px4::params::BCT_ACT_MIN>) _param_actuator_min,
-		(ParamFloat<px4::params::BCT_ACT_MAX>) _param_actuator_max
-	)
-
 	// Computation constants for trigonometric solutions
 	static constexpr float GEOMETRIC_TOLERANCE = 1e-6f;      // Geometric precision
-	static constexpr float MIN_TRANSMISSION_ANGLE = 0.174f;  // 10° in radians
 	static constexpr float MAX_CONDITION_NUMBER = 100.0f;     // Singularity threshold
 	static constexpr float PI = 3.14159265359f;              // Mathematical constant
 };

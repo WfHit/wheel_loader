@@ -42,14 +42,14 @@ BucketKinematicsDrive::BucketKinematicsDrive(ModuleParams *parent) :
 void BucketKinematicsDrive::update_configuration()
 {
 	// Stage 1 - Bucket Actuation Linkage (Machine Body Frame)
-	_config.actuator_base = matrix::Vector2f(_param_actuator_base_x.get(), _param_actuator_base_y.get());
-	_config.bellcrank_boom = matrix::Vector2f(_param_bellcrank_boom_x.get(), _param_bellcrank_boom_y.get());
+	_config.motor_base = matrix::Vector2f(_param_motor_base_x.get(), _param_motor_base_y.get());
+	_config.crank_joint_to_pivot_length = _param_crank_pivot_len.get();
+	_config.crank_joint_to_pivot_angle = _param_crank_pivot_ang.get();
 
 	// Link dimensions
-	_config.bellcrank_length = _param_bellcrank_length.get();
-	_config.actuator_offset = _param_actuator_offset.get();
+	_config.drive_bellcrank_length = _param_drive_bc_len.get();
 
-	// Physical and safety limits
+	// Physical and safety limits from quad encoder
 	_config.actuator_min_length = _param_actuator_min.get();
 	_config.actuator_max_length = _param_actuator_max.get();
 }
@@ -67,12 +67,11 @@ BucketKinematicsDrive::DriveState BucketKinematicsDrive::compute_forward_kinemat
 
 	// Solve Stage 1: Bucket Actuation Linkage (Machine Body Frame)
 	if (!solve_trigonometric(actuator_length, boom_angle, state)) {
-		PX4_WARN("Drive Stage 1 solution failed for actuator length: %.2f mm", (double)actuator_length);
+		PX4_WARN("Drive Stage 1 solution failed for AB length: %.2f mm", (double)actuator_length);
 		return state;
 	}
 
-	// Compute transmission angle and condition number
-	state.transmission_angle = compute_transmission_angle(state);
+	// Compute condition number for singularity detection
 	state.condition_number = compute_condition_number(state);
 
 	// Final validation
@@ -84,17 +83,17 @@ BucketKinematicsDrive::DriveState BucketKinematicsDrive::compute_forward_kinemat
 float BucketKinematicsDrive::compute_inverse_kinematics(
 	float bellcrank_angle, float boom_angle) const
 {
-	// Inverse Stage 1: Find required actuator length for bellcrank angle
+	// Inverse Stage 1: Find required AB length for bellcrank angle
 	float required_actuator_length = solve_inverse_trigonometric(bellcrank_angle, boom_angle);
 	if (required_actuator_length < 0.0f) {
 		PX4_DEBUG("Drive Stage 1 inverse failed for bellcrank angle: %.3f rad", (double)bellcrank_angle);
 		return -1.0f;
 	}
 
-	// Validate against actuator limits
+	// Validate against AB length limits from quad encoder
 	if (required_actuator_length < _config.actuator_min_length ||
 	    required_actuator_length > _config.actuator_max_length) {
-		PX4_DEBUG("Drive required actuator length %.2f mm outside limits [%.2f, %.2f]",
+		PX4_DEBUG("Drive required AB length %.2f mm outside limits [%.2f, %.2f]",
 		          (double)required_actuator_length,
 		          (double)_config.actuator_min_length,
 		          (double)_config.actuator_max_length);
@@ -110,83 +109,75 @@ float BucketKinematicsDrive::compute_inverse_kinematics(
 
 bool BucketKinematicsDrive::solve_trigonometric(float actuator_length, float boom_angle, DriveState& state) const
 {
-	// Stage 1: Bucket Actuation Linkage (OABC) - Machine Body Frame
-	// O: Boom pivot (origin)
-	// A: Actuator base
-	// B: Actuator-bellcrank joint (moving)
-	// C: Bellcrank-boom attachment
+	// Direct trigonometric approach using law of cosines
+	// Given: AB (actuator_length), BC (drive_bellcrank_length), boom_angle
+	// Find: bellcrank_angle
 
-	// Transform actuator base to boom-relative coordinates
-	float cos_boom = cosf(boom_angle);
-	float sin_boom = sinf(boom_angle);
+	// Step 1: Get motor base position (point A) from parameters
+	matrix::Vector2f point_A = _config.motor_base;
 
-	matrix::Vector2f actuator_base_boom = {
-		_config.actuator_base(0) * cos_boom + _config.actuator_base(1) * sin_boom,
-		-_config.actuator_base(0) * sin_boom + _config.actuator_base(1) * cos_boom
-	};
+	// Step 2: Calculate bellcrank joint position (point C) from boom angle
+	matrix::Vector2f point_C = calculate_bellcrank_joint_position(boom_angle);
 
-	// Link lengths for Stage 1
-	float L_OA = actuator_base_boom.norm();  // Distance O to A
-	float L_AB = actuator_length;            // Variable actuator length
-	float L_BC = _config.bellcrank_length;   // Fixed bellcrank length
-	float L_OC = calculate_boom_span(boom_angle);  // Boom span distance
+	// Step 3: Calculate length AC
+	matrix::Vector2f AC_vector = point_C - point_A;
+	float length_AC = AC_vector.norm();
 
-	// Validate triangle inequality for triangle OAB
-	if (!is_triangle_valid(L_OA, L_AB, L_OC - L_BC)) {
-		return false;
+	// Step 4: Check triangle ABC validity
+	float length_AB = actuator_length;
+	float length_BC = _config.drive_bellcrank_length;
+
+	if (!is_triangle_valid(length_AB, length_BC, length_AC)) {
+		return false;  // Triangle ABC is impossible
 	}
 
-	// Method 1: Law of cosines approach
-	// Step 1: Find diagonal OB using triangle OAB
-	float angle_OAB = atan2f(actuator_base_boom(1), actuator_base_boom(0));
-	float L_OB_sq = L_OA * L_OA + L_AB * L_AB - 2.0f * L_OA * L_AB * cosf(angle_OAB);
-	float L_OB = sqrtf(L_OB_sq);
+	// Step 5: Calculate angle OCA using direct trigonometry
+	float angle_OCA = calculate_angle_OCA(point_C, point_A);
 
-	// Step 2: Apply law of cosines in triangle OBC to find angle OCB
-	float cos_OCB = (L_OC * L_OC + L_BC * L_BC - L_OB_sq) / (2.0f * L_OC * L_BC);
-
-	if (fabsf(cos_OCB) > 1.0f) {
-		return false;  // No valid solution
+	// Step 6: Calculate angle ACB using law of cosines
+	float angle_ACB = law_of_cosines_angle(length_AC, length_BC, length_AB);
+	if (!isfinite(angle_ACB)) {
+		return false;  // Invalid triangle
 	}
 
-	state.bellcrank_angle = acosf(cos_OCB);
+	// Step 7: Calculate angle BCO = angle_ACB - angle_OCA
+	float angle_BCO = angle_ACB - angle_OCA;
 
-	// Step 3: Find joint B position using circle intersection
-	matrix::Vector2f center_A = actuator_base_boom;
-	matrix::Vector2f center_C = _config.bellcrank_boom;
-
-	state.joint_B = circle_intersection(center_A, L_AB, center_C, L_BC, 0);
-
-	if (!isfinite(state.joint_B(0)) || !isfinite(state.joint_B(1))) {
-		return false;  // No intersection found
-	}
+	// Step 8: Store results in state
+	state.bellcrank_angle = angle_BCO;
 
 	return true;
 }
 
 float BucketKinematicsDrive::solve_inverse_trigonometric(float bellcrank_angle, float boom_angle) const
 {
-	// Inverse Stage 1: Given bellcrank angle, find required actuator length
+	// Inverse Stage 1: Given bellcrank angle (BCO), find required AB length
 
-	// Transform coordinates for boom angle
-	float cos_boom = cosf(boom_angle);
-	float sin_boom = sinf(boom_angle);
+	// Step 1: Get motor base position (point A) from parameters
+	matrix::Vector2f point_A = _config.motor_base;
 
-	matrix::Vector2f actuator_base_boom = {
-		_config.actuator_base(0) * cos_boom + _config.actuator_base(1) * sin_boom,
-		-_config.actuator_base(0) * sin_boom + _config.actuator_base(1) * cos_boom
-	};
+	// Step 2: Calculate bellcrank joint position (point C) from boom angle
+	matrix::Vector2f point_C = calculate_bellcrank_joint_position(boom_angle);
 
-	// Find bellcrank joint B position from known bellcrank angle
-	matrix::Vector2f bellcrank_pivot = _config.bellcrank_boom;
-	matrix::Vector2f joint_B = bellcrank_pivot +
-		matrix::Vector2f{cosf(bellcrank_angle), sinf(bellcrank_angle)} * _config.bellcrank_length;
+	// Step 3: Calculate angle OCA
+	float angle_OCA = calculate_angle_OCA(point_C, point_A);
 
-	// Calculate required actuator length as distance from A to B
-	matrix::Vector2f AB_vector = joint_B - actuator_base_boom;
+	// Step 4: Calculate angle BCA = BCO + OCA
+	float angle_BCA = bellcrank_angle + angle_OCA;
+
+	// Step 5: Find point B using angle BCA and BC length
+	// Point B is at distance BC from C at angle BCA relative to CA direction
+	matrix::Vector2f CA_vector = point_A - point_C;
+	float CA_angle = atan2f(CA_vector(1), CA_vector(0));
+	float B_angle = CA_angle + angle_BCA;
+
+	matrix::Vector2f point_B = point_C + matrix::Vector2f{cosf(B_angle), sinf(B_angle)} * _config.drive_bellcrank_length;
+
+	// Step 6: Calculate required AB length
+	matrix::Vector2f AB_vector = point_B - point_A;
 	float required_length = AB_vector.norm();
 
-	// Validate against actuator limits
+	// Step 7: Validate against AB length limits from quad encoder
 	if (required_length < _config.actuator_min_length ||
 	    required_length > _config.actuator_max_length) {
 		return -1.0f;  // Invalid solution
@@ -196,46 +187,9 @@ float BucketKinematicsDrive::solve_inverse_trigonometric(float bellcrank_angle, 
 }
 
 // =========================
+// =========================
 // GEOMETRIC HELPER FUNCTIONS
 // =========================
-
-matrix::Vector2f BucketKinematicsDrive::circle_intersection(const matrix::Vector2f& c1, float r1,
-                                                           const matrix::Vector2f& c2, float r2,
-                                                           int solution_select) const
-{
-	// Find intersection points of two circles using analytical geometry
-	matrix::Vector2f d = c2 - c1;
-	float dist = d.norm();
-
-	// Check if circles can intersect
-	if (dist > r1 + r2 || dist < fabsf(r1 - r2) || dist < GEOMETRIC_TOLERANCE) {
-		return matrix::Vector2f{NAN, NAN};  // No intersection or coincident circles
-	}
-
-	// Distance from c1 to radical axis
-	float a = (r1 * r1 - r2 * r2 + dist * dist) / (2.0f * dist);
-
-	// Distance from radical axis to intersection points
-	float h_sq = r1 * r1 - a * a;
-	if (h_sq < 0.0f) {
-		return matrix::Vector2f{NAN, NAN};  // No real intersection
-	}
-	float h = sqrtf(h_sq);
-
-	// Midpoint on radical axis
-	matrix::Vector2f mid = c1 + d * (a / dist);
-
-	// Perpendicular vector
-	matrix::Vector2f perp = {-d(1), d(0)};  // Rotate d by 90°
-	perp = perp * (h / dist);
-
-	// Two intersection points
-	if (solution_select == 0) {
-		return mid + perp;
-	} else {
-		return mid - perp;
-	}
-}
 
 float BucketKinematicsDrive::law_of_cosines_angle(float side_a, float side_b, float side_c) const
 {
@@ -253,14 +207,32 @@ float BucketKinematicsDrive::law_of_cosines_angle(float side_a, float side_b, fl
 	return acosf(cos_C);
 }
 
-float BucketKinematicsDrive::calculate_boom_span(float boom_angle) const
-{
-	// Calculate effective boom span distance for Stage 1 linkage
-	// This accounts for boom geometry and rotation
+// =========================
+// GEOMETRIC HELPER FUNCTIONS
+// =========================
 
-	// For simplified model, use direct distance to bellcrank pivot
-	// In practice, this would account for boom length and angle
-	return _config.bellcrank_boom.norm();
+matrix::Vector2f BucketKinematicsDrive::calculate_bellcrank_joint_position(float boom_angle) const
+{
+	// Calculate bellcrank joint (point C) position from boom angle
+	// Point C is at distance crank_joint_to_pivot_length from origin O at angle (boom_angle + crank_joint_to_pivot_angle)
+	float effective_boom_angle = boom_angle + _config.crank_joint_to_pivot_angle;
+	return matrix::Vector2f{cosf(effective_boom_angle), sinf(effective_boom_angle)} * _config.crank_joint_to_pivot_length;
+}
+
+float BucketKinematicsDrive::calculate_angle_OCA(const matrix::Vector2f& point_C, const matrix::Vector2f& point_A) const
+{
+	// Calculate angle OCA (angle at point C between OC and CA)
+	matrix::Vector2f CO_vector = -point_C;  // Vector from C to O (origin)
+	matrix::Vector2f CA_vector = point_A - point_C;  // Vector from C to A
+
+	// Calculate angle between vectors using dot product
+	CO_vector = CO_vector.normalized();
+	CA_vector = CA_vector.normalized();
+
+	float dot_product = CO_vector.dot(CA_vector);
+	dot_product = math::constrain(dot_product, -1.0f, 1.0f);
+
+	return acosf(dot_product);
 }
 
 bool BucketKinematicsDrive::is_triangle_valid(float a, float b, float c) const
@@ -282,42 +254,12 @@ bool BucketKinematicsDrive::check_mechanical_limits(const DriveState &state) con
 		return false;
 	}
 
-	// Check transmission angle (avoid poor mechanical advantage)
-	if (state.transmission_angle < MIN_TRANSMISSION_ANGLE ||
-	    state.transmission_angle > (PI - MIN_TRANSMISSION_ANGLE)) {
-		return false;
-	}
-
 	// Check condition number (avoid singularities)
 	if (state.condition_number > MAX_CONDITION_NUMBER) {
 		return false;
 	}
 
 	return true;
-}
-
-float BucketKinematicsDrive::compute_transmission_angle(const DriveState& state) const
-{
-	// Compute transmission angle for Stage 1 linkage
-	// This is the angle between actuator and bellcrank at joint B
-
-	if (!isfinite(state.joint_B(0)) || !isfinite(state.joint_B(1))) {
-		return 0.0f;  // Invalid joint position
-	}
-
-	// Vectors from joint B to adjacent joints
-	matrix::Vector2f BA = _config.actuator_base - state.joint_B;
-	matrix::Vector2f BC = _config.bellcrank_boom - state.joint_B;
-
-	// Normalize vectors
-	BA = BA.normalized();
-	BC = BC.normalized();
-
-	// Compute angle between vectors
-	float dot_product = BA.dot(BC);
-	dot_product = math::constrain(dot_product, -1.0f, 1.0f);
-
-	return acosf(fabsf(dot_product));  // Return acute angle
 }
 
 float BucketKinematicsDrive::compute_condition_number(const DriveState& state) const
@@ -387,16 +329,15 @@ matrix::Matrix<float, 2, 2> BucketKinematicsDrive::compute_jacobian(const DriveS
 bool BucketKinematicsDrive::validate_configuration() const
 {
 	// Check for positive link lengths
-	if (_config.bellcrank_length <= 0.0f ||
-	    _config.actuator_offset <= 0.0f) {
+	if (_config.drive_bellcrank_length <= 0.0f ||
+	    _config.crank_joint_to_pivot_length <= 0.0f) {
 		PX4_ERR("Invalid drive linkage dimensions: all lengths must be positive");
 		return false;
 	}
 
 	// Check actuator range
 	if (_config.actuator_min_length >= _config.actuator_max_length) {
-		PX4_ERR("Invalid actuator range: min (%.1f) >= max (%.1f)",
-		        (double)_config.actuator_min_length, (double)_config.actuator_max_length);
+		PX4_ERR("Invalid AB range: min >= max");
 		return false;
 	}
 
@@ -410,60 +351,26 @@ bool BucketKinematicsDrive::validate_configuration() const
 	for (float test_length : test_lengths) {
 		DriveState state = compute_forward_kinematics(test_length, 0.0f);
 		if (!state.is_valid) {
-			PX4_ERR("Drive forward kinematics failed at test length: %.1f mm", (double)test_length);
+			PX4_ERR("Drive forward kinematics failed");
 			return false;
 		}
 
 		// Test inverse kinematics round-trip
 		float inverse_length = compute_inverse_kinematics(state.bellcrank_angle, 0.0f);
 		if (inverse_length < 0.0f) {
-			PX4_ERR("Drive inverse kinematics failed at test angle: %.3f rad", (double)state.bellcrank_angle);
+			PX4_ERR("Drive inverse kinematics failed");
 			return false;
 		}
 
 		// Check round-trip accuracy
 		float length_error = fabsf(inverse_length - test_length);
 		if (length_error > 1.0f) {  // 1mm tolerance
-			PX4_ERR("Drive round-trip error too large: %.2f mm (tolerance: 1.0 mm)", (double)length_error);
+			PX4_ERR("Drive round-trip error too large");
 			return false;
 		}
 	}
 
-	PX4_INFO("Bucket drive kinematics configuration validated successfully");
-	PX4_INFO("Actuator range: %.1f - %.1f mm",
-	         (double)_config.actuator_min_length, (double)_config.actuator_max_length);
+	PX4_INFO("Bucket drive kinematics validated");
 
 	return true;
-}
-
-float BucketKinematicsDrive::get_boom_compensation_factor(float boom_angle) const
-{
-	// Analytical boom compensation based on trigonometric linkage geometry
-	// This factor converts boom angle changes to required actuator length changes
-
-	// Compute current linkage state at mid-range actuator position
-	float mid_actuator = (_config.actuator_min_length + _config.actuator_max_length) * 0.5f;
-	DriveState current_state = compute_forward_kinematics(mid_actuator, boom_angle);
-
-	if (!current_state.is_valid) {
-		// Fallback to empirical formula
-		const float BASE_FACTOR = 200.0f;  // mm/rad
-		const float ANGLE_SENSITIVITY = 0.15f;
-		return BASE_FACTOR * (1.0f + ANGLE_SENSITIVITY * fabsf(boom_angle));
-	}
-
-	// Use Jacobian to compute exact compensation factor
-	matrix::Matrix<float, 2, 2> jacobian = compute_jacobian(current_state);
-
-	// Compensation factor is ∂actuator_length/∂boom_angle for constant bellcrank angle
-	// This requires inverting the relationship: if J[0,1] = ∂bellcrank/∂boom, then
-	// compensation = -J[0,1] / J[0,0] (negative because we want to counteract boom effect)
-
-	if (fabsf(jacobian(0, 0)) > GEOMETRIC_TOLERANCE) {
-		float factor = -jacobian(0, 1) / jacobian(0, 0);
-		return math::constrain(factor, 50.0f, 500.0f);  // Reasonable range
-	}
-
-	// Fallback value
-	return 200.0f;  // mm/rad
 }

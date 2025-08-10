@@ -99,6 +99,10 @@
       <!-- OA (ground link) -->
       <line x1="0" y1="0" x2="-30" y2="80" stroke="#999" stroke-width="3" stroke-dasharray="4,2" opacity="0.5"/>
 
+      <!-- AC (diagonal constraint - dashed) -->
+      <line x1="-30" y1="80" x2="180" y2="-10" stroke="#666" stroke-width="2" stroke-dasharray="6,3" opacity="0.7"/>
+      <text x="70" y="35" font-family="Arial, sans-serif" font-size="9" fill="#666">AC</text>
+
       <!-- Angle Labels -->
       <text x="35" y="-5" font-family="Arial, sans-serif" font-size="10" fill="#2196F3" font-weight="bold">Boom Angle</text>
       <text x="140" y="-40" font-family="Arial, sans-serif" font-size="10" fill="#9c27b0" font-weight="bold">∠OCB₁</text>
@@ -200,7 +204,7 @@
       <line x1="0" y1="0" x2="240" y2="-10" stroke="url(#boomGrad)" stroke-width="12" stroke-linecap="round"/>
 
       <!-- OA -->
-      <line x1="0" y1="0" x2="60" y2="-30" stroke="#666" stroke-width="5"/>
+      <line x1="0" y1="0" x2="60" y2="-30" stroke="#666" stroke-width="5" stroke-dasharray="6,3" opacity="0.7"/>
       <text x="-35" y="-20" font-family="Arial, sans-serif" font-size="10" fill="#666" transform="scale(-1, 1)">OA</text>
 
       <!-- AB -->
@@ -208,6 +212,10 @@
 
       <!-- BC -->
       <line x1="180" y1="60" x2="240" y2="-10" stroke="#666" stroke-width="5"/>
+
+      <!-- BO (diagonal constraint - dashed) -->
+      <line x1="180" y1="60" x2="0" y2="0" stroke="#666" stroke-width="2" stroke-dasharray="6,3" opacity="0.7"/>
+      <text x="-100" y="35" font-family="Arial, sans-serif" font-size="9" fill="#666" transform="scale(-1, 1)">BO</text>
 
       <!-- Angle Labels -->
       <text x="-200" y="30" font-family="Arial, sans-serif" font-size="10" fill="#9c27b0" font-weight="bold" transform="scale(-1, 1)">∠OCB₂</text>
