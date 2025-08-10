@@ -54,6 +54,25 @@ BucketMotionController::BucketMotionController(ModuleParams *parent) :
 
 void BucketMotionController::initialize(const ControllerConfig& config)
 {
+	// Validate configuration parameters
+	if (config.max_velocity <= 0.0f || config.max_acceleration <= 0.0f || config.max_jerk <= 0.0f) {
+		PX4_ERR("Invalid motion constraints: vel=%.1f, acc=%.1f, jerk=%.1f",
+			(double)config.max_velocity, (double)config.max_acceleration, (double)config.max_jerk);
+		return;
+	}
+
+	if (config.position_min >= config.position_max) {
+		PX4_ERR("Invalid position limits: min=%.1f, max=%.1f",
+			(double)config.position_min, (double)config.position_max);
+		return;
+	}
+
+	if (config.duty_cycle_limit <= 0.0f || config.duty_cycle_limit > 1.0f) {
+		PX4_ERR("Invalid duty cycle limit: %.2f (must be 0.0 < limit <= 1.0)",
+			(double)config.duty_cycle_limit);
+		return;
+	}
+
 	_config = config;
 
 	// Configure PID controllers
