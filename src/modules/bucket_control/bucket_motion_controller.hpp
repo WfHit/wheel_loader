@@ -233,4 +233,7 @@ private:
 		// Safety limits
 		(ParamFloat<px4::params::BCT_DUTY_LIM>) _param_duty_cycle_limit
 	)
+
+	// Safety monitoring constants
+	static constexpr float VELOCITY_LIMIT_TOLERANCE = 1.1f;  // 10% tolerance for velocity limits
 };
