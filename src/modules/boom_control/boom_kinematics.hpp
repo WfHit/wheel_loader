@@ -131,8 +131,8 @@
  *
  * // Command boom to desired angle
  * float desired_angle = math::radians(30.0f);
- * float target_length = kinematics.boom_angle_to_actuator(desired_angle);
- * float target_encoder = kinematics.actuator_length_to_encoder(target_length);
+ * float target_length = kinematics.boom_angle_to_actuator_length(desired_angle);
+ * float target_encoder = kinematics.actuator_length_to_encoder_angle(target_length);
  * ```
  */
 class BoomKinematics : public ModuleParams
@@ -178,14 +178,14 @@ public:
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Boom angle from horizontal in radians
 	 */
-	float actuator_to_boom_angle(float actuator_length) const;
+	float actuator_length_to_boom_angle(float actuator_length) const;
 
 	/**
 	 * @brief Convert boom angle to required actuator length
 	 * @param boom_angle Desired boom angle from horizontal in radians
 	 * @return Required cylinder extension in mm
 	 */
-	float boom_angle_to_actuator(float boom_angle) const;
+	float boom_angle_to_actuator_length(float boom_angle) const;
 
 	/**
 	 * @brief Convert AS5600 encoder angle to actuator length
@@ -195,14 +195,14 @@ public:
 	 * The AS5600 measures rotation of cylinder around its mount point.
 	 * Encoder is calibrated to map angles to min/max cylinder positions.
 	 */
-	float encoder_to_actuator_length(float encoder_angle) const;
+	float encoder_angle_to_actuator_length(float encoder_angle) const;
 
 	/**
 	 * @brief Convert actuator length to AS5600 encoder angle
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Expected encoder angle in degrees
 	 */
-	float actuator_length_to_encoder(float actuator_length) const;
+	float actuator_length_to_encoder_angle(float actuator_length) const;
 
 	/**
 	 * @brief Calculate bucket position from boom angle
@@ -231,7 +231,7 @@ public:
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Complete kinematic state structure
 	 */
-	KinematicState get_kinematic_state(float actuator_length) const;
+	KinematicState get_kinematic_state_from_actuator_length(float actuator_length) const;
 
 	/**
 	 * @brief Get complete kinematic state from AS5600 encoder reading
@@ -282,28 +282,7 @@ private:
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Angle at boom pivot in radians
 	 */
-	float calculate_pivot_angle_in_actuator_triangle(float actuator_length) const;
-
-	/**
-	 * @brief Calculate angle at actuator base mount in actuator triangle
-	 * @param actuator_length Cylinder extension in mm
-	 * @return Angle at actuator base mount in radians
-	 */
-	float calculate_base_mount_angle_in_actuator_triangle(float actuator_length) const;
-
-	/**
-	 * @brief Calculate angle at boom joint in actuator triangle
-	 * @param actuator_length Cylinder extension in mm
-	 * @return Angle at boom joint in radians
-	 */
-	float calculate_actuator_joint_angle_in_actuator_triangle(float actuator_length) const;
-
-	/**
-	 * @brief Calculate angle of actuator joint from horizontal
-	 * @param actuator_length Cylinder extension in mm
-	 * @return Angle from horizontal in radians
-	 */
-	float calculate_actuator_joint_angle(float actuator_length) const;
+	float calculate_pivot_angle_from_actuator_length(float actuator_length) const;
 
 	/**
 	 * @brief Calculate angle using law of cosines
@@ -334,10 +313,4 @@ private:
 	 * @return Angle in radians
 	 */
 	float calculate_actuator_base_to_pivot_angle() const;
-
-	/**
-	 * @brief Get actuator base to pivot distance
-	 * @return Distance in mm
-	 */
-	float get_actuator_base_to_pivot_length() const;
 };

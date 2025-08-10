@@ -145,7 +145,7 @@ void BoomControl::update_sensors()
 	if (_sensor_interface.update(sensor_data)) {
 		// Convert to boom angle using kinematics
 		_current_actuator_length = sensor_data.actuator_length;
-		_current_boom_angle = _kinematics.actuator_to_boom_angle(_current_actuator_length);
+		_current_boom_angle = _kinematics.actuator_length_to_boom_angle(_current_actuator_length);
 	}
 
 	// Update actuator status

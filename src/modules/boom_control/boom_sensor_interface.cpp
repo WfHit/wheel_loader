@@ -1,5 +1,8 @@
-/****************************************************************************
- *
+/************************************************************************	// Convert angle to actuator length through kinematics
+	// This requires a kinematics instance to be passed or accessed
+	// For now, use a more realistic placeholder based on typical boom geometry
+	// Real implementation should use boom_angle_to_actuator_length() from kinematics
+	const float NOMINAL_ACTUATOR_LENGTH_MM = 200.0f; // Typical mid-position *
  *   Copyright (c) 2024 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -74,7 +77,7 @@ bool BoomSensorInterface::update(SensorData &data)
 		// Convert angle to actuator length through kinematics
 		// This requires a kinematics instance to be passed or accessed
 		// For now, use a more realistic placeholder based on typical boom geometry
-		// Real implementation should use boom_angle_to_actuator() from kinematics
+		// Real implementation should use boom_angle_to_actuator_length() from kinematics
 		const float NOMINAL_ACTUATOR_LENGTH_MM = 200.0f; // Typical mid-position
 		const float ANGLE_TO_LENGTH_SCALE = 100.0f; // mm per radian (approximate)
 		data.actuator_length = NOMINAL_ACTUATOR_LENGTH_MM + (data.calibrated_angle * ANGLE_TO_LENGTH_SCALE);
