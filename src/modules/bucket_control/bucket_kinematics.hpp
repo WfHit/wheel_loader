@@ -159,6 +159,10 @@ private:
 	BucketKinematicsDrive _drive_kinematics;
 	BucketKinematicsTilt _tilt_kinematics;
 
+	// Boom compensation constants
+	static constexpr float BOOM_COMPENSATION_BASE_FACTOR = 200.0f;    // mm/rad
+	static constexpr float BOOM_COMPENSATION_ANGLE_SENSITIVITY = 0.15f;
+
 	/**
 	 * @brief Convert drive state and tilt state to combined linkage state
 	 * @param drive_state Drive linkage state

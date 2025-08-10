@@ -128,9 +128,6 @@ bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float
 	// 4. Add boom angle compensation to get bucket angle relative to chassis
 
 
-	//TODO: update with law_of_cosines_angle
-
-
 	// Known parameters
 	float L_OA = _config.bucket_arm_length;      // OA length (parameter)
 	float L_AB = _config.coupler_length;         // AB length (parameter)
@@ -148,27 +145,17 @@ bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float
 
 	float L_OB = sqrtf(L_OB_squared);
 
-	// Step 2a: Calculate angle AOB using law of cosines in triangle AOB
-	// cos(AOB) = (OA² + OB² - AB²) / (2·OA·OB)
-	float cos_AOB = (L_OA * L_OA + L_OB * L_OB - L_AB * L_AB) / (2.0f * L_OA * L_OB);
-
-	// Check if triangle AOB is valid
-	if (cos_AOB < -1.0f || cos_AOB > 1.0f) {
+	// Step 2a: Calculate angle AOB using law of cosines helper function
+	float angle_AOB = law_of_cosines_angle(L_OA, L_OB, L_AB);
+	if (!isfinite(angle_AOB)) {
 		return false;  // Invalid triangle
 	}
 
-	float angle_AOB = acosf(cos_AOB);
-
-	// Step 2b: Calculate angle BOC using law of cosines in triangle BOC
-	// cos(BOC) = (OB² + OC² - BC²) / (2·OB·OC)
-	float cos_BOC = (L_OB * L_OB + L_OC * L_OC - L_BC * L_BC) / (2.0f * L_OB * L_OC);
-
-	// Check if calculation is valid
-	if (cos_BOC < -1.0f || cos_BOC > 1.0f) {
+	// Step 2b: Calculate angle BOC using law of cosines helper function
+	float angle_BOC = law_of_cosines_angle(L_OB, L_OC, L_BC);
+	if (!isfinite(angle_BOC)) {
 		return false;  // Invalid triangle
 	}
-
-	float angle_BOC = acosf(cos_BOC);
 
 	// Step 3: Calculate bucket angle relative to boom
 	// angle AOC = AOB - BOC (assuming B is between A and C in angular sense)
@@ -213,9 +200,9 @@ float BucketKinematicsTilt::solve_inverse_trigonometric(float bucket_angle, floa
 	// or geometric relationships. Let's use geometric approach:
 
 	// From the desired bucket angle, we can calculate point A position
-
-	//TODO:  do not need to calculate point A
-
+	// Note: This geometric approach calculates point A explicitly to find the bellcrank angle.
+	// Alternative: Could use direct trigonometric relationships to avoid calculating point A,
+	// but the current approach is clear and geometrically intuitive.
 	matrix::Vector2f point_A = {
 		L_OA * cosf(angle_AOC_relative_to_boom),
 		L_OA * sinf(angle_AOC_relative_to_boom)
@@ -359,4 +346,20 @@ bool BucketKinematicsTilt::validate_configuration() const
 	         (double)_config.bucket_angle_min, (double)_config.bucket_angle_max);
 
 	return true;
+}
+
+float BucketKinematicsTilt::law_of_cosines_angle(float side_a, float side_b, float side_c) const
+{
+	// Calculate angle C using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
+	if (side_a <= 0.0f || side_b <= 0.0f || side_c <= 0.0f) {
+		return NAN;
+	}
+
+	float cos_C = (side_a * side_a + side_b * side_b - side_c * side_c) / (2.0f * side_a * side_b);
+
+	if (fabsf(cos_C) > 1.0f) {
+		return NAN;  // Invalid triangle
+	}
+
+	return acosf(cos_C);
 }
