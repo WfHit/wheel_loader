@@ -9,8 +9,8 @@
  * 1. Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
+ *    notice, this list of conditions and the distribution in the
+ *    documentation and/or other materials provided with the
  *    distribution.
  * 3. Neither the name PX4 nor the names of its contributors may be
  *    used to endorse or promote products derived from this software
@@ -33,6 +33,10 @@
 
 #pragma once
 
+// Local includes
+#include "bucket_kinematics_drive.hpp"
+#include "bucket_kinematics_tilt.hpp"
+
 // System includes
 #include <px4_platform_common/module_params.h>
 #include <matrix/matrix/math.hpp>
@@ -41,73 +45,29 @@
 #include <cmath>
 
 /**
- * @brief Handles all bucket linkage kinematic calculations
+ * @brief Bucket kinematics coordinator for wheel loader dual-linkage mechanism
  *
- * This class encapsulates the geometric calculations for the bucket
- * four-bar linkage mechanism, providing forward and inverse kinematics
- * along with mechanical validation and sensitivity analysis.
- */
-/**
- * @brief Bucket kinematics solver for wheel loader dual-linkage mechanism
+ * This class coordinates the kinematic calculations for the wheel loader bucket system,
+ * which consists of two mechanically coupled four-bar linkages managed by separate classes:
  *
- * This class handles the kinematic calculations for the wheel loader bucket system,
- * which consists of two mechanically coupled four-bar linkages:
- *
- * STAGE 1: BUCKET ACTUATION LINKAGE (Primary - OABC mechanism):
+ * STAGE 1: BUCKET ACTUATION LINKAGE (Primary - handled by BucketKinematicsDrive):
  *    - Coordinate System: Machine body frame (X=Forward, Y=Left, Z=Up)
- *    - O: Boom pivot point (origin, fixed to machine body)
- *    - A: Linear actuator base attachment
- *    - B: Actuator-bellcrank joint (moving)
- *    - C: Bellcrank-boom attachment (moves with boom)
  *    - Function: Converts actuator length + boom angle → bellcrank angle ∠OCB₁
  *
- * STAGE 2: BUCKET TILT LINKAGE (Secondary - OABC mechanism):
+ * STAGE 2: BUCKET TILT LINKAGE (Secondary - handled by BucketKinematicsTilt):
  *    - Coordinate System: Boom-end frame (X=Boom-forward, Y=Left, Z=Up)
- *    - O: Reference point at boom end
- *    - A: Bucket attachment point (fixed to bucket)
- *    - B: Coupler joint (moving)
- *    - C: Bucket point (final output)
  *    - Function: Converts bellcrank angle ∠OCB₂ → final bucket angle ∠AOC
  *
- * MECHANICAL COUPLING: ∠OCB₁ = ∠OCB₂ + α (fixed angular offset)
+ * MECHANICAL COUPLING: ∠OCB₁ = ∠OCB₂ + α (handled by tilt class)
  *
- * SOLUTION METHOD: Analytical trigonometric approach using:
- *    - Law of cosines for link constraints
- *    - Circle intersections for joint positions
- *    - Direct atan2() calculations for angles
- *    - O(1) constant time complexity
+ * This coordinator provides the same interface as the original BucketKinematics class
+ * but delegates the actual calculations to the specialized drive and tilt classes.
  */
 class BucketKinematics : public ModuleParams
 {
 public:
 	/**
-	 * @brief Kinematic configuration structure
-	 */
-	struct Configuration {
-		// Attachment points (mm, relative to boom pivot)
-		matrix::Vector2f actuator_base;
-		matrix::Vector2f bellcrank_boom;
-		matrix::Vector2f bucket_pivot;
-
-		// Linkage dimensions (mm)
-		float bellcrank_length;
-		float coupler_length;
-		float actuator_offset;
-		float bucket_arm_length;
-
-		// Angular constraints (rad)
-		float bellcrank_internal_angle;
-		float bucket_offset;
-
-		// Physical limits
-		float actuator_min_length;
-		float actuator_max_length;
-		float bucket_angle_min;
-		float bucket_angle_max;
-	};
-
-	/**
-	 * @brief Complete linkage state description
+	 * @brief Complete linkage state description (maintains backward compatibility)
 	 */
 	struct LinkageState {
 		// Primary outputs
@@ -168,169 +128,32 @@ public:
 	void update_configuration();
 
 	/**
-	 * @brief Get current configuration
-	 */
-	const Configuration& get_configuration() const { return _config; }
-
-	/**
 	 * @brief Get boom compensation factor
 	 * @param boom_angle Current boom angle (rad)
 	 * @return Compensation factor (mm/rad)
 	 */
 	float get_boom_compensation_factor(float boom_angle) const;
 
+	/**
+	 * @brief Get access to drive kinematics component
+	 */
+	const BucketKinematicsDrive& get_drive_kinematics() const { return _drive_kinematics; }
+
+	/**
+	 * @brief Get access to tilt kinematics component
+	 */
+	const BucketKinematicsTilt& get_tilt_kinematics() const { return _tilt_kinematics; }
+
 private:
-	Configuration _config;
-
-	// =========================
-	// TRIGONOMETRIC SOLUTION METHODS
-	// =========================
+	BucketKinematicsDrive _drive_kinematics;
+	BucketKinematicsTilt _tilt_kinematics;
 
 	/**
-	 * @brief Stage 1: Solve Bucket Actuation Linkage using law of cosines
-	 * Machine body frame: Actuator + boom angle → bellcrank angle
-	 * @param actuator_length Current actuator length (mm)
-	 * @param boom_angle Current boom angle (rad)
-	 * @param state Output linkage state
-	 * @return True if valid solution found
+	 * @brief Convert drive state and tilt state to combined linkage state
+	 * @param drive_state Drive linkage state
+	 * @param tilt_state Tilt linkage state
+	 * @return Combined linkage state
 	 */
-	bool solve_stage1_trigonometric(float actuator_length, float boom_angle, LinkageState& state) const;
-
-	/**
-	 * @brief Stage 2: Solve Bucket Tilt Linkage using coordinate geometry
-	 * Boom-end frame: Bellcrank angle → final bucket angle
-	 * @param state Linkage state with bellcrank angle from Stage 1
-	 * @param boom_angle Current boom angle (rad)
-	 * @return True if valid solution found
-	 */
-	bool solve_stage2_trigonometric(LinkageState& state, float boom_angle) const;
-
-	/**
-	 * @brief Inverse Stage 1: Required actuator length for bellcrank angle
-	 * @param bellcrank_angle Required bellcrank angle (rad)
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Required actuator length, or -1 if no valid solution
-	 */
-	float solve_stage1_inverse_trigonometric(float bellcrank_angle, float boom_angle) const;
-
-	/**
-	 * @brief Inverse Stage 2: Required bellcrank angle for bucket angle
-	 * @param bucket_angle Desired bucket angle (rad)
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Required bellcrank angle, or NaN if no valid solution
-	 */
-	float solve_stage2_inverse_trigonometric(float bucket_angle, float boom_angle) const;
-
-	// =========================
-	// GEOMETRIC HELPER FUNCTIONS
-	// =========================
-
-	/**
-	 * @brief Find intersection points of two circles
-	 * @param c1 Center of circle 1
-	 * @param r1 Radius of circle 1
-	 * @param c2 Center of circle 2
-	 * @param r2 Radius of circle 2
-	 * @param solution_select 0=first solution, 1=second solution
-	 * @return Intersection point, or {NaN, NaN} if no intersection
-	 */
-	matrix::Vector2f circle_intersection(const matrix::Vector2f& c1, float r1,
-	                                   const matrix::Vector2f& c2, float r2,
-	                                   int solution_select = 0) const;
-
-	/**
-	 * @brief Calculate angle using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
-	 * @param side_a Length of side a
-	 * @param side_b Length of side b
-	 * @param side_c Length of side c (opposite to angle C)
-	 * @return Angle C in radians, or NaN if triangle impossible
-	 */
-	float law_of_cosines_angle(float side_a, float side_b, float side_c) const;
-
-	/**
-	 * @brief Calculate boom geometry parameters based on boom angle
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Effective boom span distance for Stage 1
-	 */
-	float calculate_boom_span(float boom_angle) const;
-
-	/**
-	 * @brief Apply mechanical coupling between Stage 1 and Stage 2
-	 * @param bellcrank_angle_s1 Stage 1 bellcrank angle
-	 * @return Stage 2 bellcrank angle with coupling offset
-	 */
-	float apply_stage_coupling(float bellcrank_angle_s1) const;
-
-	// =========================
-	// VALIDATION AND ANALYSIS
-	// =========================
-
-	// =========================
-	// VALIDATION AND ANALYSIS
-	// =========================
-
-	/**
-	 * @brief Check mechanical limits and validate linkage state
-	 * @param state Linkage state to validate
-	 * @return True if state is mechanically valid and within limits
-	 */
-	bool check_mechanical_limits(const LinkageState& state) const;
-
-	/**
-	 * @brief Compute transmission angle for singularity detection
-	 * @param state Current linkage state
-	 * @return Transmission angle in radians (closer to 0° or 180° = worse)
-	 */
-	float compute_transmission_angle(const LinkageState& state) const;
-
-	/**
-	 * @brief Compute linkage condition number for sensitivity analysis
-	 * @param state Current linkage state
-	 * @return Condition number (higher = closer to singularity)
-	 */
-	float compute_condition_number(const LinkageState& state) const;
-
-	/**
-	 * @brief Validate that triangle with given side lengths is possible
-	 * @param a Side length a
-	 * @param b Side length b
-	 * @param c Side length c
-	 * @return True if triangle inequality satisfied
-	 */
-	bool is_triangle_valid(float a, float b, float c) const;
-
-	// Kinematic parameters (following 16-char limit)
-	DEFINE_PARAMETERS(
-		// Stage 1 - Bucket Actuation Linkage (Machine Body Frame)
-		(ParamFloat<px4::params::BCT_ACT_BASE_X>) _param_actuator_base_x,
-		(ParamFloat<px4::params::BCT_ACT_BASE_Y>) _param_actuator_base_y,
-		(ParamFloat<px4::params::BCT_BCK_BOOM_X>) _param_bellcrank_boom_x,
-		(ParamFloat<px4::params::BCT_BCK_BOOM_Y>) _param_bellcrank_boom_y,
-
-		// Stage 2 - Bucket Tilt Linkage (Boom-End Frame)
-		(ParamFloat<px4::params::BCT_BKT_PIV_X>) _param_bucket_pivot_x,
-		(ParamFloat<px4::params::BCT_BKT_PIV_Y>) _param_bucket_pivot_y,
-
-		// Link dimensions (both stages)
-		(ParamFloat<px4::params::BCT_BCK_LEN>) _param_bellcrank_length,
-		(ParamFloat<px4::params::BCT_COUP_LEN>) _param_coupler_length,
-		(ParamFloat<px4::params::BCT_ACT_OFF>) _param_actuator_offset,
-		(ParamFloat<px4::params::BCT_BKT_ARM_LEN>) _param_bucket_arm_length,
-
-		// Mechanical coupling and offsets
-		(ParamFloat<px4::params::BCT_BCK_INT_ANG>) _param_bellcrank_internal_angle,
-		(ParamFloat<px4::params::BCT_BKT_OFF>) _param_bucket_offset,
-
-		// Physical and safety limits
-		(ParamFloat<px4::params::BCT_ACT_MIN>) _param_actuator_min,
-		(ParamFloat<px4::params::BCT_ACT_MAX>) _param_actuator_max,
-		(ParamFloat<px4::params::BCT_ANG_MIN>) _param_bucket_angle_min,
-		(ParamFloat<px4::params::BCT_ANG_MAX>) _param_bucket_angle_max
-	)
-
-	// Computation constants for trigonometric solutions
-	static constexpr float GEOMETRIC_TOLERANCE = 1e-6f;      // Geometric precision
-	static constexpr float MIN_TRANSMISSION_ANGLE = 0.174f;  // 10° in radians
-	static constexpr float MAX_CONDITION_NUMBER = 100.0f;     // Singularity threshold
-	static constexpr float PI = 3.14159265359f;              // Mathematical constant
+	LinkageState combine_states(const BucketKinematicsDrive::DriveState& drive_state,
+	                           const BucketKinematicsTilt::TiltState& tilt_state) const;
 };
