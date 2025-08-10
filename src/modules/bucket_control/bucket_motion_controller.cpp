@@ -206,7 +206,7 @@ bool BucketMotionController::check_safety_constraints(float position, float velo
 	}
 
 	// Check velocity limits
-	if (fabsf(velocity) > _config.max_velocity * 1.1f) { // 10% tolerance
+	if (fabsf(velocity) > _config.max_velocity * VELOCITY_LIMIT_TOLERANCE) {
 		if (!_safety_stop_active) {
 			PX4_WARN("Velocity limit exceeded: %.1f mm/s (limit: %.1f)",
 				 (double)fabsf(velocity), (double)_config.max_velocity);

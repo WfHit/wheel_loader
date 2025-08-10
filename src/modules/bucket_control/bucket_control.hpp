@@ -94,6 +94,16 @@ private:
 	 */
 	void update_parameters();
 
+	/**
+	 * @brief Control execution helper methods
+	 */
+	bool determine_target_position(const BucketStateManager::StateInfo& state_info,
+				       const BucketHardwareInterface::SensorData& sensor_data,
+				       float& target_actuator_position);
+	void send_zero_command();
+	void execute_motion_control(float target_actuator_position,
+				    const BucketHardwareInterface::SensorData& sensor_data);
+
 	// Core components
 	BucketKinematics* _kinematics{nullptr};
 	BucketHardwareInterface* _hardware{nullptr};
@@ -124,4 +134,5 @@ private:
 	// Control loop timing
 	static constexpr uint32_t CONTROL_INTERVAL_US = 20000;  // 50 Hz (20ms)
 	static constexpr uint32_t COMMAND_TIMEOUT_US = 1000000;  // Command timeout (1s)
+	static constexpr float MICROSECONDS_TO_SECONDS = 1e-6f; // Conversion factor
 };

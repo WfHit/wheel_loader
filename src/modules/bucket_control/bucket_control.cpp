@@ -266,79 +266,15 @@ void BucketControl::execute_control()
 		return;
 	}
 
+	// Determine target position based on current state
 	float target_actuator_position = 0.0f;
-	bool position_command_valid = false;
-
-	// Determine target position based on state and mode
-	if (state_info.state == BucketStateManager::OperationalState::CALIBRATING) {
-		// Use calibration command
-		float cal_pos, cal_vel;
-		if (_state_manager->get_calibration_command(cal_pos, cal_vel)) {
-			target_actuator_position = cal_pos;
-			position_command_valid = true;
-		}
-
-	} else if (state_info.state == BucketStateManager::OperationalState::ACTIVE) {
-		// Use operational commands - determine if it's position or direct mode based on which variable is set
-		if (_target_bucket_angle_absolute != 0.0f) {
-			// Position mode: maintain absolute bucket angle using kinematics
-			auto target_linkage = _kinematics->compute_inverse_kinematics(
-				_target_bucket_angle_absolute,
-				sensor_data.boom_angle
-			);
-
-			if (target_linkage.is_valid) {
-				target_actuator_position = target_linkage.actuator_length;
-				position_command_valid = true;
-			} else {
-				PX4_WARN("Cannot compute target actuator position for bucket angle");
-			}
-
-		} else {
-			// Direct mode: use commanded actuator position
-			target_actuator_position = _commanded_actuator_position;
-			position_command_valid = true;
-		}
-
-	} else if (state_info.state == BucketStateManager::OperationalState::READY) {
-		// Hold current position
-		target_actuator_position = sensor_data.actuator_position;
-		position_command_valid = true;
-	}
-
-	// Execute control if we have a valid target
-	if (!position_command_valid) {
-		// Send zero command if no valid target
-		BucketHardwareInterface::ActuatorCommand actuator_cmd{};
-		actuator_cmd.duty_cycle = 0.0f;
-		actuator_cmd.enable = false;
-		_hardware->send_actuator_command(actuator_cmd);
+	if (!determine_target_position(state_info, sensor_data, target_actuator_position)) {
+		send_zero_command();
 		return;
 	}
 
-	// Plan smooth trajectory
-	const float dt = static_cast<float>(CONTROL_INTERVAL_US) * 1e-6f;
-	auto motion_setpoint = _motion_controller->plan_trajectory(
-		sensor_data.actuator_position,
-		target_actuator_position,
-		dt
-	);
-
-	// Compute control output
-	auto control_output = _motion_controller->compute_control(
-		motion_setpoint,
-		sensor_data.actuator_position,
-		sensor_data.actuator_velocity,
-		sensor_data.boom_angle,
-		dt
-	);
-
-	// Send command to hardware
-	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
-	actuator_cmd.duty_cycle = control_output.duty_cycle;
-	actuator_cmd.enable = !control_output.safety_stop;
-
-	_hardware->send_actuator_command(actuator_cmd);
+	// Execute motion control
+	execute_motion_control(target_actuator_position, sensor_data);
 }
 
 void BucketControl::publish_telemetry()
@@ -403,6 +339,88 @@ void BucketControl::update_parameters()
 
 	// Update component configurations as needed
 	// Motion controller parameters are updated through the parameter system
+}
+
+bool BucketControl::determine_target_position(const BucketStateManager::StateInfo& state_info,
+					       const BucketHardwareInterface::SensorData& sensor_data,
+					       float& target_actuator_position)
+{
+	// Determine target position based on state and mode
+	if (state_info.state == BucketStateManager::OperationalState::CALIBRATING) {
+		// Use calibration command
+		float cal_pos, cal_vel;
+		if (_state_manager->get_calibration_command(cal_pos, cal_vel)) {
+			target_actuator_position = cal_pos;
+			return true;
+		}
+
+	} else if (state_info.state == BucketStateManager::OperationalState::ACTIVE) {
+		// Use operational commands - determine if it's position or direct mode
+		if (_target_bucket_angle_absolute != 0.0f) {
+			// Position mode: maintain absolute bucket angle using kinematics
+			auto target_linkage = _kinematics->compute_inverse_kinematics(
+				_target_bucket_angle_absolute,
+				sensor_data.boom_angle
+			);
+
+			if (target_linkage.is_valid) {
+				target_actuator_position = target_linkage.actuator_length;
+				return true;
+			} else {
+				PX4_WARN("Cannot compute target actuator position for bucket angle");
+				return false;
+			}
+
+		} else {
+			// Direct mode: use commanded actuator position
+			target_actuator_position = _commanded_actuator_position;
+			return true;
+		}
+
+	} else if (state_info.state == BucketStateManager::OperationalState::READY) {
+		// Hold current position
+		target_actuator_position = sensor_data.actuator_position;
+		return true;
+	}
+
+	return false;  // No valid target position
+}
+
+void BucketControl::send_zero_command()
+{
+	// Send zero command if no valid target
+	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
+	actuator_cmd.duty_cycle = 0.0f;
+	actuator_cmd.enable = false;
+	_hardware->send_actuator_command(actuator_cmd);
+}
+
+void BucketControl::execute_motion_control(float target_actuator_position,
+					    const BucketHardwareInterface::SensorData& sensor_data)
+{
+	// Plan smooth trajectory
+	const float dt = static_cast<float>(CONTROL_INTERVAL_US) * MICROSECONDS_TO_SECONDS;
+	auto motion_setpoint = _motion_controller->plan_trajectory(
+		sensor_data.actuator_position,
+		target_actuator_position,
+		dt
+	);
+
+	// Compute control output
+	auto control_output = _motion_controller->compute_control(
+		motion_setpoint,
+		sensor_data.actuator_position,
+		sensor_data.actuator_velocity,
+		sensor_data.boom_angle,
+		dt
+	);
+
+	// Send command to hardware
+	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
+	actuator_cmd.duty_cycle = control_output.duty_cycle;
+	actuator_cmd.enable = !control_output.safety_stop;
+
+	_hardware->send_actuator_command(actuator_cmd);
 }
 
 // Static methods for module management
