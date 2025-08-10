@@ -127,6 +127,10 @@ bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float
 	// 3. Calculate angle AOC = AOB - BOC (bucket angle relative to boom)
 	// 4. Add boom angle compensation to get bucket angle relative to chassis
 
+
+	//TODO: update with law_of_cosines_angle
+
+
 	// Known parameters
 	float L_OA = _config.bucket_arm_length;      // OA length (parameter)
 	float L_AB = _config.coupler_length;         // AB length (parameter)
@@ -209,6 +213,9 @@ float BucketKinematicsTilt::solve_inverse_trigonometric(float bucket_angle, floa
 	// or geometric relationships. Let's use geometric approach:
 
 	// From the desired bucket angle, we can calculate point A position
+
+	//TODO:  do not need to calculate point A
+
 	matrix::Vector2f point_A = {
 		L_OA * cosf(angle_AOC_relative_to_boom),
 		L_OA * sinf(angle_AOC_relative_to_boom)
