@@ -2,9 +2,7 @@
  *
  *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
- * Redistribution and use in so	// =========================
-	// VALIDATION AND ANALYSIS
-	// =========================forms, with or without
+ * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
@@ -70,16 +68,22 @@ public:
 	 */
 	struct TiltConfiguration {
 		// Attachment points (mm, relative to boom pivot)
-		matrix::Vector2f bucket_pivot;
+		matrix::Vector2f bellcrank_joint_to_bucket_length;
 
 		// Linkage dimensions (mm)
 		float bellcrank_length;
 		float coupler_length;
 		float bucket_arm_length;
 
-		// Angular constraints (rad)
-		float bellcrank_internal_angle;
-		float bucket_offset;
+		// Geometric measurements for angle calculations (mm)
+		float bellcrank_plane_separation;    // Distance between bellcrank planes (for internal angle)
+		float boom_joint_offset_distance;    // Linear offset distance of boom joint (for alignment angle)
+		float bellcrank_pivot_radius;        // Radius from bellcrank pivot to calculate angles
+
+		// Angular constraints (rad) - calculated from geometric measurements
+		float bellcrank_internal_angle;   // Internal angle between bellcrank planes (Stage 1 to Stage 2)
+		float bucket_offset;              // Calibration offset for bucket angle measurement
+		float bellcrank_boom_alignment_offset;  // Angular offset due to bellcrank-boom joint misalignment
 
 		// Physical limits
 		float bucket_angle_min;
@@ -207,25 +211,49 @@ private:
 	 */
 	float law_of_cosines_angle(float side_a, float side_b, float side_c) const;
 
+	/**
+	 * @brief Calculate third side using law of cosines: c^2 = a^2 + b^2 - 2ab*cos(C)
+	 * @param side_a Length of side a
+	 * @param side_b Length of side b
+	 * @param angle_between Angle between sides a and b (rad)
+	 * @return Length of third side c, or NaN if invalid inputs
+	 */
+	float law_of_cosines_side(float side_a, float side_b, float angle_between) const;
+
+	/**
+	 * @brief Validate and select best bellcrank angle candidate from two solutions
+	 * @param candidate_1 First bellcrank angle candidate (rad)
+	 * @param candidate_2 Second bellcrank angle candidate (rad)
+	 * @param target_bucket_angle Target bucket angle for validation (rad)
+	 * @param boom_angle Current boom angle (rad)
+	 * @return Best valid candidate angle, or NaN if no valid solution
+	 */
+	float validate_and_select_best_candidate(float candidate_1, float candidate_2,
+	                                        float target_bucket_angle, float boom_angle) const;
+
 	// Tilt kinematic parameters (following 16-char limit)
 	DEFINE_PARAMETERS(
 		// Stage 2 - Bucket Tilt Linkage (Boom-End Frame)
-		(ParamFloat<px4::params::BCT_BKT_PIV_X>) _param_bucket_pivot_x,
-		(ParamFloat<px4::params::BCT_BKT_PIV_Y>) _param_bucket_pivot_y,
+		(ParamFloat<px4::params::BCT_BKT_PIV_X>) _param_bellcrank_joint_to_bucket_length_x,
+		(ParamFloat<px4::params::BCT_BKT_PIV_Y>) _param_bellcrank_joint_to_bucket_length_y,
 
 		// Link dimensions
 		(ParamFloat<px4::params::BCT_BCK_LEN>) _param_bellcrank_length,
 		(ParamFloat<px4::params::BCT_COUP_LEN>) _param_coupler_length,
 		(ParamFloat<px4::params::BCT_BKT_ARM_LEN>) _param_bucket_arm_length,
 
+		// Geometric measurements for angle calculations
+		(ParamFloat<px4::params::BCT_BCK_PLANE_SEP>) _param_bellcrank_plane_separation,      // Bellcrank plane separation
+		(ParamFloat<px4::params::BCT_BOOM_JNT_OFF_DIST>) _param_boom_joint_offset_distance,  // Boom joint offset distance
+		(ParamFloat<px4::params::BCT_BCK_PIV_RAD>) _param_bellcrank_pivot_radius,            // Bellcrank pivot radius
+
 		// Mechanical coupling and offsets
-		(ParamFloat<px4::params::BCT_BCK_INT_ANG>) _param_bellcrank_internal_angle,
 		(ParamFloat<px4::params::BCT_BKT_OFF>) _param_bucket_offset,
 
 		// Physical and safety limits
 		(ParamFloat<px4::params::BCT_ANG_MIN>) _param_bucket_angle_min,
 		(ParamFloat<px4::params::BCT_ANG_MAX>) _param_bucket_angle_max
-	)
+	);
 
 	// Computation constants for trigonometric solutions
 	static constexpr float GEOMETRIC_TOLERANCE = 1e-6f;      // Geometric precision

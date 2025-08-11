@@ -49,9 +49,29 @@ void BucketKinematicsDrive::update_configuration()
 	// Link dimensions
 	_config.drive_bellcrank_length = _param_drive_bc_len.get();
 
+	// Geometric measurements for angle calculations
+	_config.boom_joint_offset_distance = _param_boom_joint_offset_distance.get();
+	_config.bellcrank_pivot_radius = _param_bellcrank_pivot_radius.get();
+
+	// Calculate boom alignment offset angle from geometric measurements
+	// Boom alignment offset calculation: tan(angle) = offset_distance / pivot_radius
+	if (_config.bellcrank_pivot_radius > 0.0f) {
+		_config.bellcrank_boom_alignment_offset = atanf(_config.boom_joint_offset_distance / _config.bellcrank_pivot_radius);
+	} else {
+		_config.bellcrank_boom_alignment_offset = 0.0f;
+		PX4_WARN("Invalid bellcrank pivot radius, setting boom alignment offset to 0");
+	}
+
 	// Physical and safety limits from quad encoder
 	_config.actuator_min_length = _param_actuator_min.get();
 	_config.actuator_max_length = _param_actuator_max.get();
+
+	// Log calculated angles for debugging
+	PX4_INFO("Drive: Calculated boom_alignment_offset = %.3f rad (%.1f deg) from offset_dist=%.1fmm, radius=%.1fmm",
+	         (double)_config.bellcrank_boom_alignment_offset,
+	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI),
+	         (double)_config.boom_joint_offset_distance,
+	         (double)_config.bellcrank_pivot_radius);
 }
 
 // =========================
@@ -143,8 +163,8 @@ bool BucketKinematicsDrive::solve_trigonometric(float actuator_length, float boo
 	// Step 7: Calculate angle BCO = angle_ACB - angle_OCA
 	float angle_BCO = angle_ACB - angle_OCA;
 
-	// Step 8: Store results in state
-	state.bellcrank_angle = angle_BCO;
+	// Step 8: Apply bellcrank-boom alignment offset and store results in state
+	state.bellcrank_angle = angle_BCO + _config.bellcrank_boom_alignment_offset;
 
 	return true;
 }
@@ -153,19 +173,22 @@ float BucketKinematicsDrive::solve_inverse_trigonometric(float bellcrank_angle, 
 {
 	// Inverse Stage 1: Given bellcrank angle (BCO), find required AB length
 
-	// Step 1: Get motor base position (point A) from parameters
+	// Step 1: Remove bellcrank-boom alignment offset from input angle
+	float corrected_bellcrank_angle = bellcrank_angle - _config.bellcrank_boom_alignment_offset;
+
+	// Step 2: Get motor base position (point A) from parameters
 	matrix::Vector2f point_A = _config.motor_base;
 
-	// Step 2: Calculate bellcrank joint position (point C) from boom angle
+	// Step 3: Calculate bellcrank joint position (point C) from boom angle
 	matrix::Vector2f point_C = calculate_bellcrank_joint_position(boom_angle);
 
-	// Step 3: Calculate angle OCA
+	// Step 4: Calculate angle OCA
 	float angle_OCA = calculate_angle_OCA(point_C, point_A);
 
-	// Step 4: Calculate angle BCA = BCO + OCA
-	float angle_BCA = bellcrank_angle + angle_OCA;
+	// Step 5: Calculate angle BCA = BCO + OCA
+	float angle_BCA = corrected_bellcrank_angle + angle_OCA;
 
-	// Step 5: Find point B using angle BCA and BC length
+	// Step 6: Find point B using angle BCA and BC length
 	// Point B is at distance BC from C at angle BCA relative to CA direction
 	matrix::Vector2f CA_vector = point_A - point_C;
 	float CA_angle = atan2f(CA_vector(1), CA_vector(0));
@@ -173,7 +196,7 @@ float BucketKinematicsDrive::solve_inverse_trigonometric(float bellcrank_angle, 
 
 	matrix::Vector2f point_B = point_C + matrix::Vector2f{cosf(B_angle), sinf(B_angle)} * _config.drive_bellcrank_length;
 
-	// Step 6: Calculate required AB length
+	// Step 7: Calculate required AB length
 	matrix::Vector2f AB_vector = point_B - point_A;
 	float required_length = AB_vector.norm();
 

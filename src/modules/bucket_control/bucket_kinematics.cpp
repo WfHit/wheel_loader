@@ -171,13 +171,6 @@ matrix::Matrix<float, 2, 2> BucketKinematics::compute_jacobian(const LinkageStat
 	return _drive_kinematics.compute_jacobian(drive_state);
 }
 
-float BucketKinematics::get_boom_compensation_factor(float boom_angle) const
-{
-	// Since the drive kinematics no longer provides boom compensation,
-	// return a default value or implement alternative compensation logic
-	return BOOM_COMPENSATION_BASE_FACTOR * (1.0f + BOOM_COMPENSATION_ANGLE_SENSITIVITY * fabsf(boom_angle));
-}
-
 // =========================
 // AS5600 ENCODER FUNCTIONS
 // =========================

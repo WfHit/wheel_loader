@@ -41,20 +41,54 @@ BucketKinematicsTilt::BucketKinematicsTilt(ModuleParams *parent) :
 void BucketKinematicsTilt::update_configuration()
 {
 	// Stage 2 - Bucket Tilt Linkage (Boom-End Frame)
-	_config.bucket_pivot = matrix::Vector2f(_param_bucket_pivot_x.get(), _param_bucket_pivot_y.get());
+	_config.bellcrank_joint_to_bucket_length = matrix::Vector2f(_param_bellcrank_joint_to_bucket_length_x.get(), _param_bellcrank_joint_to_bucket_length_y.get());
 
 	// Link dimensions
 	_config.bellcrank_length = _param_bellcrank_length.get();
 	_config.coupler_length = _param_coupler_length.get();
 	_config.bucket_arm_length = _param_bucket_arm_length.get();
 
+	// Geometric measurements for angle calculations
+	_config.bellcrank_plane_separation = _param_bellcrank_plane_separation.get();
+	_config.boom_joint_offset_distance = _param_boom_joint_offset_distance.get();
+	_config.bellcrank_pivot_radius = _param_bellcrank_pivot_radius.get();
+
+	// Calculate angles from geometric measurements
+	// Internal angle calculation: tan(angle) = plane_separation / pivot_radius
+	if (_config.bellcrank_pivot_radius > 0.0f) {
+		_config.bellcrank_internal_angle = atanf(_config.bellcrank_plane_separation / _config.bellcrank_pivot_radius);
+	} else {
+		_config.bellcrank_internal_angle = 0.0f;
+		PX4_WARN("Invalid bellcrank pivot radius, setting internal angle to 0");
+	}
+
+	// Boom alignment offset calculation: tan(angle) = offset_distance / pivot_radius
+	if (_config.bellcrank_pivot_radius > 0.0f) {
+		_config.bellcrank_boom_alignment_offset = atanf(_config.boom_joint_offset_distance / _config.bellcrank_pivot_radius);
+	} else {
+		_config.bellcrank_boom_alignment_offset = 0.0f;
+		PX4_WARN("Invalid bellcrank pivot radius, setting boom alignment offset to 0");
+	}
+
 	// Mechanical coupling and offsets
-	_config.bellcrank_internal_angle = _param_bellcrank_internal_angle.get();
 	_config.bucket_offset = _param_bucket_offset.get();
 
 	// Physical and safety limits
 	_config.bucket_angle_min = _param_bucket_angle_min.get();
 	_config.bucket_angle_max = _param_bucket_angle_max.get();
+
+	// Log calculated angles for debugging
+	PX4_INFO("Tilt: Calculated bellcrank_internal_angle = %.3f rad (%.1f deg) from plane_sep=%.1fmm, radius=%.1fmm",
+	         (double)_config.bellcrank_internal_angle,
+	         (double)(_config.bellcrank_internal_angle * 180.0f / PI),
+	         (double)_config.bellcrank_plane_separation,
+	         (double)_config.bellcrank_pivot_radius);
+
+	PX4_INFO("Tilt: Calculated boom_alignment_offset = %.3f rad (%.1f deg) from offset_dist=%.1fmm, radius=%.1fmm",
+	         (double)_config.bellcrank_boom_alignment_offset,
+	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI),
+	         (double)_config.boom_joint_offset_distance,
+	         (double)_config.bellcrank_pivot_radius);
 }
 
 // =========================
@@ -72,7 +106,7 @@ BucketKinematicsTilt::TiltState BucketKinematicsTilt::compute_forward_kinematics
 
 	// Solve Stage 2: Bucket Tilt Linkage (Boom-End Frame)
 	if (!solve_trigonometric(state.bellcrank_angle, boom_angle, state)) {
-		PX4_WARN("Tilt Stage 2 solution failed for bellcrank angle: %.3f rad", (double)state.bellcrank_angle);
+		PX4_WARN("Tilt Stage 2 solution failed for bellcrank angle");
 		return state;
 	}
 
@@ -88,7 +122,7 @@ float BucketKinematicsTilt::compute_inverse_kinematics(
 	// Stage 2 Inverse: Find required bellcrank angle for desired bucket angle
 	float required_bellcrank_tilt = solve_inverse_trigonometric(bucket_angle, boom_angle);
 	if (!isfinite(required_bellcrank_tilt)) {
-		PX4_WARN("Tilt Stage 2 inverse failed for bucket angle: %.3f rad", (double)bucket_angle);
+		PX4_WARN("Tilt Stage 2 inverse failed for bucket angle");
 		return NAN;
 	}
 
@@ -115,158 +149,126 @@ float BucketKinematicsTilt::remove_stage_coupling(float bellcrank_angle_tilt) co
 
 bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float boom_angle, TiltState& state) const
 {
-	// Stage 2: Bucket Tilt Linkage (OABC) - Boom-End Frame
-	// O: Boom end reference point (origin)
-	// A: Bucket attachment (fixed to bucket)
-	// B: Coupler joint (moving)
-	// C: Bucket point (bellcrank pivot)
-	//
-	// Your calculation approach:
-	// 1. Calculate OB length using angle OCB and known OC length and crank length (BC)
-	// 2. Calculate angle AOB and angle BOC using known lengths OA, AB, OB
-	// 3. Calculate angle AOC = AOB - BOC (bucket angle relative to boom)
-	// 4. Add boom angle compensation to get bucket angle relative to chassis
+	/**
+	 * Stage 2: Bucket Tilt Linkage (OABC) - Boom-End Frame
+	 *
+	 * Points:
+	 *   O: Boom end reference point (origin)
+	 *   A: Bucket attachment (fixed to bucket)
+	 *   B: Coupler joint (moving)
+	 *   C: Bucket point (bellcrank pivot)
+	 *
+	 * Solution approach:
+	 *   1. Calculate OB distance using law of cosines in triangle OBC
+	 *   2. Find angles AOB and BOC using known link lengths
+	 *   3. Compute bucket angle: AOC = AOB - BOC
+	 *   4. Apply boom angle and offset compensation
+	 */
 
+	// Extract linkage dimensions with descriptive names
+	const float bucket_arm_length = _config.bucket_arm_length;           // Distance O to A
+	const float coupler_link_length = _config.coupler_length;            // Distance A to B
+	const float bellcrank_length = _config.bellcrank_length;             // Distance B to C
+	const float bellcrank_joint_to_bucket_length =
+		_config.bellcrank_joint_to_bucket_length.norm();    			 // Distance O to C
+	const float bellcrank_joint_angle = bellcrank_angle_tilt;            // Angle OCB
 
-	// Known parameters
-	float L_OA = _config.bucket_arm_length;      // OA length (parameter)
-	float L_AB = _config.coupler_length;         // AB length (parameter)
-	float L_BC = _config.bellcrank_length;       // Crank length (parameter)
-	float L_OC = _config.bucket_pivot.norm();    // OC length (parameter)
-	float angle_OCB = bellcrank_angle_tilt;      // angle OCB from stage 1
+	// Step 1: Calculate coupler joint distance using law of cosines
+	const float coupler_joint_to_pivot_distance =
+		law_of_cosines_side(
+			bellcrank_joint_to_bucket_length, bellcrank_length, bellcrank_joint_angle);
 
-	// Step 1: Calculate OB length using law of cosines in triangle OBC
-	// OB² = OC² + BC² - 2·OC·BC·cos(OCB)
-	float L_OB_squared = L_OC * L_OC + L_BC * L_BC - 2.0f * L_OC * L_BC * cosf(angle_OCB);
-
-	if (L_OB_squared <= 0.0f) {
-		return false;  // Invalid geometry
+	if (!isfinite(coupler_joint_to_pivot_distance) ||
+		coupler_joint_to_pivot_distance <= GEOMETRIC_TOLERANCE) {
+		return false;  // Invalid triangle geometry
 	}
 
-	float L_OB = sqrtf(L_OB_squared);
+	// Step 2: Calculate internal triangle angles using law of cosines
+	const float bucket_to_coupler_angle =
+		law_of_cosines_angle(
+			bucket_arm_length, coupler_joint_to_pivot_distance, coupler_link_length);
+	const float coupler_to_pivot_angle =
+		law_of_cosines_angle(
+			coupler_joint_to_pivot_distance, bellcrank_joint_to_bucket_length, bellcrank_length);
 
-	// Step 2a: Calculate angle AOB using law of cosines helper function
-	float angle_AOB = law_of_cosines_angle(L_OA, L_OB, L_AB);
-	if (!isfinite(angle_AOB)) {
-		return false;  // Invalid triangle
+	if (!isfinite(bucket_to_coupler_angle) || !isfinite(coupler_to_pivot_angle)) {
+		return false;  // Invalid triangle configuration
 	}
 
-	// Step 2b: Calculate angle BOC using law of cosines helper function
-	float angle_BOC = law_of_cosines_angle(L_OB, L_OC, L_BC);
-	if (!isfinite(angle_BOC)) {
-		return false;  // Invalid triangle
-	}
+	// Step 3: Calculate bucket angle relative to boom frame
+	const float bucket_angle_boom_relative = bucket_to_coupler_angle - coupler_to_pivot_angle;
 
-	// Step 3: Calculate bucket angle relative to boom
-	// angle AOC = AOB - BOC (assuming B is between A and C in angular sense)
-	float angle_AOC_relative_to_boom = angle_AOB - angle_BOC;
-
-	// Step 4: Apply boom angle compensation to get bucket angle relative to chassis
-	// Final bucket angle = bucket angle relative to boom + boom angle + bucket offset
-	state.bucket_angle = angle_AOC_relative_to_boom + boom_angle + _config.bucket_offset;
-
-	// Store intermediate results
+	// Step 4: Apply boom angle, boom alignment offset, and calibration offset to get chassis-relative angle
+	state.bucket_angle = bucket_angle_boom_relative + boom_angle + _config.bucket_offset + _config.bellcrank_boom_alignment_offset;
 	state.bellcrank_angle = bellcrank_angle_tilt;
-	state.coupler_angle = atan2f(sinf(angle_AOB), cosf(angle_AOB));  // Simplified coupler angle
 
-	// Calculate joint B position for visualization/debugging
-	// B is at distance L_OB from O at angle (angle_BOC from OC direction)
-	float angle_OB = angle_BOC;  // Assuming OC is along x-axis reference
-	state.joint_B = matrix::Vector2f{L_OB * cosf(angle_OB), L_OB * sinf(angle_OB)};
+	// Calculate supplementary state information for debugging and visualization
+	// Apply bellcrank internal angle compensation to coupler angle calculation
+	state.coupler_angle = atan2f(sinf(bucket_to_coupler_angle), cosf(bucket_to_coupler_angle)) + _config.bellcrank_internal_angle;
+	state.joint_B = matrix::Vector2f{
+		coupler_joint_to_pivot_distance * cosf(coupler_to_pivot_angle),
+		coupler_joint_to_pivot_distance * sinf(coupler_to_pivot_angle)
+	};
 
 	return true;
 }
 
 float BucketKinematicsTilt::solve_inverse_trigonometric(float bucket_angle, float boom_angle) const
 {
-	// Inverse Stage 2: Given bucket angle (chassis-relative), find required bellcrank angle
+	/**
+	 * Inverse Stage 2: Given bucket angle (chassis-relative), find required bellcrank angle
+	 *
+	 * Approach:
+	 *   1. Remove boom angle and offset to get boom-relative bucket angle
+	 *   2. Calculate point A position from desired bucket angle
+	 *   3. Find intersection of circles centered at A and C (joint B location)
+	 *   4. Calculate bellcrank angle from point B position
+	 *   5. Validate solution using forward kinematics
+	 */
 
-	// Step 1: Remove boom angle and bucket offset to get bucket angle relative to boom
-	float angle_AOC_relative_to_boom = bucket_angle - boom_angle - _config.bucket_offset;
+	// Step 1: Convert chassis-relative angle to boom-relative angle
+	const float target_bucket_angle_boom_relative = bucket_angle - boom_angle - _config.bucket_offset - _config.bellcrank_boom_alignment_offset;
 
-	// Known parameters
-	float L_OA = _config.bucket_arm_length;      // OA length
-	float L_AB = _config.coupler_length;         // AB length
-	float L_BC = _config.bellcrank_length;       // Crank length (BC)
-	float L_OC = _config.bucket_pivot.norm();    // OC length
+	// Extract linkage dimensions with descriptive names
+	const float bucket_arm_length = _config.bucket_arm_length;           // Distance O to A
+	const float coupler_link_length = _config.coupler_length;            // Distance A to B
+	const float bellcrank_length = _config.bellcrank_length;         	 // Distance B to C
+	const float bellcrank_joint_to_bucket_length =
+		_config.bellcrank_joint_to_bucket_length.norm();    			 // Distance O to C
 
-	// We need to solve for angle OCB that produces the desired angle AOC
-	// Using the inverse of the forward kinematics calculation:
-	//
-	// Forward: angle_AOC = angle_AOB - angle_BOC
-	// Inverse: We know angle_AOC, need to find angle_OCB (bellcrank angle)
-
-	// This is a complex inverse problem. We can use an iterative approach
-	// or geometric relationships. Let's use geometric approach:
-
-	// From the desired bucket angle, we can calculate point A position
-	// Note: This geometric approach calculates point A explicitly to find the bellcrank angle.
-	// Alternative: Could use direct trigonometric relationships to avoid calculating point A,
-	// but the current approach is clear and geometrically intuitive.
-	matrix::Vector2f point_A = {
-		L_OA * cosf(angle_AOC_relative_to_boom),
-		L_OA * sinf(angle_AOC_relative_to_boom)
+	// Step 2: Calculate bucket attachment point from desired angle
+	const matrix::Vector2f bucket_attachment_point = {
+		bucket_arm_length * cosf(target_bucket_angle_boom_relative),
+		bucket_arm_length * sinf(target_bucket_angle_boom_relative)
 	};
 
-	// Point C is fixed at the bucket pivot location
-	matrix::Vector2f point_C = {L_OC, 0.0f};  // Assuming C is along x-axis
+	// Bellcrank pivot point is fixed at known location
+	const matrix::Vector2f bellcrank_pivot_point = {bellcrank_joint_to_bucket_length, 0.0f};
 
-	// Point B must satisfy two constraints:
-	// 1. Distance AB = L_AB (coupler length)
-	// 2. Distance BC = L_BC (bellcrank length)
-	//
-	// This means B is at the intersection of two circles:
-	// Circle centered at A with radius L_AB
-	// Circle centered at C with radius L_BC
+	// Step 3: Calculate distance between attachment and pivot points
+	const matrix::Vector2f attachment_to_pivot_vector = bellcrank_pivot_point - bucket_attachment_point;
+	const float attachment_to_pivot_distance = attachment_to_pivot_vector.norm();
 
-	// Calculate distance AC
-	matrix::Vector2f AC_vector = point_C - point_A;
-	float L_AC = AC_vector.norm();
-
-	// Check if solution is geometrically possible using triangle inequality
-	if (!is_triangle_valid(L_AB, L_BC, L_AC)) {
-		return NAN;  // No valid solution
+	// Verify geometric feasibility using triangle inequality
+	if (!is_triangle_valid(coupler_link_length, bellcrank_length, attachment_to_pivot_distance)) {
+		return NAN;  // No valid solution exists
 	}
 
-	// Use law of cosines to find angle ACB in triangle ABC
-	// cos(ACB) = (AC² + BC² - AB²) / (2·AC·BC)
-	float cos_ACB = (L_AC * L_AC + L_BC * L_BC - L_AB * L_AB) / (2.0f * L_AC * L_BC);
+	// Step 4: Calculate angle at bellcrank pivot using law of cosines
+	const float pivot_internal_angle =
+		law_of_cosines_angle(attachment_to_pivot_distance, bellcrank_length, coupler_link_length);
 
-	// Check if calculation is valid
-	if (cos_ACB < -1.0f || cos_ACB > 1.0f) {
-		return NAN;  // Invalid triangle
+	if (!isfinite(pivot_internal_angle)) {
+		return NAN;  // Invalid triangle configuration
 	}
+	const float attachment_direction_angle = atan2f(attachment_to_pivot_vector(1), attachment_to_pivot_vector(0));
 
-	float angle_ACB = acosf(cos_ACB);
+	// Step 5: Calculate bellcrank angle candidates and select the best one
+	const float bellcrank_angle_candidate_1 = attachment_direction_angle + pivot_internal_angle;
+	const float bellcrank_angle_candidate_2 = attachment_direction_angle - pivot_internal_angle;
 
-	// Calculate angle from C to A in global coordinate system
-	float angle_CA = atan2f(AC_vector(1), AC_vector(0));
-
-	// The bellcrank angle (angle OCB) can be calculated as:
-	// angle_OCB = angle_CA ± angle_ACB
-	// We need to choose the correct sign based on the geometry
-
-	// Try both solutions and pick the one that makes geometric sense
-	float angle_OCB_1 = angle_CA + angle_ACB;
-	float angle_OCB_2 = angle_CA - angle_ACB;
-
-	// Validate both solutions by checking if they produce the correct bucket angle
-	TiltState test_state_1{}, test_state_2{};
-	bool valid_1 = solve_trigonometric(angle_OCB_1, boom_angle, test_state_1);
-	bool valid_2 = solve_trigonometric(angle_OCB_2, boom_angle, test_state_2);
-
-	// Choose the solution that produces the closest bucket angle
-	if (valid_1 && valid_2) {
-		float error_1 = fabsf(test_state_1.bucket_angle - bucket_angle);
-		float error_2 = fabsf(test_state_2.bucket_angle - bucket_angle);
-		return (error_1 < error_2) ? angle_OCB_1 : angle_OCB_2;
-	} else if (valid_1) {
-		return angle_OCB_1;
-	} else if (valid_2) {
-		return angle_OCB_2;
-	} else {
-		return NAN;  // No valid solution
-	}
+	return validate_and_select_best_candidate(bellcrank_angle_candidate_1, bellcrank_angle_candidate_2,
+	                                         bucket_angle, boom_angle);
 }
 
 // =========================
@@ -307,8 +309,7 @@ bool BucketKinematicsTilt::validate_configuration() const
 
 	// Check bucket angle range
 	if (_config.bucket_angle_min >= _config.bucket_angle_max) {
-		PX4_ERR("Invalid bucket angle range: min (%.3f) >= max (%.3f)",
-		        (double)_config.bucket_angle_min, (double)_config.bucket_angle_max);
+		PX4_ERR("Invalid bucket angle range: min >= max");
 		return false;
 	}
 
@@ -329,21 +330,20 @@ bool BucketKinematicsTilt::validate_configuration() const
 		// Test inverse kinematics round-trip
 		float inverse_angle_tilt = compute_inverse_kinematics(state.bucket_angle, 0.0f);
 		if (!isfinite(inverse_angle_tilt)) {
-			PX4_ERR("Tilt inverse kinematics failed at test bucket angle: %.3f rad", (double)state.bucket_angle);
+			PX4_ERR("Tilt inverse kinematics failed at test bucket angle");
 			return false;
 		}
 
 		// Check round-trip accuracy
 		float angle_error = fabsf(inverse_angle_tilt - state.bellcrank_angle);
 		if (angle_error > 0.01f) {  // 0.01 rad tolerance
-			PX4_ERR("Tilt round-trip error too large: %.3f rad (tolerance: 0.01 rad)", (double)angle_error);
+			PX4_ERR("Tilt round-trip error too large - tolerance exceeded");
 			return false;
 		}
 	}
 
 	PX4_INFO("Bucket tilt kinematics configuration validated successfully");
-	PX4_INFO("Bucket angle range: %.3f - %.3f rad",
-	         (double)_config.bucket_angle_min, (double)_config.bucket_angle_max);
+	PX4_INFO("Bucket angle range validated");
 
 	return true;
 }
@@ -362,4 +362,53 @@ float BucketKinematicsTilt::law_of_cosines_angle(float side_a, float side_b, flo
 	}
 
 	return acosf(cos_C);
+}
+
+float BucketKinematicsTilt::law_of_cosines_side(float side_a, float side_b, float angle_between) const
+{
+	// Calculate third side using law of cosines: c^2 = a^2 + b^2 - 2ab*cos(C)
+	if (side_a <= 0.0f || side_b <= 0.0f || !isfinite(angle_between)) {
+		return NAN;
+	}
+
+	const float side_c_squared = side_a * side_a + side_b * side_b -
+	                             2.0f * side_a * side_b * cosf(angle_between);
+
+	if (side_c_squared <= 0.0f) {
+		return NAN;  // Invalid triangle geometry
+	}
+
+	return sqrtf(side_c_squared);
+}
+
+float BucketKinematicsTilt::validate_and_select_best_candidate(float candidate_1, float candidate_2,
+                                                              float target_bucket_angle, float boom_angle) const
+{
+	/**
+	 * Validate both bellcrank angle candidates using forward kinematics and select the best one
+	 *
+	 * This function tests both possible solutions from the inverse kinematics calculation
+	 * and selects the one that produces the closest match to the target bucket angle.
+	 */
+
+	// Validate both candidates using forward kinematics
+	TiltState validation_state_1{}, validation_state_2{};
+	const bool candidate_1_valid = solve_trigonometric(candidate_1, boom_angle, validation_state_1);
+	const bool candidate_2_valid = solve_trigonometric(candidate_2, boom_angle, validation_state_2);
+
+	if (candidate_1_valid && candidate_2_valid) {
+		// Both candidates are valid - select the one with minimum error
+		const float angle_error_1 = fabsf(validation_state_1.bucket_angle - target_bucket_angle);
+		const float angle_error_2 = fabsf(validation_state_2.bucket_angle - target_bucket_angle);
+		return (angle_error_1 < angle_error_2) ? candidate_1 : candidate_2;
+	} else if (candidate_1_valid) {
+		// Only first candidate is valid
+		return candidate_1;
+	} else if (candidate_2_valid) {
+		// Only second candidate is valid
+		return candidate_2;
+	} else {
+		// No valid solution found
+		return NAN;
+	}
 }

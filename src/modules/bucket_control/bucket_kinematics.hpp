@@ -128,13 +128,6 @@ public:
 	void update_configuration();
 
 	/**
-	 * @brief Get boom compensation factor
-	 * @param boom_angle Current boom angle (rad)
-	 * @return Compensation factor (mm/rad)
-	 */
-	float get_boom_compensation_factor(float boom_angle) const;
-
-	/**
 	 * @brief Get access to drive kinematics component
 	 */
 	const BucketKinematicsDrive& get_drive_kinematics() const { return _drive_kinematics; }
@@ -158,10 +151,6 @@ public:
 private:
 	BucketKinematicsDrive _drive_kinematics;
 	BucketKinematicsTilt _tilt_kinematics;
-
-	// Boom compensation constants
-	static constexpr float BOOM_COMPENSATION_BASE_FACTOR = 200.0f;    // mm/rad
-	static constexpr float BOOM_COMPENSATION_ANGLE_SENSITIVITY = 0.15f;
 
 	/**
 	 * @brief Convert drive state and tilt state to combined linkage state
