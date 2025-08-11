@@ -103,16 +103,14 @@ bool BucketHardwareInterface::update_encoder_data(SensorData& data)
 	if (_encoder_selected >= 0 && _encoder_sub[_encoder_selected].update(&encoder_msg)) {
 		// Verify this is our encoder instance
 		if (encoder_msg.instance == _encoder_index) {
-			// Convert encoder position to actuator length
+			// Convert encoder position to hbridge length
 			float position_rad = static_cast<float>(encoder_msg.position) * 1e-6f;
-			data.actuator_position = (position_rad - _encoder_zero_offset) * _encoder_scale_factor +
-						_param_actuator_min_length.get();
+			data.hbridge_position = (position_rad - _encoder_zero_offset) * _encoder_scale_factor +
+					_param_hbridge_min_length.get();
 
-			// Convert encoder velocity to actuator velocity
+			// Convert encoder velocity to hbridge velocity
 			float velocity_rad_s = static_cast<float>(encoder_msg.velocity) * 1e-6f;
-			data.actuator_velocity = velocity_rad_s * _encoder_scale_factor;
-
-			_last_encoder_update = encoder_msg.timestamp;
+			data.hbridge_velocity = velocity_rad_s * _encoder_scale_factor;			_last_encoder_update = encoder_msg.timestamp;
 			data.encoder_fault = false;
 
 			return is_timestamp_valid(_last_encoder_update, SENSOR_TIMEOUT_US);
@@ -296,7 +294,7 @@ bool BucketHardwareInterface::select_limit_sensor_instances(int& load_instance, 
 	return load_found && dump_found;
 }
 
-bool BucketHardwareInterface::send_actuator_command(const ActuatorCommand& command)
+bool BucketHardwareInterface::send_hbridge_command(const HbridgeCommand& command)
 {
 	hbridge_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
@@ -309,13 +307,13 @@ bool BucketHardwareInterface::send_actuator_command(const ActuatorCommand& comma
 
 void BucketHardwareInterface::emergency_stop()
 {
-	ActuatorCommand stop_cmd{};
+	HbridgeCommand stop_cmd{};
 	stop_cmd.duty_cycle = 0.0f;
 	stop_cmd.enable = false;
 
-	send_actuator_command(stop_cmd);
+	send_hbridge_command(stop_cmd);
 
-	PX4_WARN("Bucket actuator emergency stop");
+	PX4_WARN("Bucket hbridge emergency stop");
 }
 
 bool BucketHardwareInterface::reset_encoder()
@@ -359,18 +357,18 @@ bool BucketHardwareInterface::perform_self_test()
 	}
 
 	// Test 4: Send test command (zero output)
-	ActuatorCommand test_cmd{};
+	HbridgeCommand test_cmd{};
 	test_cmd.duty_cycle = 0.0f;
 	test_cmd.enable = true;
-	if (!send_actuator_command(test_cmd)) {
+	if (!send_hbridge_command(test_cmd)) {
 		PX4_ERR("Self-test failed: Motor command");
 		return false;
 	}
 
-	// Test 5: Check actuator position range
-	float position_range = _param_actuator_max_length.get() - _param_actuator_min_length.get();
+	// Test 5: Check hbridge position range
+	float position_range = _param_hbridge_max_length.get() - _param_hbridge_min_length.get();
 	if (position_range <= 0.0f) {
-		PX4_ERR("Self-test failed: Invalid actuator range");
+		PX4_ERR("Self-test failed: Invalid hbridge range");
 		return false;
 	}
 

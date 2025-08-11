@@ -53,7 +53,7 @@
  * @brief Abstracts all hardware interactions for bucket control
  *
  * This class provides a clean interface to all bucket-related hardware:
- * - Actuator motor control
+ * - Hbridge motor control
  * - Position encoder feedback
  * - Boom angle sensor
  * - Limit switches
@@ -66,8 +66,8 @@ public:
 	 * @brief Consolidated sensor data structure
 	 */
 	struct SensorData {
-		float actuator_position;      // mm
-		float actuator_velocity;      // mm/s
+		float hbridge_position;       // mm
+		float hbridge_velocity;       // mm/s
 		float boom_angle;             // rad
 		bool limit_switch_load;       // Load limit (bucket down)
 		bool limit_switch_dump;       // Dump limit (bucket up)
@@ -77,9 +77,9 @@ public:
 	};
 
 	/**
-	 * @brief Actuator command structure
+	 * @brief Hbridge command structure
 	 */
-	struct ActuatorCommand {
+	struct HbridgeCommand {
 		float duty_cycle;             // -1.0 to 1.0
 		bool enable;                  // Enable motor
 		uint8_t control_mode;         // Control mode flag
@@ -103,11 +103,11 @@ public:
 	bool update_sensors(SensorData& data);
 
 	/**
-	 * @brief Send command to actuator motor
-	 * @param command Actuator command to send
+	 * @brief Send command to hbridge motor
+	 * @param command Hbridge command to send
 	 * @return True if command sent successfully
 	 */
-	bool send_actuator_command(const ActuatorCommand& command);
+	bool send_hbridge_command(const HbridgeCommand& command);
 
 	/**
 	 * @brief Perform hardware self-test
@@ -247,7 +247,7 @@ private:
 		(ParamInt<px4::params::BCT_LMT_DUMP_IDX>) _param_limit_dump_index,
 		(ParamFloat<px4::params::BCT_ENC_SCALE>) _param_encoder_scale,
 		(ParamFloat<px4::params::BCT_ENC_OFFSET>) _param_encoder_offset,
-		(ParamFloat<px4::params::BCT_ACT_MIN_LEN>) _param_actuator_min_length,
-		(ParamFloat<px4::params::BCT_ACT_MAX_LEN>) _param_actuator_max_length
+		(ParamFloat<px4::params::BCT_HBG_MIN_LEN>) _param_hbridge_min_length,
+		(ParamFloat<px4::params::BCT_HBG_MAX_LEN>) _param_hbridge_max_length
 	)
 };

@@ -169,7 +169,7 @@ void BucketControl::update_sensor_data()
 		sensors_valid,
 		_hardware->is_healthy(),
 		command_timeout,
-		sensor_data.actuator_position,
+		sensor_data.hbridge_position,
 		sensor_data.limit_switch_load,
 		sensor_data.limit_switch_dump
 	);
@@ -292,15 +292,15 @@ void BucketControl::publish_telemetry()
 	if (sensors_valid) {
 		// Compute current bucket angle using forward kinematics
 		auto linkage_state = _kinematics->compute_forward_kinematics(
-			sensor_data.actuator_position,
+			sensor_data.hbridge_position,
 			sensor_data.boom_angle
 		);
 
 		// Populate sensor data fields
 		status.bucket_angle = linkage_state.bucket_angle;
-		status.actuator_length = sensor_data.actuator_position;
+		status.actuator_length = sensor_data.hbridge_position;
 		status.target_actuator_length = _commanded_actuator_position;
-		status.velocity = sensor_data.actuator_velocity;
+		status.velocity = sensor_data.hbridge_velocity;
 		status.limit_switch_load = sensor_data.limit_switch_load;
 		status.limit_switch_dump = sensor_data.limit_switch_dump;
 		status.boom_angle = sensor_data.boom_angle;
@@ -379,7 +379,7 @@ bool BucketControl::determine_target_position(const BucketStateManager::StateInf
 
 	} else if (state_info.state == BucketStateManager::OperationalState::READY) {
 		// Hold current position
-		target_actuator_position = sensor_data.actuator_position;
+		target_actuator_position = sensor_data.hbridge_position;
 		return true;
 	}
 
@@ -389,10 +389,10 @@ bool BucketControl::determine_target_position(const BucketStateManager::StateInf
 void BucketControl::send_zero_command()
 {
 	// Send zero command if no valid target
-	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
-	actuator_cmd.duty_cycle = 0.0f;
-	actuator_cmd.enable = false;
-	_hardware->send_actuator_command(actuator_cmd);
+	BucketHardwareInterface::HbridgeCommand hbridge_cmd{};
+	hbridge_cmd.duty_cycle = 0.0f;
+	hbridge_cmd.enable = false;
+	_hardware->send_hbridge_command(hbridge_cmd);
 }
 
 void BucketControl::execute_motion_control(float target_actuator_position,
@@ -401,7 +401,7 @@ void BucketControl::execute_motion_control(float target_actuator_position,
 	// Plan smooth trajectory
 	const float dt = static_cast<float>(CONTROL_INTERVAL_US) * MICROSECONDS_TO_SECONDS;
 	auto motion_setpoint = _motion_controller->plan_trajectory(
-		sensor_data.actuator_position,
+		sensor_data.hbridge_position,
 		target_actuator_position,
 		dt
 	);
@@ -409,18 +409,18 @@ void BucketControl::execute_motion_control(float target_actuator_position,
 	// Compute control output
 	auto control_output = _motion_controller->compute_control(
 		motion_setpoint,
-		sensor_data.actuator_position,
-		sensor_data.actuator_velocity,
+		sensor_data.hbridge_position,
+		sensor_data.hbridge_velocity,
 		sensor_data.boom_angle,
 		dt
 	);
 
 	// Send command to hardware
-	BucketHardwareInterface::ActuatorCommand actuator_cmd{};
-	actuator_cmd.duty_cycle = control_output.duty_cycle;
-	actuator_cmd.enable = !control_output.safety_stop;
+	BucketHardwareInterface::HbridgeCommand hbridge_cmd{};
+	hbridge_cmd.duty_cycle = control_output.duty_cycle;
+	hbridge_cmd.enable = !control_output.safety_stop;
 
-	_hardware->send_actuator_command(actuator_cmd);
+	_hardware->send_hbridge_command(hbridge_cmd);
 }
 
 // Static methods for module management
