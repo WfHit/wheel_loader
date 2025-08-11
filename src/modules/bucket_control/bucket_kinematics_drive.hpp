@@ -73,12 +73,9 @@ public:
 		// Linkage dimensions (mm)
 		float drive_bellcrank_length;                  // BC length parameter
 
-		// Geometric measurements for angle calculations (mm)
-		float boom_joint_offset_distance;             // Linear offset distance of boom joint
-		float bellcrank_pivot_radius;                  // Radius from bellcrank pivot to calculate angles
-
-		// Angular offsets (rad) - calculated from geometric measurements
-		float bellcrank_boom_alignment_offset;         // Angular offset due to bellcrank-boom joint misalignment
+		// Angular offsets (rad) - calculated from triangle geometry in parent BucketKinematics
+		float bellcrank_boom_alignment_offset;         // Angle BAC in boom pivot triangle
+		float coupler_to_pivot_angle;                  // Angle BCA in boom pivot triangle
 
 		// Physical limits
 		float actuator_min_length;                     // AB minimum length from quad encoder
@@ -137,6 +134,14 @@ public:
 	void update_configuration();
 
 	/**
+	 * @brief Set calculated angles from parent triangle geometry
+	 * @param bellcrank_boom_alignment_offset Angle BAC in boom pivot triangle
+	 * @param coupler_to_pivot_angle Angle BCA in boom pivot triangle
+	 */
+	void set_triangle_angles(float bellcrank_boom_alignment_offset,
+	                         float coupler_to_pivot_angle);
+
+	/**
 	 * @brief Get current configuration
 	 */
 	const DriveConfiguration& get_configuration() const { return _config; }
@@ -154,10 +159,6 @@ private:
 
 		// Link dimensions
 		(ParamFloat<px4::params::BCT_DRIVE_BC_LEN>) _param_drive_bc_len,
-
-		// Geometric measurements for angle calculations
-		(ParamFloat<px4::params::BCT_BOOM_JNT_OFF_DIST>) _param_boom_joint_offset_distance,  // Boom joint offset distance
-		(ParamFloat<px4::params::BCT_BCK_PIV_RAD>) _param_bellcrank_pivot_radius,            // Bellcrank pivot radius
 
 		// Physical and safety limits from quad encoder
 		(ParamFloat<px4::params::BCT_AB_MIN>) _param_actuator_min,

@@ -48,28 +48,6 @@ void BucketKinematicsTilt::update_configuration()
 	_config.coupler_length = _param_coupler_length.get();
 	_config.bucket_arm_length = _param_bucket_arm_length.get();
 
-	// Geometric measurements for angle calculations
-	_config.bellcrank_plane_separation = _param_bellcrank_plane_separation.get();
-	_config.boom_joint_offset_distance = _param_boom_joint_offset_distance.get();
-	_config.bellcrank_pivot_radius = _param_bellcrank_pivot_radius.get();
-
-	// Calculate angles from geometric measurements
-	// Internal angle calculation: tan(angle) = plane_separation / pivot_radius
-	if (_config.bellcrank_pivot_radius > 0.0f) {
-		_config.bellcrank_internal_angle = atanf(_config.bellcrank_plane_separation / _config.bellcrank_pivot_radius);
-	} else {
-		_config.bellcrank_internal_angle = 0.0f;
-		PX4_WARN("Invalid bellcrank pivot radius, setting internal angle to 0");
-	}
-
-	// Boom alignment offset calculation: tan(angle) = offset_distance / pivot_radius
-	if (_config.bellcrank_pivot_radius > 0.0f) {
-		_config.bellcrank_boom_alignment_offset = atanf(_config.boom_joint_offset_distance / _config.bellcrank_pivot_radius);
-	} else {
-		_config.bellcrank_boom_alignment_offset = 0.0f;
-		PX4_WARN("Invalid bellcrank pivot radius, setting boom alignment offset to 0");
-	}
-
 	// Mechanical coupling and offsets
 	_config.bucket_offset = _param_bucket_offset.get();
 
@@ -77,18 +55,31 @@ void BucketKinematicsTilt::update_configuration()
 	_config.bucket_angle_min = _param_bucket_angle_min.get();
 	_config.bucket_angle_max = _param_bucket_angle_max.get();
 
-	// Log calculated angles for debugging
-	PX4_INFO("Tilt: Calculated bellcrank_internal_angle = %.3f rad (%.1f deg) from plane_sep=%.1fmm, radius=%.1fmm",
-	         (double)_config.bellcrank_internal_angle,
-	         (double)(_config.bellcrank_internal_angle * 180.0f / PI),
-	         (double)_config.bellcrank_plane_separation,
-	         (double)_config.bellcrank_pivot_radius);
+	// Note: Triangle angles (bellcrank_internal_angle, bellcrank_boom_alignment_offset,
+	// coupler_to_pivot_angle) are set via set_triangle_angles() method called from parent BucketKinematics
+}
 
-	PX4_INFO("Tilt: Calculated boom_alignment_offset = %.3f rad (%.1f deg) from offset_dist=%.1fmm, radius=%.1fmm",
+void BucketKinematicsTilt::set_triangle_angles(float bellcrank_internal_angle,
+                                               float bellcrank_boom_alignment_offset,
+                                               float coupler_to_pivot_angle)
+{
+	_config.bellcrank_internal_angle = bellcrank_internal_angle;
+	_config.bellcrank_boom_alignment_offset = bellcrank_boom_alignment_offset;
+	_config.coupler_to_pivot_angle = coupler_to_pivot_angle;
+
+	// Log the angles for debugging
+	PX4_INFO("Tilt: Set bellcrank_internal_angle = %.3f rad (%.1f deg)",
+	         (double)_config.bellcrank_internal_angle,
+	         (double)(_config.bellcrank_internal_angle * 180.0f / PI));
+
+	PX4_INFO("Tilt: Set boom_alignment_offset = %.3f rad (%.1f deg)",
 	         (double)_config.bellcrank_boom_alignment_offset,
-	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI),
-	         (double)_config.boom_joint_offset_distance,
-	         (double)_config.bellcrank_pivot_radius);
+	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI));
+
+	PX4_INFO("Tilt: Set coupler_to_pivot_angle = %.3f rad (%.1f deg)",
+	         (double)_config.coupler_to_pivot_angle,
+	         (double)(_config.coupler_to_pivot_angle * 180.0f / PI));
+}
 }
 
 // =========================

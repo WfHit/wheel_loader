@@ -75,15 +75,11 @@ public:
 		float coupler_length;
 		float bucket_arm_length;
 
-		// Geometric measurements for angle calculations (mm)
-		float bellcrank_plane_separation;    // Distance between bellcrank planes (for internal angle)
-		float boom_joint_offset_distance;    // Linear offset distance of boom joint (for alignment angle)
-		float bellcrank_pivot_radius;        // Radius from bellcrank pivot to calculate angles
-
-		// Angular constraints (rad) - calculated from geometric measurements
-		float bellcrank_internal_angle;   // Internal angle between bellcrank planes (Stage 1 to Stage 2)
-		float bucket_offset;              // Calibration offset for bucket angle measurement
-		float bellcrank_boom_alignment_offset;  // Angular offset due to bellcrank-boom joint misalignment
+		// Angular constraints (rad) - calculated from triangle geometry in parent BucketKinematics
+		float bellcrank_internal_angle;      // 2π - angle ABC in bellcrank triangle
+		float bucket_offset;                 // Calibration offset for bucket angle measurement
+		float bellcrank_boom_alignment_offset;  // Angle BAC in boom pivot triangle
+		float coupler_to_pivot_angle;        // Angle BCA in boom pivot triangle
 
 		// Physical limits
 		float bucket_angle_min;
@@ -109,6 +105,16 @@ public:
 	};
 
 	explicit BucketKinematicsTilt(ModuleParams *parent);
+
+	/**
+	 * @brief Set calculated angles from parent triangle geometry
+	 * @param bellcrank_internal_angle 2π - angle ABC in bellcrank triangle
+	 * @param bellcrank_boom_alignment_offset Angle BAC in boom pivot triangle
+	 * @param coupler_to_pivot_angle Angle BCA in boom pivot triangle
+	 */
+	void set_triangle_angles(float bellcrank_internal_angle,
+	                         float bellcrank_boom_alignment_offset,
+	                         float coupler_to_pivot_angle);
 
 	/**
 	 * @brief Forward kinematics: bellcrank angle -> bucket angle
@@ -241,11 +247,6 @@ private:
 		(ParamFloat<px4::params::BCT_BCK_LEN>) _param_bellcrank_length,
 		(ParamFloat<px4::params::BCT_COUP_LEN>) _param_coupler_length,
 		(ParamFloat<px4::params::BCT_BKT_ARM_LEN>) _param_bucket_arm_length,
-
-		// Geometric measurements for angle calculations
-		(ParamFloat<px4::params::BCT_BCK_PLANE_SEP>) _param_bellcrank_plane_separation,      // Bellcrank plane separation
-		(ParamFloat<px4::params::BCT_BOOM_JNT_OFF_DIST>) _param_boom_joint_offset_distance,  // Boom joint offset distance
-		(ParamFloat<px4::params::BCT_BCK_PIV_RAD>) _param_bellcrank_pivot_radius,            // Bellcrank pivot radius
 
 		// Mechanical coupling and offsets
 		(ParamFloat<px4::params::BCT_BKT_OFF>) _param_bucket_offset,

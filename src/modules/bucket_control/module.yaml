@@ -229,6 +229,78 @@ parameters:
             default: 0.5
             unit: rad
 
+        BCT_BOOM_LENGTH:
+            description:
+                short: Boom length (mm)
+                long: |
+                    Length of the boom from pivot point to bucket attachment point.
+                    This is the primary dimension of the boom pivot triangle.
+            type: float
+            min: 1000.0
+            max: 3000.0
+            default: 2000.0
+            unit: mm
+
+        BCT_BOOM_PIVOT_CRANK:
+            description:
+                short: Boom pivot to crank joint distance (mm)
+                long: |
+                    Distance from boom pivot point to bellcrank joint attachment point.
+                    This defines the geometry of the boom pivot triangle.
+            type: float
+            min: 200.0
+            max: 2000.0
+            default: 1000.0
+            unit: mm
+
+        BCT_BUCKET_CRANK_DIST:
+            description:
+                short: Bucket to crank joint distance (mm)
+                long: |
+                    Distance from bucket base to bellcrank joint attachment point.
+                    This completes the boom pivot triangle geometry.
+            type: float
+            min: 150.0
+            max: 1500.0
+            default: 750.0
+            unit: mm
+
+        BCT_CRANK_ARM_LEN:
+            description:
+                short: Bellcrank arm length (mm)
+                long: |
+                    Length of the bellcrank arm from the bellcrank pivot to coupler attachment.
+                    This defines one side of the bellcrank triangle.
+            type: float
+            min: 100.0
+            max: 600.0
+            default: 300.0
+            unit: mm
+
+        BCT_CRANK_COUPLER:
+            description:
+                short: Bellcrank to coupler distance (mm)
+                long: |
+                    Distance from bellcrank pivot to coupler joint attachment point.
+                    This defines another side of the bellcrank triangle.
+            type: float
+            min: 150.0
+            max: 800.0
+            default: 400.0
+            unit: mm
+
+        BCT_CRANK_ACTUATOR_DIST:
+            description:
+                short: Bellcrank to actuator distance (mm)
+                long: |
+                    Distance from bellcrank pivot to actuator attachment point.
+                    This completes the bellcrank triangle geometry.
+            type: float
+            min: 150.0
+            max: 700.0
+            default: 350.0
+            unit: mm
+
     - group: Bucket Control
       definitions:
 

@@ -43,9 +43,85 @@ BucketKinematics::BucketKinematics(ModuleParams *parent) :
 
 void BucketKinematics::update_configuration()
 {
-	// Update both component configurations
+	// Update both component configurations first
 	_drive_kinematics.update_configuration();
 	_tilt_kinematics.update_configuration();
+
+	// Calculate and set triangle angles for both components
+	float bellcrank_boom_alignment_offset = get_bellcrank_boom_alignment_offset();
+	float coupler_to_pivot_angle = get_coupler_to_pivot_angle();
+	float bellcrank_internal_angle = get_bellcrank_internal_angle();
+
+	// Set calculated angles in drive component
+	_drive_kinematics.set_triangle_angles(bellcrank_boom_alignment_offset, coupler_to_pivot_angle);
+
+	// Set calculated angles in tilt component
+	_tilt_kinematics.set_triangle_angles(bellcrank_internal_angle, bellcrank_boom_alignment_offset, coupler_to_pivot_angle);
+}
+
+// =========================
+// TRIANGLE ANGLE CALCULATIONS
+// =========================
+
+float BucketKinematics::get_bellcrank_boom_alignment_offset() const
+{
+	// Calculate angle BAC in boom pivot triangle using law of cosines
+	float boom_length = _param_boom_length.get();
+	float boom_pivot_to_crank = _param_boom_pivot_to_crank_joint_distance.get();
+	float bucket_to_crank = _param_bucket_to_crank_joint_distance.get();
+
+	return law_of_cosines_angle(boom_length, boom_pivot_to_crank, bucket_to_crank);
+}
+
+float BucketKinematics::get_coupler_to_pivot_angle() const
+{
+	// Calculate angle BCA in boom pivot triangle using law of cosines
+	float boom_length = _param_boom_length.get();
+	float boom_pivot_to_crank = _param_boom_pivot_to_crank_joint_distance.get();
+	float bucket_to_crank = _param_bucket_to_crank_joint_distance.get();
+
+	return law_of_cosines_angle(bucket_to_crank, boom_pivot_to_crank, boom_length);
+}
+
+float BucketKinematics::get_bellcrank_internal_angle() const
+{
+	// Calculate 2π - angle ABC in bellcrank triangle using law of cosines
+	float bellcrank_arm = _param_bellcrank_arm_length.get();
+	float bellcrank_to_coupler = _param_bellcrank_to_coupler_distance.get();
+	float bellcrank_to_actuator = _param_bellcrank_to_actuator_distance.get();
+
+	float angle_ABC = law_of_cosines_angle(bellcrank_arm, bellcrank_to_actuator, bellcrank_to_coupler);
+
+	if (!isnan(angle_ABC)) {
+		return 2.0f * M_PI - angle_ABC;
+	} else {
+		PX4_WARN("Invalid bellcrank triangle geometry for internal angle calculation");
+		return 0.0f;
+	}
+}
+
+// =========================
+// HELPER METHODS
+// =========================
+
+float BucketKinematics::law_of_cosines_angle(float side_a, float side_b, float side_c) const
+{
+	// Calculate angle C using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
+	if (side_a <= 0.0f || side_b <= 0.0f || side_c <= 0.0f) {
+		return NAN;
+	}
+
+	// Check triangle inequality
+	if ((side_a + side_b <= side_c) || (side_a + side_c <= side_b) || (side_b + side_c <= side_a)) {
+		return NAN;
+	}
+
+	float cos_C = (side_a * side_a + side_b * side_b - side_c * side_c) / (2.0f * side_a * side_b);
+
+	// Clamp to valid range due to floating point precision issues
+	cos_C = fmaxf(-1.0f, fminf(1.0f, cos_C));
+
+	return acosf(cos_C);
 }
 
 // =========================
@@ -123,17 +199,9 @@ BucketKinematics::LinkageState BucketKinematics::combine_states(
 	combined_state.bellcrank_angle_drive = drive_state.bellcrank_angle;
 	combined_state.bellcrank_angle_tilt = tilt_state.bellcrank_angle;
 
-	// Secondary outputs
-	combined_state.coupler_angle = tilt_state.coupler_angle;
-	combined_state.transmission_angle = drive_state.transmission_angle;
-
 	// Validation - both stages must be valid
 	combined_state.is_valid = drive_state.is_valid && tilt_state.is_valid;
 	combined_state.condition_number = drive_state.condition_number;
-
-	// Joint positions
-	combined_state.joint_B_drive = drive_state.joint_B;
-	combined_state.joint_B_tilt = tilt_state.joint_B;
 
 	return combined_state;
 }

@@ -49,29 +49,28 @@ void BucketKinematicsDrive::update_configuration()
 	// Link dimensions
 	_config.drive_bellcrank_length = _param_drive_bc_len.get();
 
-	// Geometric measurements for angle calculations
-	_config.boom_joint_offset_distance = _param_boom_joint_offset_distance.get();
-	_config.bellcrank_pivot_radius = _param_bellcrank_pivot_radius.get();
-
-	// Calculate boom alignment offset angle from geometric measurements
-	// Boom alignment offset calculation: tan(angle) = offset_distance / pivot_radius
-	if (_config.bellcrank_pivot_radius > 0.0f) {
-		_config.bellcrank_boom_alignment_offset = atanf(_config.boom_joint_offset_distance / _config.bellcrank_pivot_radius);
-	} else {
-		_config.bellcrank_boom_alignment_offset = 0.0f;
-		PX4_WARN("Invalid bellcrank pivot radius, setting boom alignment offset to 0");
-	}
-
 	// Physical and safety limits from quad encoder
 	_config.actuator_min_length = _param_actuator_min.get();
 	_config.actuator_max_length = _param_actuator_max.get();
 
-	// Log calculated angles for debugging
-	PX4_INFO("Drive: Calculated boom_alignment_offset = %.3f rad (%.1f deg) from offset_dist=%.1fmm, radius=%.1fmm",
+	// Note: Triangle angles (bellcrank_boom_alignment_offset, coupler_to_pivot_angle)
+	// are set via set_triangle_angles() method called from parent BucketKinematics
+}
+
+void BucketKinematicsDrive::set_triangle_angles(float bellcrank_boom_alignment_offset,
+                                                float coupler_to_pivot_angle)
+{
+	_config.bellcrank_boom_alignment_offset = bellcrank_boom_alignment_offset;
+	_config.coupler_to_pivot_angle = coupler_to_pivot_angle;
+
+	// Log the angles for debugging
+	PX4_INFO("Drive: Set boom_alignment_offset = %.3f rad (%.1f deg)",
 	         (double)_config.bellcrank_boom_alignment_offset,
-	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI),
-	         (double)_config.boom_joint_offset_distance,
-	         (double)_config.bellcrank_pivot_radius);
+	         (double)(_config.bellcrank_boom_alignment_offset * 180.0f / PI));
+
+	PX4_INFO("Drive: Set coupler_to_pivot_angle = %.3f rad (%.1f deg)",
+	         (double)_config.coupler_to_pivot_angle,
+	         (double)(_config.coupler_to_pivot_angle * 180.0f / PI));
 }
 
 // =========================

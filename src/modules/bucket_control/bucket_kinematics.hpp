@@ -76,17 +76,9 @@ public:
 		float bellcrank_angle_drive;  // rad - Stage 1 bellcrank angle ∠OCB₁
 		float bellcrank_angle_tilt;  // rad - Stage 2 bellcrank angle ∠OCB₂
 
-		// Secondary outputs
-		float coupler_angle;       // rad - coupler link angle
-		float transmission_angle;  // rad - linkage transmission angle
-
 		// Validation
 		bool is_valid;            // True if within mechanical limits
 		float condition_number;   // Linkage condition (singularity detection)
-
-		// Joint positions for visualization/debugging
-		matrix::Vector2f joint_B_drive;  // Stage 1 joint B position
-		matrix::Vector2f joint_B_tilt;  // Stage 2 joint B position
 	};
 
 	explicit BucketKinematics(ModuleParams *parent);
@@ -137,6 +129,21 @@ public:
 	 */
 	const BucketKinematicsTilt& get_tilt_kinematics() const { return _tilt_kinematics; }
 
+	/**
+	 * @brief Calculate bellcrank boom alignment offset (angle BAC in boom triangle)
+	 */
+	float get_bellcrank_boom_alignment_offset() const;
+
+	/**
+	 * @brief Calculate coupler to pivot angle (angle BCA in boom triangle)
+	 */
+	float get_coupler_to_pivot_angle() const;
+
+	/**
+	 * @brief Calculate bellcrank internal angle (2π - angle ABC in bellcrank triangle)
+	 */
+	float get_bellcrank_internal_angle() const;
+
 public:
 	// AS5600 calibration/configuration fields (degrees)
 	float encoder_angle_at_min = 0.0f;
@@ -152,6 +159,18 @@ private:
 	BucketKinematicsDrive _drive_kinematics;
 	BucketKinematicsTilt _tilt_kinematics;
 
+	DEFINE_PARAMETERS(
+		// Boom pivot triangle parameters (coordinates in machine body frame)
+		(ParamFloat<px4::params::BCT_BOOM_LENGTH>) _param_boom_length,                            // Boom length from pivot to bucket (mm)
+		(ParamFloat<px4::params::BCT_BOOM_PIVOT_CRANK>) _param_boom_pivot_to_crank_joint_distance, // Distance from boom pivot to crank joint (mm)
+		(ParamFloat<px4::params::BCT_BUCKET_CRANK_DIST>) _param_bucket_to_crank_joint_distance,    // Distance from bucket base to crank joint (mm)
+
+		// Bellcrank triangle parameters (coordinates in bellcrank frame)
+		(ParamFloat<px4::params::BCT_CRANK_ARM_LEN>) _param_bellcrank_arm_length,                 // Length of bellcrank arm (mm)
+		(ParamFloat<px4::params::BCT_CRANK_COUPLER>) _param_bellcrank_to_coupler_distance,        // Distance from bellcrank to coupler joint (mm)
+		(ParamFloat<px4::params::BCT_CRANK_ACTUATOR_DIST>) _param_bellcrank_to_actuator_distance  // Distance from bellcrank to actuator joint (mm)
+	);
+
 	/**
 	 * @brief Convert drive state and tilt state to combined linkage state
 	 * @param drive_state Drive linkage state
@@ -160,4 +179,13 @@ private:
 	 */
 	LinkageState combine_states(const BucketKinematicsDrive::DriveState& drive_state,
 				      const BucketKinematicsTilt::TiltState& tilt_state) const;
+
+	/**
+	 * @brief Calculate angle using law of cosines: cos(C) = (a²+b²-c²)/(2ab)
+	 * @param side_a Length of side a
+	 * @param side_b Length of side b
+	 * @param side_c Length of side c (opposite to angle C)
+	 * @return Angle C in radians, or NaN if triangle impossible
+	 */
+	float law_of_cosines_angle(float side_a, float side_b, float side_c) const;
 };
