@@ -515,18 +515,18 @@ void HBridge::print_instance_status(uint8_t instance)
 
 int HBridge::custom_command(int argc, char *argv[])
 {
-	if (argc < 2) {
+	if (argc < 1) {
 		return print_usage("too few arguments");
 	}
 
-	if (!strcmp(argv[1], "manual")) {
-		if (argc < 4) {
+	if (!strcmp(argv[0], "manual")) {
+		if (argc < 3) {
 			PX4_ERR("Usage: hbridge manual <instance> <duty_cycle>");
 			return PX4_ERROR;
 		}
 
-		int instance = atoi(argv[2]);
-		float duty_cycle = atof(argv[3]);
+		int instance = atoi(argv[1]);
+		float duty_cycle = atof(argv[2]);
 
 		if (instance < 0 || instance >= MAX_INSTANCES) {
 			PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
@@ -551,7 +551,7 @@ int HBridge::custom_command(int argc, char *argv[])
 		return PX4_OK;
 	}
 
-	if (!strcmp(argv[1], "enable")) {
+	if (!strcmp(argv[0], "enable")) {
 		if (_manager_instance != nullptr) {
 			_manager_instance->output_enable(true);
 			PX4_INFO("H-Bridge enabled");
@@ -562,7 +562,7 @@ int HBridge::custom_command(int argc, char *argv[])
 		}
 	}
 
-	if (!strcmp(argv[1], "disable")) {
+	if (!strcmp(argv[0], "disable")) {
 		if (_manager_instance != nullptr) {
 			_manager_instance->output_enable(false);
 			PX4_INFO("H-Bridge disabled");
@@ -573,10 +573,10 @@ int HBridge::custom_command(int argc, char *argv[])
 		}
 	}
 
-	if (!strcmp(argv[1], "status")) {
-		if (argc >= 3) {
+	if (!strcmp(argv[0], "status")) {
+		if (argc >= 2) {
 			// Print specific instance status
-			int instance = atoi(argv[2]);
+			int instance = atoi(argv[1]);
 			if (instance < 0 || instance >= MAX_INSTANCES) {
 				PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
 				return PX4_ERROR;
