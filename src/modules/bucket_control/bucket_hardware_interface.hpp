@@ -68,7 +68,8 @@ public:
 	struct SensorData {
 		float hbridge_position;       // mm
 		float hbridge_velocity;       // mm/s
-		float boom_angle;             // rad
+		float sensor_angle;           // rad - Raw AS5600 sensor angle
+		bool sensor_angle_valid;      // True if sensor angle is valid
 		bool limit_switch_load;       // Load limit (bucket down)
 		bool limit_switch_dump;       // Dump limit (bucket up)
 		bool motor_fault;             // Motor fault status
@@ -140,6 +141,12 @@ public:
 	 * @return True if status retrieved successfully
 	 */
 	bool get_hardware_status(bool& motor_enabled, bool& encoder_valid, bool& limits_valid) const;
+
+	/**
+	 * @brief Update hardware interface parameters from parameter system
+	 * This should be called when parameters change to reconfigure the hardware interface
+	 */
+	void update_parameters();
 
 private:
 	// Hardware configuration
@@ -230,6 +237,13 @@ private:
 	 * @return True if motor status updated
 	 */
 	bool update_motor_status(SensorData& data);
+
+	/**
+	 * @brief Check if limit switch prevents movement in given direction
+	 * @param direction_dump True for dump movement (bucket up), false for load movement (bucket down)
+	 * @return True if movement is blocked by limit switch
+	 */
+	bool is_movement_blocked_by_limits(bool direction_dump) const;
 
 	/**
 	 * @brief Check if timestamp is still valid

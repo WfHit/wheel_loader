@@ -49,7 +49,7 @@ BucketControl::BucketControl() :
 {
 	// Create component instances
 	_kinematics = new BucketKinematics(this);
-	_hardware = new BucketHardwareInterface(this);
+	_hardware_interface = new BucketHardwareInterface(this);
 	_motion_controller = new BucketMotionController(this);
 	_state_manager = new BucketStateManager(this);
 }
@@ -58,7 +58,7 @@ BucketControl::~BucketControl()
 {
 	// Manual cleanup
 	delete _kinematics;
-	delete _hardware;
+	delete _hardware_interface;
 	delete _motion_controller;
 	delete _state_manager;
 
@@ -81,7 +81,7 @@ bool BucketControl::init()
 	uint8_t motor_index = static_cast<uint8_t>(_param_motor_index.get());
 	uint8_t encoder_index = static_cast<uint8_t>(_param_encoder_index.get());
 
-	if (!_hardware->initialize(motor_index, encoder_index)) {
+	if (!_hardware_interface->initialize(motor_index, encoder_index)) {
 		PX4_ERR("Failed to initialize hardware interface");
 		return false;
 	}
@@ -93,25 +93,17 @@ bool BucketControl::init()
 		return false;
 	}
 
-	// Configure motion controller
-	BucketMotionController::ControllerConfig control_config;
-	control_config.position_p = 1.0f;
-	control_config.position_i = 0.1f;
-	control_config.position_d = 0.05f;
-	control_config.velocity_p = 2.0f;
-	control_config.velocity_i = 0.2f;
-	control_config.velocity_d = 0.01f;
-	control_config.max_velocity = 100.0f;        // mm/s
-	control_config.max_acceleration = 200.0f;    // mm/s²
-	control_config.max_jerk = 1000.0f;           // mm/s³
-	control_config.position_min = 0.0f;          // mm
-	control_config.position_max = 500.0f;        // mm
-	control_config.duty_cycle_limit = 1.0f;      // Maximum duty cycle
+	// Initialize motion controller with parameter-based configuration
+	// Set safety limits first from hardware parameters
+	_motion_controller->set_safety_limits(_param_hbg_min_len.get(), _param_hbg_max_len.get());
 
-	_motion_controller->initialize(control_config);
+	// Initialize from parameters (will call updateParams internally)
+	_motion_controller->update_parameters();
+
+	PX4_INFO("Motion controller initialized from parameter system");
 
 	// Perform hardware self-test
-	if (!_hardware->perform_self_test()) {
+	if (!_hardware_interface->perform_self_test()) {
 		PX4_ERR("Hardware self-test failed");
 		return false;
 	}
@@ -156,7 +148,7 @@ void BucketControl::update_sensor_data()
 
 	// Read hardware sensors
 	BucketHardwareInterface::SensorData sensor_data;
-	bool sensors_valid = _hardware->update_sensors(sensor_data);
+	bool sensors_valid = _hardware_interface->update_sensors(sensor_data);
 
 	// Check for command timeout
 	bool command_timeout = false;
@@ -167,7 +159,7 @@ void BucketControl::update_sensor_data()
 	// Update state manager with sensor status
 	_state_manager->update(
 		sensors_valid,
-		_hardware->is_healthy(),
+		_hardware_interface->is_healthy(),
 		command_timeout,
 		sensor_data.hbridge_position,
 		sensor_data.limit_switch_load,
@@ -205,8 +197,8 @@ void BucketControl::process_commands()
 	// Handle different command types
 	switch (command.control_mode) {
 		case bucket_command_s::MODE_POSITION:
-			// Absolute bucket angle command (ground-relative)
-			_target_bucket_angle_absolute = command.target_angle;
+			// Absolute bucket angle command (chassis-relative)
+			_target_bucket_angle_chassis = command.target_angle;
 
 			// Transition to active state
 			_state_manager->request_state_transition(
@@ -214,8 +206,8 @@ void BucketControl::process_commands()
 				"Position command received"
 			);
 
-			PX4_DEBUG("Absolute position command: %.2f°",
-				 (double)math::degrees(_target_bucket_angle_absolute));
+			PX4_DEBUG("Chassis-relative position command: %.2f°",
+				 (double)math::degrees(_target_bucket_angle_chassis));
 			break;
 
 		case bucket_command_s::MODE_DIRECT:
@@ -255,13 +247,13 @@ void BucketControl::execute_control()
 
 	// Handle emergency stop
 	if (state_info.state == BucketStateManager::OperationalState::EMERGENCY_STOP) {
-		_hardware->emergency_stop();
+		_hardware_interface->emergency_stop();
 		return;
 	}
 
 	// Get current sensor data
 	BucketHardwareInterface::SensorData sensor_data;
-	if (!_hardware->update_sensors(sensor_data)) {
+	if (!_hardware_interface->update_sensors(sensor_data)) {
 		PX4_DEBUG("No valid sensor data for control");
 		return;
 	}
@@ -287,13 +279,19 @@ void BucketControl::publish_telemetry()
 
 	// Get sensor data
 	BucketHardwareInterface::SensorData sensor_data;
-	bool sensors_valid = _hardware->update_sensors(sensor_data);
+	bool sensors_valid = _hardware_interface->update_sensors(sensor_data);
 
 	if (sensors_valid) {
+		// Calculate boom angle from sensor angle using triangle geometry
+		float boom_angle = 0.0f;
+		if (sensor_data.sensor_angle_valid) {
+			boom_angle = _kinematics->encoder_angle_to_boom_angle(sensor_data.sensor_angle);
+		}
+
 		// Compute current bucket angle using forward kinematics
 		auto linkage_state = _kinematics->compute_forward_kinematics(
 			sensor_data.hbridge_position,
-			sensor_data.boom_angle
+			boom_angle
 		);
 
 		// Populate sensor data fields
@@ -303,7 +301,7 @@ void BucketControl::publish_telemetry()
 		status.velocity = sensor_data.hbridge_velocity;
 		status.limit_switch_load = sensor_data.limit_switch_load;
 		status.limit_switch_dump = sensor_data.limit_switch_dump;
-		status.boom_angle = sensor_data.boom_angle;
+		status.boom_angle = boom_angle;
 	}
 
 	// Populate state and control information
@@ -312,12 +310,12 @@ void BucketControl::publish_telemetry()
 	status.error_flags = state_info.error_flags;
 	status.calibration_progress = static_cast<uint8_t>(state_info.calibration_progress * 100.0f);
 
-	// Control mode information
-	status.target_ground_angle = _target_bucket_angle_absolute;
+	// Control mode information - convert chassis-relative to ground-relative for status
+	status.target_ground_angle = _target_bucket_angle_chassis + boom_angle;
 
 	// Hardware status
 	bool motor_enabled, encoder_valid, limits_valid;
-	if (_hardware->get_hardware_status(motor_enabled, encoder_valid, limits_valid)) {
+	if (_hardware_interface->get_hardware_status(motor_enabled, encoder_valid, limits_valid)) {
 		status.motor_enabled = motor_enabled;
 		status.encoder_valid = encoder_valid;
 		status.limits_valid = limits_valid;
@@ -337,14 +335,59 @@ void BucketControl::update_parameters()
 {
 	ModuleParams::updateParams();
 
-	// Update component configurations as needed
-	// Motion controller parameters are updated through the parameter system
+	// Update scheduling rate if changed
+	float update_rate = _param_update_rate.get();
+	uint32_t new_interval_us = static_cast<uint32_t>(1000000.0f / update_rate);
+	new_interval_us = math::max(new_interval_us, CONTROL_INTERVAL_US);  // Minimum 50 Hz
+
+	// Update the scheduling interval (will take effect on next schedule)
+	ScheduleOnInterval(new_interval_us);
+	PX4_DEBUG("Control rate set to %.1f Hz (interval: %u us)",
+		(double)(1000000.0f / new_interval_us), new_interval_us);
+
+	// Update kinematic configuration
+	if (_kinematics) {
+		_kinematics->update_configuration();
+		PX4_DEBUG("Updated kinematic configuration");
+	}
+
+	// Update motion controller configuration
+	if (_motion_controller) {
+		// Update safety limits from hardware parameters
+		_motion_controller->set_safety_limits(_param_hbg_min_len.get(), _param_hbg_max_len.get());
+
+		// Let the motion controller update its own parameters
+		_motion_controller->update_parameters();
+
+		PX4_DEBUG("Motion controller parameters updated via parameter system");
+	}
+
+	// Update hardware interface configuration if needed
+	if (_hardware_interface) {
+		// Update hardware interface parameters
+		_hardware_interface->update_parameters();
+		PX4_DEBUG("Hardware interface parameters updated");
+	}
+
+	// Update state manager configuration if needed
+	if (_state_manager) {
+		// Update state manager parameters
+		_state_manager->update_parameters();
+		PX4_DEBUG("State manager parameters updated");
+	}
 }
 
-bool BucketControl::determine_target_position(const BucketStateManager::StateInfo& state_info,
-					       const BucketHardwareInterface::SensorData& sensor_data,
-					       float& target_actuator_position)
+bool BucketControl::determine_target_position(
+	const BucketStateManager::StateInfo& state_info,
+	const BucketHardwareInterface::SensorData& sensor_data,
+	float& target_actuator_position)
 {
+	// Calculate boom angle from sensor angle using triangle geometry
+	float boom_angle = 0.0f;
+	if (sensor_data.sensor_angle_valid) {
+		boom_angle = _kinematics->encoder_angle_to_boom_angle(sensor_data.sensor_angle);
+	}
+
 	// Determine target position based on state and mode
 	if (state_info.state == BucketStateManager::OperationalState::CALIBRATING) {
 		// Use calibration command
@@ -356,11 +399,13 @@ bool BucketControl::determine_target_position(const BucketStateManager::StateInf
 
 	} else if (state_info.state == BucketStateManager::OperationalState::ACTIVE) {
 		// Use operational commands - determine if it's position or direct mode
-		if (_target_bucket_angle_absolute != 0.0f) {
-			// Position mode: maintain absolute bucket angle using kinematics
+		if (fabsf(_target_bucket_angle_chassis) > 1e-6f) {
+			// Position mode: maintain chassis-relative bucket angle using kinematics
+			// Convert chassis-relative to ground-absolute for kinematics
+			float target_ground_angle = _target_bucket_angle_chassis + boom_angle;
 			auto target_linkage = _kinematics->compute_inverse_kinematics(
-				_target_bucket_angle_absolute,
-				sensor_data.boom_angle
+				target_ground_angle,
+				boom_angle
 			);
 
 			if (target_linkage.is_valid) {
@@ -392,11 +437,12 @@ void BucketControl::send_zero_command()
 	BucketHardwareInterface::HbridgeCommand hbridge_cmd{};
 	hbridge_cmd.duty_cycle = 0.0f;
 	hbridge_cmd.enable = false;
-	_hardware->send_hbridge_command(hbridge_cmd);
+	_hardware_interface->send_hbridge_command(hbridge_cmd);
 }
 
-void BucketControl::execute_motion_control(float target_actuator_position,
-					    const BucketHardwareInterface::SensorData& sensor_data)
+void BucketControl::execute_motion_control(
+	float target_actuator_position,
+	const BucketHardwareInterface::SensorData& sensor_data)
 {
 	// Plan smooth trajectory
 	const float dt = static_cast<float>(CONTROL_INTERVAL_US) * MICROSECONDS_TO_SECONDS;
@@ -411,7 +457,6 @@ void BucketControl::execute_motion_control(float target_actuator_position,
 		motion_setpoint,
 		sensor_data.hbridge_position,
 		sensor_data.hbridge_velocity,
-		sensor_data.boom_angle,
 		dt
 	);
 
@@ -420,7 +465,7 @@ void BucketControl::execute_motion_control(float target_actuator_position,
 	hbridge_cmd.duty_cycle = control_output.duty_cycle;
 	hbridge_cmd.enable = !control_output.safety_stop;
 
-	_hardware->send_hbridge_command(hbridge_cmd);
+	_hardware_interface->send_hbridge_command(hbridge_cmd);
 }
 
 // Static methods for module management

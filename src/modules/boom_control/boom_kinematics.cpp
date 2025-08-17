@@ -108,6 +108,45 @@ float BoomKinematics::encoder_angle_to_actuator_length(float encoder_angle) cons
 	return calculated_actuator_length;
 }
 
+float BoomKinematics::sensor_angle_to_actuator_length(float sensor_angle) const
+{
+	// Convert AS5600 sensor angle directly to actuator length using geometric relationship
+	// This function uses the triangular relationship between chassis reference, pivot, and boom end
+	// to calculate actuator length directly from the sensor angle measurement.
+
+	// Get geometric parameters from configuration
+	const float chassis_to_pivot_length = _config.actuator_base_to_pivot_length;  // Distance from chassis reference to pivot
+	const float chassis_to_boom_end_length = _config.boom_length;  // Distance from chassis reference to boom end
+
+	// Get valid angle range
+	const float angle_min = _config.encoder_angle_at_min;    // Minimum sensor angle (degrees)
+	const float angle_max = _config.encoder_angle_at_max;    // Maximum sensor angle (degrees)
+
+	// Constrain angle to expected operating range
+	float constrained_angle = math::constrain(sensor_angle, angle_min, angle_max);
+	float constrained_angle_rad = math::radians(constrained_angle);
+
+	// Use law of cosines to calculate actuator length in triangle chassis-pivot-boom_end
+	// Given: chassis_to_pivot, chassis_to_boom_end, and angle at pivot
+	// We want to find the actuator length (side connecting chassis to boom_end through actuator)
+	float actuator_length = law_of_cosines_side(chassis_to_pivot_length, chassis_to_boom_end_length, constrained_angle_rad);
+
+	if (actuator_length < 0.0f || !PX4_ISFINITE(actuator_length)) {
+		// Law of cosines failed, use encoder calibration as fallback
+		PX4_WARN("Geometric calculation failed, using encoder calibration fallback");
+		actuator_length = encoder_angle_to_actuator_length(sensor_angle);
+	}
+
+	// Note: Bounds checking is handled by the calling hardware interface
+	// which has access to the physical actuator min/max limits
+
+	PX4_DEBUG("Sensor angle %.2f° -> Actuator length %.2f mm (chassis_to_pivot=%.1f, chassis_to_boom_end=%.1f)",
+		  (double)sensor_angle, (double)actuator_length,
+		  (double)chassis_to_pivot_length, (double)chassis_to_boom_end_length);
+
+	return actuator_length;
+}
+
 float BoomKinematics::actuator_length_to_encoder_angle(float actuator_length) const
 {
 	// Convert actuator length to boom angle using forward kinematics
@@ -229,7 +268,7 @@ void BoomKinematics::update_configuration()
 	_config.actuator_base_to_pivot_angle = calculate_actuator_base_to_pivot_angle();
 }
 
-float BoomKinematics::calculate_actuator_base_to_pivot_angle()
+float BoomKinematics::calculate_actuator_base_to_pivot_angle() const
 {
 	// Calculate actuator_base_to_pivot_angle as:
 	// pivot angle when actuator_length_at_zero + actuator_joint_to_boom_diff_angle

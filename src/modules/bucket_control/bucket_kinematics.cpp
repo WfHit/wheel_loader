@@ -32,6 +32,7 @@
 #include "bucket_kinematics.hpp"
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
+#include <cmath>
 
 BucketKinematics::BucketKinematics(ModuleParams *parent) :
 	ModuleParams(parent),
@@ -92,8 +93,8 @@ float BucketKinematics::get_bellcrank_internal_angle() const
 
 	float angle_ABC = law_of_cosines_angle(bellcrank_arm, bellcrank_to_actuator, bellcrank_to_coupler);
 
-	if (!isnan(angle_ABC)) {
-		return 2.0f * M_PI - angle_ABC;
+	if (!std::isnan(angle_ABC)) {
+		return 2.0f * static_cast<float>(M_PI) - angle_ABC;
 	} else {
 		PX4_WARN("Invalid bellcrank triangle geometry for internal angle calculation");
 		return 0.0f;
@@ -166,7 +167,7 @@ BucketKinematics::LinkageState BucketKinematics::compute_inverse_kinematics(
 
 	// Stage 2 Inverse: Find required bellcrank angle for desired bucket angle
 	float required_bellcrank_tilt = _tilt_kinematics.compute_inverse_kinematics(bucket_angle, boom_angle);
-	if (!isfinite(required_bellcrank_tilt)) {
+	if (!std::isfinite(required_bellcrank_tilt)) {
 		PX4_WARN("Tilt inverse kinematics failed for bucket angle: %.3f rad", (double)bucket_angle);
 		return combined_state;
 	}

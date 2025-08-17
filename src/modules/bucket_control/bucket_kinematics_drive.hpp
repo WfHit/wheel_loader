@@ -154,8 +154,8 @@ private:
 		// Stage 1 - Bucket Actuation Linkage (Machine Body Frame)
 		(ParamFloat<px4::params::BCT_MOTOR_BASE_X>) _param_motor_base_x,
 		(ParamFloat<px4::params::BCT_MOTOR_BASE_Y>) _param_motor_base_y,
-		(ParamFloat<px4::params::BCT_CRANK_PIVOT_LEN>) _param_crank_pivot_len,
-		(ParamFloat<px4::params::BCT_CRANK_PIVOT_ANG>) _param_crank_pivot_ang,
+		(ParamFloat<px4::params::BCT_CRK_PIV_LEN>) _param_crank_pivot_len,
+		(ParamFloat<px4::params::BCT_CRK_PIV_ANG>) _param_crank_pivot_ang,
 
 		// Link dimensions
 		(ParamFloat<px4::params::BCT_DRIVE_BC_LEN>) _param_drive_bc_len,

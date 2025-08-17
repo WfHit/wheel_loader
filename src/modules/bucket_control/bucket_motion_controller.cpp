@@ -252,6 +252,42 @@ void BucketMotionController::set_safety_limits(float min_position, float max_pos
 	PX4_DEBUG("Safety limits set: %.1f - %.1f mm", (double)min_position, (double)max_position);
 }
 
+void BucketMotionController::update_parameters()
+{
+	// Update parameters from parameter system
+	ModuleParams::updateParams();
+
+	// Create configuration from current parameters
+	ControllerConfig new_config{};
+
+	// PID gains
+	new_config.position_p = _param_position_p.get();
+	new_config.position_i = _param_position_i.get();
+	new_config.position_d = _param_position_d.get();
+	new_config.velocity_p = _param_velocity_p.get();
+	new_config.velocity_i = _param_velocity_i.get();
+	new_config.velocity_d = _param_velocity_d.get();
+
+	// Motion constraints
+	new_config.max_velocity = _param_max_velocity.get();
+	new_config.max_acceleration = _param_max_acceleration.get();
+	new_config.max_jerk = _param_max_jerk.get();
+
+	// Safety limits (keep current values - these are set by the main controller)
+	new_config.position_min = _position_min_safe;
+	new_config.position_max = _position_max_safe;
+	new_config.duty_cycle_limit = _param_duty_cycle_limit.get();
+
+	// Update configuration if initialized, otherwise initialize
+	if (_initialized) {
+		update_config(new_config);
+		PX4_DEBUG("Motion controller parameters updated");
+	} else {
+		initialize(new_config);
+		PX4_DEBUG("Motion controller initialized from parameters");
+	}
+}
+
 float BucketMotionController::compute_feedforward(const MotionSetpoint& setpoint)
 {
 	// Simple velocity feedforward (can be enhanced with acceleration feedforward)

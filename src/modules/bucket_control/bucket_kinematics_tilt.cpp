@@ -31,6 +31,7 @@
 #include "bucket_kinematics_tilt.hpp"
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
+#include <cmath>
 
 BucketKinematicsTilt::BucketKinematicsTilt(ModuleParams *parent) :
 	ModuleParams(parent)
@@ -80,7 +81,6 @@ void BucketKinematicsTilt::set_triangle_angles(float bellcrank_internal_angle,
 	         (double)_config.coupler_to_pivot_angle,
 	         (double)(_config.coupler_to_pivot_angle * 180.0f / PI));
 }
-}
 
 // =========================
 // MAIN KINEMATIC FUNCTIONS
@@ -112,7 +112,7 @@ float BucketKinematicsTilt::compute_inverse_kinematics(
 {
 	// Stage 2 Inverse: Find required bellcrank angle for desired bucket angle
 	float required_bellcrank_tilt = solve_inverse_trigonometric(bucket_angle, boom_angle);
-	if (!isfinite(required_bellcrank_tilt)) {
+	if (!std::isfinite(required_bellcrank_tilt)) {
 		PX4_WARN("Tilt Stage 2 inverse failed for bucket angle");
 		return NAN;
 	}
@@ -169,7 +169,7 @@ bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float
 		law_of_cosines_side(
 			bellcrank_joint_to_bucket_length, bellcrank_length, bellcrank_joint_angle);
 
-	if (!isfinite(coupler_joint_to_pivot_distance) ||
+	if (!std::isfinite(coupler_joint_to_pivot_distance) ||
 		coupler_joint_to_pivot_distance <= GEOMETRIC_TOLERANCE) {
 		return false;  // Invalid triangle geometry
 	}
@@ -182,7 +182,7 @@ bool BucketKinematicsTilt::solve_trigonometric(float bellcrank_angle_tilt, float
 		law_of_cosines_angle(
 			coupler_joint_to_pivot_distance, bellcrank_joint_to_bucket_length, bellcrank_length);
 
-	if (!isfinite(bucket_to_coupler_angle) || !isfinite(coupler_to_pivot_angle)) {
+	if (!std::isfinite(bucket_to_coupler_angle) || !std::isfinite(coupler_to_pivot_angle)) {
 		return false;  // Invalid triangle configuration
 	}
 
@@ -249,7 +249,7 @@ float BucketKinematicsTilt::solve_inverse_trigonometric(float bucket_angle, floa
 	const float pivot_internal_angle =
 		law_of_cosines_angle(attachment_to_pivot_distance, bellcrank_length, coupler_link_length);
 
-	if (!isfinite(pivot_internal_angle)) {
+	if (!std::isfinite(pivot_internal_angle)) {
 		return NAN;  // Invalid triangle configuration
 	}
 	const float attachment_direction_angle = atan2f(attachment_to_pivot_vector(1), attachment_to_pivot_vector(0));
@@ -320,7 +320,7 @@ bool BucketKinematicsTilt::validate_configuration() const
 
 		// Test inverse kinematics round-trip
 		float inverse_angle_tilt = compute_inverse_kinematics(state.bucket_angle, 0.0f);
-		if (!isfinite(inverse_angle_tilt)) {
+		if (!std::isfinite(inverse_angle_tilt)) {
 			PX4_ERR("Tilt inverse kinematics failed at test bucket angle");
 			return false;
 		}
@@ -358,7 +358,7 @@ float BucketKinematicsTilt::law_of_cosines_angle(float side_a, float side_b, flo
 float BucketKinematicsTilt::law_of_cosines_side(float side_a, float side_b, float angle_between) const
 {
 	// Calculate third side using law of cosines: c^2 = a^2 + b^2 - 2ab*cos(C)
-	if (side_a <= 0.0f || side_b <= 0.0f || !isfinite(angle_between)) {
+	if (side_a <= 0.0f || side_b <= 0.0f || !std::isfinite(angle_between)) {
 		return NAN;
 	}
 

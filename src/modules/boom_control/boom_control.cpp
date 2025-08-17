@@ -36,14 +36,14 @@
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
 #include <math.h>
+#include <cmath>
 
 BoomControl::BoomControl() :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default),
 	_kinematics(this),
-	_sensor_interface(this),
+	_hardware_interface(this),
 	_motion_controller(this),
-	_actuator_interface(this),
 	_state_manager(this),
 	_cycle_perf(perf_alloc(PC_ELAPSED, "boom_control_cycle")),
 	_control_latency_perf(perf_alloc(PC_ELAPSED, "boom_control_latency"))
@@ -66,13 +66,8 @@ bool BoomControl::init()
 	}
 
 	// Initialize components
-	if (!_sensor_interface.initialize(0)) {
-		PX4_ERR("Failed to initialize sensor interface");
-		return false;
-	}
-
-	if (!_actuator_interface.initialize(0)) {
-		PX4_ERR("Failed to initialize actuator interface");
+	if (!_hardware_interface.initialize(0, 0)) {
+		PX4_ERR("Failed to initialize hardware interface");
 		return false;
 	}
 
@@ -140,22 +135,22 @@ void BoomControl::update_sensors()
 	}
 
 	// Update sensor readings
-	BoomSensorInterface::SensorData sensor_data;
+	BoomHardwareInterface::SensorData sensor_data;
 
-	if (_sensor_interface.update(sensor_data)) {
-		// Convert to boom angle using kinematics
-		_current_actuator_length = sensor_data.actuator_length;
+	if (_hardware_interface.update_sensors(sensor_data)) {
+		// Calculate actuator length from sensor angle using kinematics
+		_current_actuator_length = _kinematics.sensor_angle_to_actuator_length(sensor_data.calibrated_angle);
 		_current_boom_angle = _kinematics.actuator_length_to_boom_angle(_current_actuator_length);
 	}
 
 	// Update H-bridge status
-	BoomActuatorInterface::HbridgeStatus hbridge_status;
-	_actuator_interface.update_status(hbridge_status);
+	BoomHardwareInterface::HbridgeStatus hbridge_status;
+	_hardware_interface.update_status(hbridge_status);
 
 	// Update state manager with system health
 	_state_manager.update(
-		_sensor_interface.is_healthy(),
-		_actuator_interface.is_healthy(),
+		_hardware_interface.is_healthy(),
+		_hardware_interface.is_healthy(),
 		false // at_target will be updated by motion controller
 	);
 }
@@ -184,7 +179,7 @@ void BoomControl::process_commands()
 		case 0: // Position control
 
 			// Validate position command bounds
-			if (!isfinite(command.lift_angle_cmd) ||
+			if (!std::isfinite(command.lift_angle_cmd) ||
 			    fabsf(command.lift_angle_cmd) > M_PI_F) {
 				PX4_WARN("Invalid position command: %.2f rad", (double)command.lift_angle_cmd);
 				break;
@@ -199,7 +194,7 @@ void BoomControl::process_commands()
 		case 1: // Velocity control
 
 			// Validate velocity command bounds
-			if (!isfinite(command.lift_velocity_cmd) ||
+			if (!std::isfinite(command.lift_velocity_cmd) ||
 			    fabsf(command.lift_velocity_cmd) > 5.0f) { // 5 rad/s max
 				PX4_WARN("Invalid velocity command: %.2f rad/s", (double)command.lift_velocity_cmd);
 				break;
@@ -267,17 +262,17 @@ void BoomControl::execute_control()
 
 	// Handle emergency stop
 	if (state_info.state == BoomStateManager::OperationalState::EMERGENCY_STOP) {
-		_actuator_interface.emergency_stop();
+		_hardware_interface.emergency_stop();
 		perf_end(_control_latency_perf);
 		return;
 	}
 
 	// Skip control if not operational
 	if (!_state_manager.is_operational()) {
-		BoomActuatorInterface::HbridgeCommand cmd{};
+		BoomHardwareInterface::HbridgeCommand cmd{};
 		cmd.duty_cycle = 0.0f;
 		cmd.enable = false;
-		_actuator_interface.send_command(cmd);
+		_hardware_interface.send_command(cmd);
 		perf_end(_control_latency_perf);
 		return;
 	}
@@ -300,12 +295,12 @@ void BoomControl::execute_control()
 			      );
 
 	// Send to H-bridge
-	BoomActuatorInterface::HbridgeCommand hbridge_cmd{};
+	BoomHardwareInterface::HbridgeCommand hbridge_cmd{};
 	hbridge_cmd.duty_cycle = control_output.duty_cycle;
 	hbridge_cmd.enable = (state_info.state != BoomStateManager::OperationalState::ERROR);
 	hbridge_cmd.mode = 0; // PWM mode
 
-	_actuator_interface.send_command(hbridge_cmd);
+	_hardware_interface.send_command(hbridge_cmd);
 
 	perf_end(_control_latency_perf);
 }
@@ -335,13 +330,13 @@ void BoomControl::publish_telemetry()
 	last_time = now;
 
 	// Load estimation (simplified)
-	auto actuator_cmd = _actuator_interface.get_last_command();
+	auto actuator_cmd = _hardware_interface.get_last_command();
 	status.load = fabsf(actuator_cmd.duty_cycle);
 
 	// Motor information from H-bridge interface
-	BoomActuatorInterface::HbridgeStatus hbridge_status;
+	BoomHardwareInterface::HbridgeStatus hbridge_status;
 
-	if (_actuator_interface.update_status(hbridge_status)) {
+	if (_hardware_interface.update_status(hbridge_status)) {
 		status.motor_current = hbridge_status.current;
 		status.motor_voltage = hbridge_status.voltage;
 		status.motor_temperature_c = hbridge_status.temperature;
@@ -349,7 +344,7 @@ void BoomControl::publish_telemetry()
 	}
 
 	// Sensor status
-	status.encoder_fault = !_sensor_interface.is_healthy();
+	status.encoder_fault = !_hardware_interface.is_healthy();
 
 	// State mapping
 	auto state_info = _state_manager.get_state_info();
@@ -383,6 +378,9 @@ void BoomControl::update_parameters()
 
 	// Propagate parameter updates to components
 	_kinematics.update_configuration();
+	_hardware_interface.update_parameters();
+	_motion_controller.update_parameters();
+	_state_manager.update_parameters();
 	// Components will update their own parameters through ModuleParams
 }
 
@@ -390,7 +388,7 @@ void BoomControl::handle_emergency_stop()
 {
 	_state_manager.emergency_stop("Manual emergency stop");
 	_motion_controller.emergency_stop();
-	_actuator_interface.emergency_stop();
+	_hardware_interface.emergency_stop();
 	PX4_ERR("Emergency stop activated");
 }
 
@@ -398,20 +396,14 @@ bool BoomControl::check_system_health()
 {
 	bool healthy = true;
 
-	// Check sensor health
-	if (!_sensor_interface.is_healthy()) {
-		PX4_WARN("Sensor unhealthy");
-		healthy = false;
-	}
-
-	// Check actuator health
-	if (!_actuator_interface.is_healthy()) {
-		PX4_WARN("Actuator unhealthy");
+	// Check hardware health (unified interface)
+	if (!_hardware_interface.is_healthy()) {
+		PX4_WARN("Hardware unhealthy");
 		healthy = false;
 	}
 
 	// Check for sensor timeout
-	if (_sensor_interface.time_since_last_update() > BoomSensorInterface::SENSOR_TIMEOUT_US) {
+	if (_hardware_interface.time_since_last_update() > BoomHardwareInterface::SENSOR_TIMEOUT_US) {
 		PX4_WARN("Sensor timeout");
 		healthy = false;
 	}

@@ -47,6 +47,10 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/parameter_update.h>
 
+// Include the state manager header for the StateInfo struct
+#include "bucket_state_manager.hpp"
+#include "bucket_hardware_interface.hpp"
+
 // Forward declarations for clean separation
 class BucketKinematics;
 class BucketHardwareInterface;
@@ -97,16 +101,18 @@ private:
 	/**
 	 * @brief Control execution helper methods
 	 */
-	bool determine_target_position(const BucketStateManager::StateInfo& state_info,
-				       const BucketHardwareInterface::SensorData& sensor_data,
-				       float& target_actuator_position);
+	bool determine_target_position(
+		const BucketStateManager::StateInfo& state_info,
+		const BucketHardwareInterface::SensorData& sensor_data,
+		float& target_actuator_position);
 	void send_zero_command();
-	void execute_motion_control(float target_actuator_position,
-				    const BucketHardwareInterface::SensorData& sensor_data);
+	void execute_motion_control(
+		float target_actuator_position,
+		const BucketHardwareInterface::SensorData& sensor_data);
 
 	// Core components
 	BucketKinematics* _kinematics{nullptr};
-	BucketHardwareInterface* _hardware{nullptr};
+	BucketHardwareInterface* _hardware_interface{nullptr};
 	BucketMotionController* _motion_controller{nullptr};
 	BucketStateManager* _state_manager{nullptr};
 
@@ -116,7 +122,7 @@ private:
 	uORB::Publication<bucket_status_s> _bucket_status_pub{ORB_ID(bucket_status)};
 
 	// Control state
-	float _target_bucket_angle_absolute{0.0f};  // Target bucket angle (ground-relative)
+	float _target_bucket_angle_chassis{0.0f};   // Target bucket angle (chassis-relative)
 	float _commanded_actuator_position{0.0f};   // Direct actuator position command
 	hrt_abstime _last_command_time{0};          // Last command timestamp
 
@@ -128,10 +134,13 @@ private:
 		(ParamInt<px4::params::BCT_ENABLED>) _param_enabled,
 		(ParamFloat<px4::params::BCT_UPDATE_RATE>) _param_update_rate,
 		(ParamInt<px4::params::BCT_MOTOR_IDX>) _param_motor_index,
-		(ParamInt<px4::params::BCT_ENC_IDX>) _param_encoder_index
-	)
+		(ParamInt<px4::params::BCT_ENC_IDX>) _param_encoder_index,
 
-	// Control loop timing
+		// Hardware configuration parameters
+		(ParamFloat<px4::params::BCT_HBG_MIN_LEN>) _param_hbg_min_len,
+		(ParamFloat<px4::params::BCT_HBG_MAX_LEN>) _param_hbg_max_len,
+		(ParamFloat<px4::params::BCT_DUTY_LIM>) _param_max_duty
+	)	// Control loop timing
 	static constexpr uint32_t CONTROL_INTERVAL_US = 20000;  // 50 Hz (20ms)
 	static constexpr uint32_t COMMAND_TIMEOUT_US = 1000000;  // Command timeout (1s)
 	static constexpr float MICROSECONDS_TO_SECONDS = 1e-6f; // Conversion factor

@@ -306,3 +306,14 @@ void BoomStateManager::clear_error(uint32_t flag)
 		_last_error_message = nullptr;
 	}
 }
+
+void BoomStateManager::update_parameters()
+{
+	// Update all parameters from the parameter system
+	updateParams();
+
+	PX4_DEBUG("State manager parameters updated: cal_req=%d, cal_timeout=%.1f, settle_time=%.1f",
+		  _param_calibration_required.get(),
+		  (double)_param_calibration_timeout.get(),
+		  (double)_param_settle_time.get());
+}

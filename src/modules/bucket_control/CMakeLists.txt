@@ -40,6 +40,8 @@ px4_add_module(
 		bucket_control_main.cpp
 		bucket_control.cpp
 		bucket_kinematics.cpp
+		bucket_kinematics_drive.cpp
+		bucket_kinematics_tilt.cpp
 		bucket_hardware_interface.cpp
 		bucket_motion_controller.cpp
 		bucket_state_manager.cpp

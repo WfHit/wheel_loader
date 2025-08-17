@@ -142,6 +142,12 @@ public:
 	 */
 	float get_calibration_progress() const;
 
+	/**
+	 * @brief Update state manager parameters from parameter system
+	 * This should be called when parameters change to reconfigure the state manager
+	 */
+	void update_parameters();
+
 private:
 	// Current state
 	OperationalState _current_state{OperationalState::UNINITIALIZED};

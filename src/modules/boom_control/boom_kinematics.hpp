@@ -198,6 +198,17 @@ public:
 	float encoder_angle_to_actuator_length(float encoder_angle) const;
 
 	/**
+	 * @brief Convert AS5600 sensor angle directly to actuator length using geometric relationship
+	 * @param sensor_angle AS5600 angle reading in degrees
+	 * @return Cylinder extension in mm
+	 *
+	 * This function uses the triangular relationship between the chassis reference point,
+	 * pivot point, and boom end to calculate actuator length directly from the sensor angle.
+	 * More accurate than encoder calibration for real-time control.
+	 */
+	float sensor_angle_to_actuator_length(float sensor_angle) const;
+
+	/**
 	 * @brief Convert actuator length to AS5600 encoder angle
 	 * @param actuator_length Cylinder extension in mm
 	 * @return Expected encoder angle in degrees
@@ -265,16 +276,16 @@ private:
 
 	// Kinematic parameters
 	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::BOOM_PIV_ACT_BASE_LEN>) _param_actuator_base_to_pivot_length,
+		(ParamFloat<px4::params::BOOM_PIV_BASE>) _param_actuator_base_to_pivot_length,
 		(ParamFloat<px4::params::BOOM_PIV_BUK_LEN>) _param_boom_length,
-		(ParamFloat<px4::params::BOOM_ACT_JNT_PIV_LEN>) _param_actuator_joint_to_pivot_length,
-		(ParamFloat<px4::params::BOOM_ACT_JNT_BOOM_END_LEN>) _param_actuator_joint_to_boom_end_length,
-		(ParamFloat<px4::params::BOOM_ACT_ZERO_LEN>) _param_actuator_zero_length,
+		(ParamFloat<px4::params::BOOM_ACT_PIV_LEN>) _param_actuator_joint_to_pivot_length,
+		(ParamFloat<px4::params::BOOM_ACT_JNT_LEN>) _param_actuator_joint_to_boom_end_length,
+		(ParamFloat<px4::params::BOOM_ACT_ZERO>) _param_actuator_zero_length,
 		(ParamFloat<px4::params::BOOM_PIV_HEIGHT>) _param_pivot_height,
-		(ParamFloat<px4::params::BOOM_SENS_OFFSET>) _param_sensor_boom_offset,
+		(ParamFloat<px4::params::BOOM_ENC_OFF>) _param_sensor_boom_offset,
 		(ParamFloat<px4::params::BOOM_ENC_MIN_ANG>) _param_encoder_min_angle,
 		(ParamFloat<px4::params::BOOM_ENC_MAX_ANG>) _param_encoder_max_angle,
-		(ParamFloat<px4::params::BOOM_ENC_ZERO_ANG>) _param_encoder_zero_angle
+		(ParamFloat<px4::params::BOOM_ENC_ZERO>) _param_encoder_zero_angle
 	)
 
 	/**

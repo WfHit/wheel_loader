@@ -32,6 +32,7 @@
 #include "bucket_kinematics_drive.hpp"
 #include <px4_platform_common/log.h>
 #include <mathlib/mathlib.h>
+#include <cmath>
 
 BucketKinematicsDrive::BucketKinematicsDrive(ModuleParams *parent) :
 	ModuleParams(parent)
@@ -155,7 +156,7 @@ bool BucketKinematicsDrive::solve_trigonometric(float actuator_length, float boo
 
 	// Step 6: Calculate angle ACB using law of cosines
 	float angle_ACB = law_of_cosines_angle(length_AC, length_BC, length_AB);
-	if (!isfinite(angle_ACB)) {
+	if (!std::isfinite(angle_ACB)) {
 		return false;  // Invalid triangle
 	}
 

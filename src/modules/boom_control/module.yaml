@@ -22,7 +22,7 @@ parameters:
           unit: Hz
           decimal: 1
 
-        BOOM_PIV_ACT_BASE_LEN:
+        BOOM_PIV_BASE:
           description:
             short: Pivot to actuator base length
             long: Distance from boom pivot to actuator base mount point
@@ -33,7 +33,7 @@ parameters:
           unit: mm
           decimal: 1
 
-        BOOM_ACT_JNT_PIV_LEN:
+        BOOM_ACT_PIV_LEN:
           description:
             short: Actuator joint to pivot length
             long: Distance from actuator joint attachment point to boom pivot
@@ -55,7 +55,7 @@ parameters:
           unit: mm
           decimal: 1
 
-        BOOM_ACT_JNT_BOOM_END_LEN:
+        BOOM_ACT_JNT_LEN:
           description:
             short: Actuator joint to boom end length
             long: Distance between actuator joint and boom end attachment point
@@ -66,7 +66,7 @@ parameters:
           unit: mm
           decimal: 1
 
-        BOOM_ACT_ZERO_LEN:
+        BOOM_ACT_ZERO:
           description:
             short: Actuator length at zero angle
             long: Linear actuator length when boom is at zero angle
@@ -110,7 +110,7 @@ parameters:
           unit: deg
           decimal: 1
 
-        BOOM_ENC_ZERO_ANG:
+        BOOM_ENC_ZERO:
           description:
             short: Encoder angle at zero boom angle
             long: AS5600 encoder reading when boom angle is zero degrees
@@ -313,6 +313,24 @@ parameters:
           max: 1.0
           decimal: 2
 
+        BOOM_LMT_UP_IDX:
+          description:
+            short: Boom up limit sensor index
+            long: Device index for boom up limit switch sensor
+          type: int32
+          default: 0
+          min: 0
+          max: 7
+
+        BOOM_LMT_DN_IDX:
+          description:
+            short: Boom down limit sensor index
+            long: Device index for boom down limit switch sensor
+          type: int32
+          default: 1
+          min: 0
+          max: 7
+
         BOOM_CAL_REQ:
           description:
             short: Calibration required
@@ -342,4 +360,70 @@ parameters:
           min: 0.5
           max: 10.0
           unit: s
+          decimal: 1
+
+        BOOM_OA_LEN:
+          description:
+            short: O-A distance
+            long: Distance from chassis reference point O to pivot A
+          type: float
+          default: 500.0
+          min: 100.0
+          max: 1000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_OB_LEN:
+          description:
+            short: O-B distance
+            long: Distance from chassis reference point O to boom end B
+          type: float
+          default: 1000.0
+          min: 500.0
+          max: 2000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_AB_MIN:
+          description:
+            short: AB minimum length
+            long: Minimum boom arm length from A to B
+          type: float
+          default: 800.0
+          min: 500.0
+          max: 1500.0
+          unit: mm
+          decimal: 1
+
+        BOOM_AB_MAX:
+          description:
+            short: AB maximum length
+            long: Maximum boom arm length from A to B
+          type: float
+          default: 1200.0
+          min: 800.0
+          max: 2000.0
+          unit: mm
+          decimal: 1
+
+        BOOM_ANG_MIN:
+          description:
+            short: Minimum angle OAB
+            long: Minimum angle OAB measured by AS5600
+          type: float
+          default: 30.0
+          min: 0.0
+          max: 180.0
+          unit: deg
+          decimal: 1
+
+        BOOM_ANG_MAX:
+          description:
+            short: Maximum angle OAB
+            long: Maximum angle OAB measured by AS5600
+          type: float
+          default: 150.0
+          min: 30.0
+          max: 180.0
+          unit: deg
           decimal: 1

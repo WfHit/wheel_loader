@@ -54,19 +54,17 @@ using namespace time_literals;
 
 // Component includes (required for composition)
 #include "boom_kinematics.hpp"
-#include "boom_sensor_interface.hpp"
+#include "boom_hardware_interface.hpp"
 #include "boom_motion_controller.hpp"
-#include "boom_actuator_interface.hpp"
 #include "boom_state_manager.hpp"
 
 /**
  * @brief Main boom control module for wheel loader lifting system
  *
  * Coordinates boom actuator components through a well-defined architecture:
- * - Sensor reading and processing (BoomSensorInterface)
+ * - Hardware interface management (BoomHardwareInterface)
  * - Kinematic calculations (BoomKinematics)
  * - Motion planning and control (BoomMotionController)
- * - Actuator commanding (BoomActuatorInterface)
  * - State management and safety (BoomStateManager)
  *
  * The module uses composition over inheritance for better maintainability
@@ -103,7 +101,7 @@ private:
 	 * @brief Main control pipeline stages
 	 *
 	 * The control loop executes these stages sequentially at 50Hz:
-	 * 1. update_sensors() - Read encoder and actuator status
+	 * 1. update_sensors() - Read encoder and H-bridge status via hardware interface
 	 * 2. process_commands() - Handle incoming boom commands via uORB
 	 * 3. update_motion_planning() - Generate smooth trajectories
 	 * 4. execute_control() - Compute motor commands using PID control
@@ -127,9 +125,8 @@ private:
 
 	// Core components (using composition for better maintainability and testing)
 	BoomKinematics _kinematics;                    // Forward/inverse kinematics calculations
-	BoomSensorInterface _sensor_interface;         // AS5600 encoder reading and processing  
+	BoomHardwareInterface _hardware_interface;     // Unified sensor and actuator interface
 	BoomMotionController _motion_controller;       // Trajectory generation and PID control
-	BoomActuatorInterface _actuator_interface;     // H-bridge motor driver interface
 	BoomStateManager _state_manager;               // State machine and safety management
 
 	// Current system state (updated each control cycle)

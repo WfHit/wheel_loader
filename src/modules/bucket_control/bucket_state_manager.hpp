@@ -146,6 +146,12 @@ public:
 	bool clear_emergency_stop();
 
 	/**
+	 * @brief Update state manager parameters from parameter system
+	 * This should be called when parameters change to reconfigure the state manager
+	 */
+	void update_parameters();
+
+	/**
 	 * @brief Get current state information
 	 * @return Current state info structure
 	 */

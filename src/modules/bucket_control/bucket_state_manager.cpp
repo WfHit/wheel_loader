@@ -362,6 +362,41 @@ bool BucketStateManager::clear_emergency_stop()
 	return true;
 }
 
+void BucketStateManager::update_parameters()
+{
+	// Update parameters from parameter system
+	ModuleParams::updateParams();
+
+	// Get new parameter values
+	float new_fast_speed = _param_calibration_fast_speed.get();
+	float new_slow_speed = _param_calibration_slow_speed.get();
+	int new_calibration_required = _param_calibration_required.get();
+	float new_calibration_margin = _param_calibration_margin.get();
+
+	// Log parameter changes for debugging
+	PX4_DEBUG("State manager parameters updated:");
+	PX4_DEBUG("  Calibration fast speed: %.1f mm/s", (double)new_fast_speed);
+	PX4_DEBUG("  Calibration slow speed: %.1f mm/s", (double)new_slow_speed);
+	PX4_DEBUG("  Calibration required: %s", new_calibration_required ? "true" : "false");
+	PX4_DEBUG("  Calibration margin: %.1f mm", (double)new_calibration_margin);
+
+	// If calibration is in progress and calibration parameters changed significantly,
+	// the operator may want to restart calibration with new parameters
+	if (_calibration_in_progress) {
+		PX4_WARN("Calibration parameters changed during calibration - consider restarting calibration");
+	}
+
+	// If calibration requirement setting changed, update state accordingly
+	if (!new_calibration_required && is_calibration_required()) {
+		PX4_INFO("Calibration requirement disabled - marking as calibrated");
+		_calibration_results.calibration_valid = true;
+		// Could transition to READY state if appropriate
+	} else if (new_calibration_required && !_calibration_results.calibration_valid) {
+		PX4_INFO("Calibration requirement enabled - calibration needed");
+		// System will need to be calibrated before operation
+	}
+}
+
 bool BucketStateManager::is_operational() const
 {
 	return (_current_state == OperationalState::READY ||

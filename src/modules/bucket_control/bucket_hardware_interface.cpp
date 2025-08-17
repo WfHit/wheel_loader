@@ -131,7 +131,9 @@ bool BucketHardwareInterface::update_boom_angle(SensorData& data)
 		    !mag_encoder_msg.magnet_too_strong &&
 		    !mag_encoder_msg.magnet_too_weak) {
 
-			data.boom_angle = mag_encoder_msg.angle;
+			// Store raw sensor angle - boom angle calculation should be done in kinematics
+			data.sensor_angle = mag_encoder_msg.angle;
+			data.sensor_angle_valid = true;
 			return true;
 		} else {
 			// Log sensor issues for debugging
@@ -145,7 +147,7 @@ bool BucketHardwareInterface::update_boom_angle(SensorData& data)
 		}
 	}
 
-	// Keep previous boom angle value if no new valid data
+	data.sensor_angle_valid = false;
 	return false;
 }
 
@@ -296,11 +298,24 @@ bool BucketHardwareInterface::select_limit_sensor_instances(int& load_instance, 
 
 bool BucketHardwareInterface::send_hbridge_command(const HbridgeCommand& command)
 {
+	// Start with the command as-is
+	HbridgeCommand limited_command = command;
+
+	// Check limit switches and block movement if necessary
+	if (limited_command.enable && fabsf(limited_command.duty_cycle) > 0.1f) {
+		bool direction_dump = limited_command.duty_cycle > 0.0f;
+		if (is_movement_blocked_by_limits(direction_dump)) {
+			PX4_WARN("Movement blocked by limit switch, setting duty cycle to 0");
+			limited_command.duty_cycle = 0.0f;
+			limited_command.enable = false;
+		}
+	}
+
 	hbridge_command_s cmd{};
 	cmd.timestamp = hrt_absolute_time();
 	cmd.instance = _motor_index;
-	cmd.duty_cycle = math::constrain(command.duty_cycle, -1.0f, 1.0f);
-	cmd.enable = command.enable;
+	cmd.duty_cycle = math::constrain(limited_command.duty_cycle, -1.0f, 1.0f);
+	cmd.enable = limited_command.enable;
 
 	return _hbridge_command_pub.publish(cmd);
 }
@@ -387,6 +402,85 @@ bool BucketHardwareInterface::get_hardware_status(bool& motor_enabled, bool& enc
 	limits_valid = true; // Simplified - could add more detailed limit sensor validation
 
 	return true;
+}
+
+void BucketHardwareInterface::update_parameters()
+{
+	// Update parameters from parameter system
+	ModuleParams::updateParams();
+
+	// Update hardware configuration from parameters
+	uint8_t new_motor_index = static_cast<uint8_t>(_param_motor_index.get());
+	uint8_t new_encoder_index = static_cast<uint8_t>(_param_encoder_index.get());
+	uint8_t new_limit_load_index = static_cast<uint8_t>(_param_limit_load_index.get());
+	uint8_t new_limit_dump_index = static_cast<uint8_t>(_param_limit_dump_index.get());
+
+	// Check if motor or encoder indices have changed (requires reinitialization)
+	bool indices_changed = (new_motor_index != _motor_index) ||
+	                      (new_encoder_index != _encoder_index) ||
+	                      (new_limit_load_index != _limit_load_index) ||
+	                      (new_limit_dump_index != _limit_dump_index);
+
+	if (indices_changed) {
+		PX4_INFO("Hardware indices changed, reinitializing interface");
+		PX4_INFO("  Motor: %d -> %d, Encoder: %d -> %d",
+			_motor_index, new_motor_index, _encoder_index, new_encoder_index);
+		PX4_INFO("  Limit load: %d -> %d, Limit dump: %d -> %d",
+			_limit_load_index, new_limit_load_index, _limit_dump_index, new_limit_dump_index);
+
+		// Update indices
+		_motor_index = new_motor_index;
+		_encoder_index = new_encoder_index;
+		_limit_load_index = new_limit_load_index;
+		_limit_dump_index = new_limit_dump_index;
+
+		// Reset instance selections to force reselection
+		_encoder_selected = -1;
+		_hbridge_status_selected = -1;
+		_limit_load_selected = -1;
+		_limit_dump_selected = -1;
+
+		// Mark sensor data as invalid to force refresh
+		_sensor_data_valid = false;
+	}
+
+	// Update encoder calibration parameters
+	float new_encoder_scale = _param_encoder_scale.get();
+	float new_encoder_offset = _param_encoder_offset.get();
+
+	if (fabsf(new_encoder_scale - _encoder_scale_factor) > 0.001f ||
+	    fabsf(new_encoder_offset - _encoder_zero_offset) > 0.001f) {
+
+		PX4_DEBUG("Encoder calibration updated: scale=%.4f->%.4f, offset=%.2f->%.2f",
+			(double)_encoder_scale_factor, (double)new_encoder_scale,
+			(double)_encoder_zero_offset, (double)new_encoder_offset);
+
+		_encoder_scale_factor = new_encoder_scale;
+		_encoder_zero_offset = new_encoder_offset;
+	}
+
+	PX4_DEBUG("Hardware interface parameters updated");
+}
+
+bool BucketHardwareInterface::is_movement_blocked_by_limits(bool direction_dump) const
+{
+	// Always allow movement if sensor data is not valid
+	if (!_sensor_data_valid) {
+		return false; // Allow movement if limit switches are not working
+	}
+
+	// Check appropriate limit switch based on direction
+	if (direction_dump && _cached_sensor_data.limit_switch_dump) {
+		PX4_DEBUG("Movement blocked: dump limit switch active");
+		return true;
+	}
+
+	if (!direction_dump && _cached_sensor_data.limit_switch_load) {
+		PX4_DEBUG("Movement blocked: load limit switch active");
+		return true;
+	}
+
+	return false;
 }
 
 bool BucketHardwareInterface::is_timestamp_valid(hrt_abstime timestamp, hrt_abstime timeout_us) const

@@ -152,7 +152,11 @@ public:
 	 */
 	void set_safety_limits(float min_position, float max_position);
 
-
+	/**
+	 * @brief Update controller parameters from parameter system
+	 * This should be called when parameters change to reconfigure the controller
+	 */
+	void update_parameters();
 
 	/**
 	 * @brief Get controller performance metrics
@@ -160,8 +164,10 @@ public:
 	 * @param velocity_rms_error Output: RMS velocity error
 	 * @param control_effort Output: Average control effort
 	 */
-	void get_performance_metrics(float& position_rms_error, float& velocity_rms_error,
-				     float& control_effort) const;
+	void get_performance_metrics(
+		float& position_rms_error,
+		float& velocity_rms_error,
+		float& control_effort) const;
 
 private:
 	// Control components

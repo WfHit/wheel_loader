@@ -137,6 +137,12 @@ public:
 	 */
 	void emergency_stop();
 
+	/**
+	 * @brief Update motion controller parameters from parameter system
+	 * This should be called when parameters change to reconfigure the motion controller
+	 */
+	void update_parameters();
+
 private:
 	// Control mode and state
 	ControlMode _mode{ControlMode::POSITION};

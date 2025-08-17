@@ -241,7 +241,7 @@ parameters:
             default: 2000.0
             unit: mm
 
-        BCT_BOOM_PIVOT_CRANK:
+        BCT_BOOM_PIV_CRK:
             description:
                 short: Boom pivot to crank joint distance (mm)
                 long: |
@@ -253,7 +253,7 @@ parameters:
             default: 1000.0
             unit: mm
 
-        BCT_BUCKET_CRANK_DIST:
+        BCT_BCK_CRK_DIST:
             description:
                 short: Bucket to crank joint distance (mm)
                 long: |
@@ -265,7 +265,7 @@ parameters:
             default: 750.0
             unit: mm
 
-        BCT_CRANK_ARM_LEN:
+        BCT_CRK_ARM_LEN:
             description:
                 short: Bellcrank arm length (mm)
                 long: |
@@ -277,7 +277,7 @@ parameters:
             default: 300.0
             unit: mm
 
-        BCT_CRANK_COUPLER:
+        BCT_CRK_COUPLER:
             description:
                 short: Bellcrank to coupler distance (mm)
                 long: |
@@ -289,7 +289,7 @@ parameters:
             default: 400.0
             unit: mm
 
-        BCT_CRANK_ACTUATOR_DIST:
+        BCT_CRK_ACT_DIST:
             description:
                 short: Bellcrank to actuator distance (mm)
                 long: |
@@ -556,4 +556,105 @@ parameters:
             min: 300.0
             max: 800.0
             default: 550.0
+            unit: mm
+
+        # Drive Kinematics Parameters
+        BCT_MOTOR_BASE_X:
+            description:
+                short: Motor base X coordinate (mm)
+                long: |
+                    X coordinate of motor base in machine body frame.
+            type: float
+            min: -1000.0
+            max: 1000.0
+            default: 0.0
+            unit: mm
+
+        BCT_MOTOR_BASE_Y:
+            description:
+                short: Motor base Y coordinate (mm)
+                long: |
+                    Y coordinate of motor base in machine body frame.
+            type: float
+            min: -1000.0
+            max: 1000.0
+            default: 0.0
+            unit: mm
+
+        BCT_CRK_PIV_LEN:
+            description:
+                short: Crank pivot length (mm)
+                long: |
+                    Length of crank pivot arm for drive kinematics.
+            type: float
+            min: 50.0
+            max: 500.0
+            default: 100.0
+            unit: mm
+
+        BCT_CRK_PIV_ANG:
+            description:
+                short: Crank pivot angle (deg)
+                long: |
+                    Initial angle of crank pivot arm for drive kinematics.
+            type: float
+            min: -180.0
+            max: 180.0
+            default: 0.0
+            unit: deg
+
+        BCT_DRIVE_BC_LEN:
+            description:
+                short: Drive BC link length (mm)
+                long: |
+                    Length of BC link in drive kinematics chain.
+            type: float
+            min: 50.0
+            max: 500.0
+            default: 200.0
+            unit: mm
+
+        BCT_AB_MIN:
+            description:
+                short: Actuator min position (mm)
+                long: |
+                    Minimum actuator position from quad encoder.
+            type: float
+            min: 0.0
+            max: 1000.0
+            default: 100.0
+            unit: mm
+
+        BCT_AB_MAX:
+            description:
+                short: Actuator max position (mm)
+                long: |
+                    Maximum actuator position from quad encoder.
+            type: float
+            min: 0.0
+            max: 1000.0
+            default: 500.0
+            unit: mm
+
+        # H-Bridge Control Parameters
+        BCT_HBG_MIN_LEN:
+            description:
+                short: H-bridge minimum length (mm)
+                long: |
+                    Minimum length setting for H-bridge control.
+            type: float
+            min: 100.0
+            max: 600.0
+            default: 200.0
+            unit: mm
+
+        BCT_HBG_MAX_LEN:
+            description:
+                short: H-bridge maximum length (mm)
+                long: |
+                    Maximum length setting for H-bridge control.
+            type: float
+            min: 200.0
+            max: 800.0
+            default: 600.0
             unit: mm
