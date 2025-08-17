@@ -182,8 +182,8 @@ bool HBridge::init()
 	// Start work queue
 	ScheduleOnInterval(SCHEDULE_INTERVAL);
 
-	PX4_INFO("HBridge instance %d (%s) initialized (msg_inst: %d)",
-		 _instance, _board_config->name, get_msg_instance());
+	PX4_INFO("HBridge instance %d (%s) initialized",
+		 _instance, _board_config->name);
 	return true;
 }
 
@@ -259,8 +259,8 @@ void HBridge::process_commands()
 	perf_begin(_command_perf);
 
 	hbridge_command_s cmd;
-	if (_command_sub[get_msg_instance()].updated() &&
-		_command_sub[get_msg_instance()].copy(&cmd)) {
+	if (_command_sub[_instance].updated() &&
+		_command_sub[_instance].copy(&cmd)) {
 		// Process duty cycle command for this instance
 		if (cmd.enable) {
 			float duty_cycle = math::constrain(cmd.duty_cycle, -1.0f, 1.0f);
@@ -506,7 +506,6 @@ void HBridge::print_instance_status(uint8_t instance)
 	PX4_INFO("  Enabled: %s", config->enabled ? "YES" : "NO");
 	PX4_INFO("  PWM Channel: %d", config->pwm_ch);
 	PX4_INFO("  Direction GPIO: 0x%08lx", config->dir_gpio);
-	PX4_INFO("  Message Instance: %d", inst->get_msg_instance());
 	PX4_INFO("  Direction Reversed: %s", inst->get_dir_reverse() ? "YES" : "NO");
 	PX4_INFO("  Current Duty Cycle: %.2f", (double)inst->_current_duty_cycle);
 	PX4_INFO("  Forward Limit: %s", inst->_forward_limit_active ? "ACTIVE" : "inactive");
@@ -609,8 +608,8 @@ Multi-instance H-Bridge motor driver for wheel loader operations.
 
 Each instance controls one H-bridge channel with PWM speed control and GPIO
 direction control. Instance 0 acts as the manager and controls the shared
-enable pin. All instances can subscribe to different command message instances
-for independent control.
+enable pin. Each instance subscribes to hbridge_command messages with matching
+instance numbers for independent control.
 
 The driver integrates with limit sensors to prevent motion in restricted
 directions. Forward limits stop forward motion, reverse limits stop reverse motion.
@@ -621,7 +620,7 @@ PWM output uses direct duty cycle control (0.0 to 1.0 range).
 ### Implementation
 - Supports 2 instances (0 and 1) for dual H-bridge channels
 - Instance 0 is the manager and controls shared enable pin
-- Each instance subscribes to instance-specific command messages
+- Each instance subscribes to hbridge_command with same instance number
 - Multi-instance status publishing with limit sensor states
 - PWM output with configurable direction reversal
 - Safety integration with limit sensors
@@ -636,10 +635,6 @@ $ hbridge start -i 0
 Configure direction reversal:
 $ param set HBRIDGE_DIR_REV0 1  # Reverse direction for channel 0
 $ param set HBRIDGE_DIR_REV1 0  # Normal direction for channel 1
-
-Configure message instances:
-$ param set HBRIDGE_MSG_I0 0  # Channel 0 listens to command instance 0
-$ param set HBRIDGE_MSG_I1 1  # Channel 1 listens to command instance 1
 )DESCR_STR");
 
 	PRINT_MODULE_USAGE_NAME("hbridge", "driver");
@@ -667,7 +662,6 @@ int HBridge::print_status()
 		if (_instances[i] != nullptr) {
 			PX4_INFO("  Instance %d: %s", i,
 				 _instances[i]->_board_config ? _instances[i]->_board_config->name : "unknown");
-			PX4_INFO("    Message Instance: %d", _instances[i]->get_msg_instance());
 			PX4_INFO("    Current Speed: %.3f", static_cast<double>(_instances[i]->_current_duty_cycle));
 			PX4_INFO("    Direction Reverse: %s", _instances[i]->get_dir_reverse() ? "YES" : "NO");
 			PX4_INFO("    Forward Limit: %s", _instances[i]->_forward_limit_active ? "ACTIVE" : "inactive");

@@ -13,30 +13,6 @@ parameters:
         default: false
         reboot_required: true
 
-      HBRIDGE_MSG_I0:
-        description:
-          short: Message Instance for Channel 0
-          long: |
-            Instance number for hbridge_command subscription for channel 0.
-            Channel 0 will subscribe to hbridge_command instance set by this parameter.
-        type: int32
-        min: 0
-        max: 3
-        default: 0
-        reboot_required: true
-
-      HBRIDGE_MSG_I1:
-        description:
-          short: Message Instance for Channel 1
-          long: |
-            Instance number for hbridge_command subscription for channel 1.
-            Channel 1 will subscribe to hbridge_command instance set by this parameter.
-        type: int32
-        min: 0
-        max: 3
-        default: 1
-        reboot_required: true
-
       HBRIDGE_DIR_REV0:
         description:
           short: Channel 0 direction reverse

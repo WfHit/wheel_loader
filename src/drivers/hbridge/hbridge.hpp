@@ -123,11 +123,14 @@ private:
 	void apply_safety_limits();
 
 	// Utilities
-	bool is_manager_instance() const { return _instance == MANAGER_INSTANCE; }
-	int get_msg_instance() const { return _instance == 0 ? _param_msg_instance_0.get() : _param_msg_instance_1.get(); }
-	int get_fwd_limit() const { return _instance == 0 ? _param_0_fwd_limit.get() : _param_1_fwd_limit.get(); }
-	int get_rev_limit() const { return _instance == 0 ? _param_0_rev_limit.get() : _param_1_rev_limit.get(); }
-	bool get_dir_reverse() const { return _instance == 0 ? (_param_dir_reverse_0.get() != 0) : (_param_dir_reverse_1.get() != 0); }
+	bool is_manager_instance() const {
+		return _instance == MANAGER_INSTANCE; }
+	int get_fwd_limit() const {
+		return _instance == 0 ? _param_0_fwd_limit.get() : _param_1_fwd_limit.get(); }
+	int get_rev_limit() const {
+		return _instance == 0 ? _param_0_rev_limit.get() : _param_1_rev_limit.get(); }
+	bool get_dir_reverse() const {
+		return _instance == 0 ? (_param_dir_reverse_0.get() != 0) : (_param_dir_reverse_1.get() != 0); }
 	void publish_status();
 
 	// Board configuration
@@ -139,8 +142,6 @@ private:
 
 	// Parameters (instance-specific)
 	DEFINE_PARAMETERS(
-		(ParamInt<px4::params::HBRIDGE_MSG_I0>) _param_msg_instance_0,
-		(ParamInt<px4::params::HBRIDGE_MSG_I1>) _param_msg_instance_1,
 		(ParamInt<px4::params::HBRIDGE_DIR_REV0>) _param_dir_reverse_0,
 		(ParamInt<px4::params::HBRIDGE_DIR_REV1>) _param_dir_reverse_1,
 		(ParamInt<px4::params::HBRIDGE_0_FLIM>) _param_0_fwd_limit,

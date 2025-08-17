@@ -67,12 +67,10 @@ param set-default LS_2_ENABLE 0       # Not configured on front board
 param set-default LS_3_ENABLE 0       # Not configured on front board
 
 # H-Bridge Configuration for Front Board
-param set-default HBRIDGE_L_PWM 0      # Left wheel PWM channel
-param set-default HBRIDGE_R_PWM 1      # Right wheel PWM channel
-param set-default HBRIDGE_PWM_FREQ 25000.0  # PWM frequency 25kHz
-param set-default HBRIDGE_L_DREV 1     # Left wheel direction normal
-param set-default HBRIDGE_R_DREV 1     # Right wheel direction normal
-param set-default HBRIDGE_L_FLIM 255   # Left forward limit disabled
-param set-default HBRIDGE_L_RLIM 255   # Left reverse limit disabled
-param set-default HBRIDGE_R_FLIM 0     # Right forward limit disabled
-param set-default HBRIDGE_R_RLIM 1     # Right reverse limit disabled
+param set-default HBRIDGE_ENABLE 1     # Enable H-Bridge system
+param set-default HBRIDGE_DIR_REV0 0   # Channel 0 direction normal
+param set-default HBRIDGE_DIR_REV1 0   # Channel 1 direction normal
+param set-default HBRIDGE_0_FLIM 255   # Channel 0 forward limit disabled
+param set-default HBRIDGE_0_RLIM 255   # Channel 0 reverse limit disabled
+param set-default HBRIDGE_1_FLIM 255   # Channel 1 forward limit disabled
+param set-default HBRIDGE_1_RLIM 255   # Channel 1 reverse limit disabled
