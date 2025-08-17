@@ -95,7 +95,7 @@ HBridge::~HBridge()
 	// Manager instance cleanup
 	if (_instance == MANAGER_INSTANCE) {
 		// Disable H-bridge before stopping instances
-		control_enable(false);
+		output_enable(false);
 		stop_all_instances();
 		_manager_instance = nullptr;
 	} else {
@@ -150,6 +150,7 @@ bool HBridge::init()
 			PX4_ERR("No shared enable GPIO configured");
 			return false;
 		}
+		return true;
 	}
 
 	// Get board configuration for this instance
@@ -258,7 +259,8 @@ void HBridge::process_commands()
 	perf_begin(_command_perf);
 
 	hbridge_command_s cmd;
-	if (_command_sub[get_msg_instance()].updated() && _command_sub[get_msg_instance()].copy(&cmd)) {
+	if (_command_sub[get_msg_instance()].updated() &&
+		_command_sub[get_msg_instance()].copy(&cmd)) {
 		// Process duty cycle command for this instance
 		if (cmd.enable) {
 			float duty_cycle = math::constrain(cmd.duty_cycle, -1.0f, 1.0f);
@@ -279,13 +281,17 @@ void HBridge::process_limit_sensors()
 
 	// Check forward limit sensor for this instance
 	uint8_t forward_limit_id = get_fwd_limit();
-	if (forward_limit_id != 255 && _limit_sensor_sub[forward_limit_id].updated() && _limit_sensor_sub[forward_limit_id].copy(&limit_msg)) {
+	if (forward_limit_id != 255 &&
+		_limit_sensor_sub[forward_limit_id].updated() &&
+		_limit_sensor_sub[forward_limit_id].copy(&limit_msg)) {
 		_forward_limit_active = limit_msg.state;
 	}
 
 	// Check reverse limit sensor for this instance
 	uint8_t reverse_limit_id = get_rev_limit();
-	if (reverse_limit_id != 255 && _limit_sensor_sub[reverse_limit_id].updated() && _limit_sensor_sub[reverse_limit_id].copy(&limit_msg)) {
+	if (reverse_limit_id != 255 &&
+		_limit_sensor_sub[reverse_limit_id].updated() &&
+		_limit_sensor_sub[reverse_limit_id].copy(&limit_msg)) {
 		_reverse_limit_active = limit_msg.state;
 	}
 }
@@ -322,7 +328,7 @@ void HBridge::set_direction(bool forward)
 	}
 }
 
-void HBridge::control_enable(bool enable)
+void HBridge::output_enable(bool enable)
 {
 	// Only manager instance controls shared enable pin
 	if (!is_manager_instance()) {
@@ -548,7 +554,7 @@ int HBridge::custom_command(int argc, char *argv[])
 
 	if (!strcmp(argv[1], "enable")) {
 		if (_manager_instance != nullptr) {
-			_manager_instance->control_enable(true);
+			_manager_instance->output_enable(true);
 			PX4_INFO("H-Bridge enabled");
 			return PX4_OK;
 		} else {
@@ -559,7 +565,7 @@ int HBridge::custom_command(int argc, char *argv[])
 
 	if (!strcmp(argv[1], "disable")) {
 		if (_manager_instance != nullptr) {
-			_manager_instance->control_enable(false);
+			_manager_instance->output_enable(false);
 			PX4_INFO("H-Bridge disabled");
 			return PX4_OK;
 		} else {
