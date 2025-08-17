@@ -113,7 +113,7 @@ private:
 	bool configure_hardware();
 	void output_pwm();
 	void set_direction(bool forward);
-	void control_enable(bool enable);
+	void output_enable(bool enable);
 
 	// Command processing
 	void process_commands();
