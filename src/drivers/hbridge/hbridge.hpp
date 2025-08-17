@@ -96,6 +96,7 @@ private:
 	bool _forward_limit_active{false};
 	bool _reverse_limit_active{false};
 	bool _initialized{false};
+	bool _manual_mode{false};
 
 	// Publications
     orb_advert_t _pub_handle{nullptr};

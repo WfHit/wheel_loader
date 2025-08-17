@@ -258,6 +258,12 @@ void HBridge::process_commands()
 {
 	perf_begin(_command_perf);
 
+	// Skip uORB command processing if in manual mode
+	if (_manual_mode) {
+		perf_end(_command_perf);
+		return;
+	}
+
 	hbridge_command_s cmd;
 	if (_command_sub[_instance].updated() &&
 		_command_sub[_instance].copy(&cmd)) {
@@ -507,6 +513,7 @@ void HBridge::print_instance_status(uint8_t instance)
 	PX4_INFO("  PWM Channel: %d", config->pwm_ch);
 	PX4_INFO("  Direction GPIO: 0x%08lx", config->dir_gpio);
 	PX4_INFO("  Direction Reversed: %s", inst->get_dir_reverse() ? "YES" : "NO");
+	PX4_INFO("  Manual Mode: %s", inst->_manual_mode ? "YES" : "NO");
 	PX4_INFO("  Current Duty Cycle: %.2f", (double)inst->_current_duty_cycle);
 	PX4_INFO("  Forward Limit: %s", inst->_forward_limit_active ? "ACTIVE" : "inactive");
 	PX4_INFO("  Reverse Limit: %s", inst->_reverse_limit_active ? "ACTIVE" : "inactive");
@@ -543,6 +550,11 @@ int HBridge::custom_command(int argc, char *argv[])
 			return PX4_ERROR;
 		}
 
+		if (!_instances[instance]->_manual_mode) {
+			PX4_ERR("Instance %d not in manual mode. Use 'hbridge manual_mode %d' first", instance, instance);
+			return PX4_ERROR;
+		}
+
 		// Manually set duty cycle and output
 		_instances[instance]->_current_duty_cycle = duty_cycle;
 		_instances[instance]->output_pwm();
@@ -571,6 +583,58 @@ int HBridge::custom_command(int argc, char *argv[])
 			PX4_ERR("Manager instance not running");
 			return PX4_ERROR;
 		}
+	}
+
+	if (!strcmp(argv[0], "manual_mode")) {
+		if (argc < 2) {
+			PX4_ERR("Usage: hbridge manual_mode <instance>");
+			return PX4_ERROR;
+		}
+
+		int instance = atoi(argv[1]);
+		if (instance < 0 || instance >= MAX_INSTANCES) {
+			PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
+			return PX4_ERROR;
+		}
+
+		if (_instances[instance] == nullptr) {
+			PX4_ERR("Instance %d not running", instance);
+			return PX4_ERROR;
+		}
+
+		// Enter manual mode - stop processing uORB commands
+		_instances[instance]->_manual_mode = true;
+		_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when entering manual mode
+		_instances[instance]->output_pwm();
+
+		PX4_INFO("Instance %d entered manual mode", instance);
+		return PX4_OK;
+	}
+
+	if (!strcmp(argv[0], "auto_mode")) {
+		if (argc < 2) {
+			PX4_ERR("Usage: hbridge auto_mode <instance>");
+			return PX4_ERROR;
+		}
+
+		int instance = atoi(argv[1]);
+		if (instance < 0 || instance >= MAX_INSTANCES) {
+			PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
+			return PX4_ERROR;
+		}
+
+		if (_instances[instance] == nullptr) {
+			PX4_ERR("Instance %d not running", instance);
+			return PX4_ERROR;
+		}
+
+		// Exit manual mode - resume processing uORB commands
+		_instances[instance]->_manual_mode = false;
+		_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when exiting manual mode
+		_instances[instance]->output_pwm();
+
+		PX4_INFO("Instance %d entered auto mode", instance);
+		return PX4_OK;
 	}
 
 	if (!strcmp(argv[0], "status")) {
@@ -641,7 +705,11 @@ $ param set HBRIDGE_DIR_REV1 0  # Normal direction for channel 1
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, MAX_INSTANCES-1,
 				     "Start specific instance (0-1), default: start all", true);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("manual", "Manual PWM output control");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("manual_mode", "Enter manual control mode for instance");
+	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("auto_mode", "Exit manual mode and resume automatic control");
+	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("manual", "Manual PWM output control (requires manual mode)");
 	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
 	PRINT_MODULE_USAGE_ARG("<duty_cycle>", "Duty cycle (-1.0 to 1.0)", false);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("enable", "Enable H-bridge power");
