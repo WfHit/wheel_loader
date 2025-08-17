@@ -146,12 +146,19 @@ bool HBridge::init()
 		if (manager_config != nullptr && manager_config->enable_gpio != 0) {
 			px4_arch_configgpio(manager_config->enable_gpio);
 			px4_arch_gpiowrite(manager_config->enable_gpio, 0); // Start disabled
+			PX4_INFO("Manager instance initialized with enable GPIO: 0x%08lx", manager_config->enable_gpio);
 		} else {
 			PX4_ERR("No shared enable GPIO configured");
 			return false;
 		}
+
+		// CRITICAL FIX: Set initialized flag for manager instance
+		_initialized = true;
+		PX4_INFO("HBridge manager instance initialized");
 		return true;
 	}
+
+	output_enable(false); // Ensure output is disabled initially
 
 	// Get board configuration for this instance
 	_board_config = get_board_config(_instance);
@@ -184,6 +191,9 @@ bool HBridge::init()
 
 	PX4_INFO("HBridge instance %d (%s) initialized",
 		 _instance, _board_config->name);
+
+	output_enable(true);
+
 	return true;
 }
 
@@ -551,8 +561,13 @@ int HBridge::custom_command(int argc, char *argv[])
 		}
 
 		if (!_instances[instance]->_manual_mode) {
-			PX4_ERR("Instance %d not in manual mode. Use 'hbridge manual_mode %d' first", instance, instance);
+			PX4_ERR("Instance %d not in manual mode. Use 'hbridge operate_mode %d manual' first", instance, instance);
 			return PX4_ERROR;
+		}
+
+		// Auto-enable outputs in manual mode if manager exists
+		if (_manager_instance != nullptr) {
+			_manager_instance->output_enable(true);
 		}
 
 		// Manually set duty cycle and output
@@ -585,9 +600,9 @@ int HBridge::custom_command(int argc, char *argv[])
 		}
 	}
 
-	if (!strcmp(argv[0], "manual_mode")) {
-		if (argc < 2) {
-			PX4_ERR("Usage: hbridge manual_mode <instance>");
+	if (!strcmp(argv[0], "operate_mode")) {
+		if (argc < 3) {
+			PX4_ERR("Usage: hbridge operate_mode <instance> <manual|auto>");
 			return PX4_ERROR;
 		}
 
@@ -602,39 +617,31 @@ int HBridge::custom_command(int argc, char *argv[])
 			return PX4_ERROR;
 		}
 
-		// Enter manual mode - stop processing uORB commands
-		_instances[instance]->_manual_mode = true;
-		_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when entering manual mode
-		_instances[instance]->output_pwm();
+		if (!strcmp(argv[2], "manual")) {
+			// Enter manual mode - stop processing uORB commands
+			_instances[instance]->_manual_mode = true;
+			_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when entering manual mode
+			_instances[instance]->output_pwm();
 
-		PX4_INFO("Instance %d entered manual mode", instance);
-		return PX4_OK;
-	}
+			// Auto-enable outputs when entering manual mode
+			if (_manager_instance != nullptr) {
+				_manager_instance->output_enable(true);
+				PX4_INFO("H-Bridge outputs enabled for manual mode");
+			}
 
-	if (!strcmp(argv[0], "auto_mode")) {
-		if (argc < 2) {
-			PX4_ERR("Usage: hbridge auto_mode <instance>");
+			PX4_INFO("Instance %d entered manual mode", instance);
+			return PX4_OK;
+		} else if (!strcmp(argv[2], "auto")) {
+			// Exit manual mode - resume processing uORB commands
+			_instances[instance]->_manual_mode = false;
+			_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when exiting manual mode
+			_instances[instance]->output_pwm();
+			PX4_INFO("Instance %d entered auto mode", instance);
+			return PX4_OK;
+		} else {
+			PX4_ERR("Invalid mode '%s'. Use 'manual' or 'auto'", argv[2]);
 			return PX4_ERROR;
 		}
-
-		int instance = atoi(argv[1]);
-		if (instance < 0 || instance >= MAX_INSTANCES) {
-			PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
-			return PX4_ERROR;
-		}
-
-		if (_instances[instance] == nullptr) {
-			PX4_ERR("Instance %d not running", instance);
-			return PX4_ERROR;
-		}
-
-		// Exit manual mode - resume processing uORB commands
-		_instances[instance]->_manual_mode = false;
-		_instances[instance]->_current_duty_cycle = 0.0f; // Stop motor when exiting manual mode
-		_instances[instance]->output_pwm();
-
-		PX4_INFO("Instance %d entered auto mode", instance);
-		return PX4_OK;
 	}
 
 	if (!strcmp(argv[0], "status")) {
@@ -705,10 +712,9 @@ $ param set HBRIDGE_DIR_REV1 0  # Normal direction for channel 1
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('i', -1, 0, MAX_INSTANCES-1,
 				     "Start specific instance (0-1), default: start all", true);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("manual_mode", "Enter manual control mode for instance");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("operate_mode", "Set operation mode for instance");
 	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
-	PRINT_MODULE_USAGE_COMMAND_DESCR("auto_mode", "Exit manual mode and resume automatic control");
-	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
+	PRINT_MODULE_USAGE_ARG("<manual|auto>", "Operation mode: manual or auto", false);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("manual", "Manual PWM output control (requires manual mode)");
 	PRINT_MODULE_USAGE_ARG("<instance>", "H-bridge instance (0 or 1)", false);
 	PRINT_MODULE_USAGE_ARG("<duty_cycle>", "Duty cycle (-1.0 to 1.0)", false);
@@ -749,8 +755,25 @@ void HBridge::updateParams()
 	// Update module parameters
 	ModuleParams::updateParams();
 
-	// No additional parameters to update for now
-	// Direction reversal is handled via get_dir_reverse() method
+	// Log parameter updates for debugging (only for regular instances, not manager)
+	if (!is_manager_instance()) {
+		PX4_DEBUG("HBridge instance %d parameter update:", _instance);
+		PX4_DEBUG("  Direction reverse: %s", get_dir_reverse() ? "YES" : "NO");
+		PX4_DEBUG("  Forward limit sensor: %d", get_fwd_limit());
+		PX4_DEBUG("  Reverse limit sensor: %d", get_rev_limit());
+
+		// Validate limit sensor parameters
+		int fwd_limit = get_fwd_limit();
+		int rev_limit = get_rev_limit();
+
+		if (fwd_limit < 0 || fwd_limit > 255) {
+			PX4_WARN("Invalid forward limit sensor ID %d for instance %d (valid: 0-255)", fwd_limit, _instance);
+		}
+
+		if (rev_limit < 0 || rev_limit > 255) {
+			PX4_WARN("Invalid reverse limit sensor ID %d for instance %d (valid: 0-255)", rev_limit, _instance);
+		}
+	}
 }
 
 extern "C" __EXPORT int hbridge_main(int argc, char *argv[])

@@ -3,16 +3,6 @@ module_name: hbridge
 parameters:
   - group: HBridge
     definitions:
-      HBRIDGE_ENABLE:
-        description:
-          short: Enable H-Bridge System
-          long: |
-            Enable the H-Bridge system globally.
-            When disabled, no H-Bridge instances will be started.
-        type: boolean
-        default: false
-        reboot_required: true
-
       HBRIDGE_DIR_REV0:
         description:
           short: Channel 0 direction reverse
