@@ -281,13 +281,13 @@ void BucketControl::publish_telemetry()
 	BucketHardwareInterface::SensorData sensor_data;
 	bool sensors_valid = _hardware_interface->update_sensors(sensor_data);
 
-	if (sensors_valid) {
-		// Calculate boom angle from sensor angle using triangle geometry
-		float boom_angle = 0.0f;
-		if (sensor_data.sensor_angle_valid) {
-			boom_angle = _kinematics->encoder_angle_to_boom_angle(sensor_data.sensor_angle);
-		}
+	// Calculate boom angle from sensor angle using triangle geometry
+	float boom_angle = 0.0f;
+	if (sensors_valid && sensor_data.sensor_angle_valid) {
+		boom_angle = _kinematics->encoder_angle_to_boom_angle(sensor_data.sensor_angle);
+	}
 
+	if (sensors_valid) {
 		// Compute current bucket angle using forward kinematics
 		auto linkage_state = _kinematics->compute_forward_kinematics(
 			sensor_data.hbridge_position,

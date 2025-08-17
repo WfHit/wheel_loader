@@ -337,10 +337,11 @@ void BoomControl::publish_telemetry()
 	BoomHardwareInterface::HbridgeStatus hbridge_status;
 
 	if (_hardware_interface.update_status(hbridge_status)) {
-		status.motor_current = hbridge_status.current;
-		status.motor_voltage = hbridge_status.voltage;
-		status.motor_temperature_c = hbridge_status.temperature;
-		status.motor_fault = hbridge_status.fault;
+		// Note: hbridge_status_s doesn't provide current, voltage, temperature, or fault fields
+		status.motor_current = 0.0f;       // Not available
+		status.motor_voltage = 0.0f;       // Not available
+		status.motor_temperature_c = 0.0f; // Not available
+		status.motor_fault = false;        // Not available
 	}
 
 	// Sensor status

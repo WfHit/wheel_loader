@@ -308,10 +308,6 @@ bool BoomKinematics::validate_configuration() const
 		return false;
 	}
 
-	// Check triangle inequality for extreme positions
-	float pivot_to_base_distance = _config.actuator_base_to_pivot_length;
-	float pivot_to_joint_distance_check = _config.actuator_joint_to_pivot_length;
-
 	// Check encoder calibration
 	if (_config.encoder_angle_at_max <= _config.encoder_angle_at_min) {
 		PX4_WARN("Invalid encoder calibration - max angle must be greater than min angle");

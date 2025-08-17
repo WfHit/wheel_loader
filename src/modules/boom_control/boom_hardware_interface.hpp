@@ -40,6 +40,7 @@
 #include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/hbridge_command.h>
 #include <uORB/topics/hbridge_status.h>
+#include <uORB/topics/limit_sensor.h>
 #include <uORB/topics/sensor_mag_encoder.h>
 
 /**
@@ -91,11 +92,8 @@ public:
 	 */
 	struct HbridgeStatus {
 		bool enabled;            // Motor enabled
-		bool fault;             // Fault detected
-		float current;          // Motor current (A)
-		float voltage;          // Supply voltage (V)
-		float temperature;      // Temperature (°C)
 		hrt_abstime timestamp;  // Status timestamp
+		// Note: fault, current, voltage, temperature not available in hbridge_status_s
 	};
 
 	explicit BoomHardwareInterface(ModuleParams *parent);

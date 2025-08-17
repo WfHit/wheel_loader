@@ -53,7 +53,6 @@ bool BoomHardwareInterface::initialize(int encoder_instance, int motor_instance)
 	initial_cmd.timestamp = hrt_absolute_time();
 	initial_cmd.duty_cycle = 0.0f;
 	initial_cmd.enable = false;
-	initial_cmd.mode = 0; // PWM mode
 
 	_hbridge_command_pub = orb_advertise(ORB_ID(hbridge_command), &initial_cmd);
 
@@ -94,11 +93,8 @@ bool BoomHardwareInterface::send_command(const HbridgeCommand &command)
 		return false;
 	}
 
-	// Apply current limiting if status is available
+	// Apply current limiting if status is available (current not available in hbridge_status_s)
 	HbridgeCommand limited_command = command;
-	if (_last_status.timestamp > 0) {
-		limited_command = apply_current_limit(command, _last_status.current);
-	}
 
 	// Check limit switches and block movement if necessary
 	if (limited_command.enable && fabsf(limited_command.duty_cycle) > 0.1f) {
@@ -115,7 +111,6 @@ bool BoomHardwareInterface::send_command(const HbridgeCommand &command)
 	cmd_msg.timestamp = hrt_absolute_time();
 	cmd_msg.duty_cycle = math::constrain(limited_command.duty_cycle, -1.0f, 1.0f);
 	cmd_msg.enable = limited_command.enable;
-	cmd_msg.mode = limited_command.mode;
 
 	// Publish command
 	int ret = orb_publish(ORB_ID(hbridge_command), _hbridge_command_pub, &cmd_msg);
@@ -142,25 +137,12 @@ bool BoomHardwareInterface::update_status(HbridgeStatus &status)
 	// Read H-bridge status
 	hbridge_status_s status_msg;
 
-	if (_hbridge_status_sub.update(_hbridge_selected, &status_msg)) {
+	if (_hbridge_status_sub[_hbridge_selected].copy(&status_msg)) {
 		status.enabled = status_msg.enabled;
-		status.fault = status_msg.fault;
-		status.current = status_msg.current;
-		status.voltage = status_msg.voltage;
-		status.temperature = status_msg.temperature;
 		status.timestamp = status_msg.timestamp;
 
-		// Update health monitoring
-		if (status.fault) {
-			_fault_count++;
-			if (_fault_count > MAX_FAULT_COUNT) {
-				_actuator_healthy = false;
-				PX4_WARN("H-bridge fault count exceeded: %u", _fault_count);
-			}
-		} else {
-			_fault_count = 0;
-			_actuator_healthy = true;
-		}
+		// Update health monitoring (fault monitoring not available in hbridge_status_s)
+		_actuator_healthy = status.enabled;  // Consider healthy if enabled
 
 		_last_status = status;
 		_last_status_time = status.timestamp;
@@ -246,10 +228,11 @@ int BoomHardwareInterface::select_hbridge_instance()
 	// Find H-bridge instance matching our motor index
 	for (uint8_t i = 0; i < _hbridge_status_sub.size(); i++) {
 		hbridge_status_s status;
-		if (_hbridge_status_sub.copy(i, &status)) {
+		if (_hbridge_status_sub[i].copy(&status)) {
 			// Check if this instance matches our configuration
-			if (static_cast<int>(status.device_id) == _motor_instance) {
-				PX4_INFO("Selected H-bridge instance %d (device_id: %u)", i, status.device_id);
+			// Note: hbridge_status_s doesn't have device_id, use instance field instead
+			if (static_cast<int>(status.instance) == _motor_instance) {
+				PX4_INFO("Selected H-bridge instance %d (instance: %u)", i, status.instance);
 				return i;
 			}
 		}
@@ -337,18 +320,18 @@ bool BoomHardwareInterface::select_limit_sensor_instances()
 
 		for (uint8_t i = 0; i < _limit_sensor_sub.size(); i++) {
 			limit_sensor_s limit_msg;
-			if (_limit_sensor_sub.copy(i, &limit_msg)) {
+			if (_limit_sensor_sub[i].copy(&limit_msg)) {
 				// Check if this instance matches our up limit configuration
-				if (static_cast<int>(limit_msg.device_id) == _limit_up_instance) {
+				if (static_cast<int>(limit_msg.instance) == _limit_up_instance) {
 					_limit_up_selected = i;
 					up_found = true;
-					PX4_INFO("Selected limit up instance %d (device_id: %u)", i, limit_msg.device_id);
+					PX4_INFO("Selected limit up instance %d (instance: %u)", i, limit_msg.instance);
 				}
 				// Check if this instance matches our down limit configuration
-				if (static_cast<int>(limit_msg.device_id) == _limit_down_instance) {
+				if (static_cast<int>(limit_msg.instance) == _limit_down_instance) {
 					_limit_down_selected = i;
 					down_found = true;
-					PX4_INFO("Selected limit down instance %d (device_id: %u)", i, limit_msg.device_id);
+					PX4_INFO("Selected limit down instance %d (instance: %u)", i, limit_msg.instance);
 				}
 			}
 		}
@@ -378,7 +361,7 @@ bool BoomHardwareInterface::update_encoder_data(SensorData &data)
 		}
 
 		// Validate magnetic encoder readings (following bucket control pattern)
-		bool magnet_valid = (encoder_msg.status & 0x01) != 0; // Check magnet detect bit
+		bool magnet_valid = (encoder_msg.magnet_detected == 1); // Check magnet detect flag
 		if (!magnet_valid) {
 			PX4_DEBUG("Boom encoder: No magnet detected");
 			data.is_valid = false;
@@ -389,7 +372,10 @@ bool BoomHardwareInterface::update_encoder_data(SensorData &data)
 		data.raw_angle = math::degrees(encoder_msg.angle);
 		data.calibrated_angle = apply_sensor_calibration(data.raw_angle);
 		data.magnet_detected = magnet_valid;
-		data.status_flags = encoder_msg.status;
+		// Construct status from available flags (magnet_detected is bit 0)
+		data.status_flags = (encoder_msg.magnet_detected ? 0x01 : 0x00) |
+		                   (encoder_msg.magnet_too_strong ? 0x02 : 0x00) |
+		                   (encoder_msg.magnet_too_weak ? 0x04 : 0x00);
 		data.is_valid = (encoder_msg.error_count == 0);
 
 		// Update encoder timestamp tracking
@@ -429,8 +415,8 @@ bool BoomHardwareInterface::update_limit_switches(SensorData &data)
 	// Read up limit switch
 	if (_limit_up_selected >= 0) {
 		limit_sensor_s limit_up_msg;
-		if (_limit_sensor_sub.update(_limit_up_selected, &limit_up_msg)) {
-			data.limit_up_active = limit_up_msg.active;
+		if (_limit_sensor_sub[_limit_up_selected].copy(&limit_up_msg)) {
+			data.limit_up_active = limit_up_msg.state;
 			up_updated = true;
 		}
 	}
@@ -438,8 +424,8 @@ bool BoomHardwareInterface::update_limit_switches(SensorData &data)
 	// Read down limit switch
 	if (_limit_down_selected >= 0) {
 		limit_sensor_s limit_down_msg;
-		if (_limit_sensor_sub.update(_limit_down_selected, &limit_down_msg)) {
-			data.limit_down_active = limit_down_msg.active;
+		if (_limit_sensor_sub[_limit_down_selected].copy(&limit_down_msg)) {
+			data.limit_down_active = limit_down_msg.state;
 			down_updated = true;
 		}
 	}

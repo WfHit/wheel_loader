@@ -291,22 +291,17 @@ void BoomMotionController::update_parameters()
 	updateParams();
 
 	// Update PID controller parameters
-	_position_controller.setKp(_param_pos_p.get());
-	_position_controller.setKi(_param_pos_i.get());
-	_position_controller.setKd(_param_pos_d.get());
+	_position_controller.setGains(_param_pos_p.get(), _param_pos_i.get(), _param_pos_d.get());
 
-	_velocity_controller.setKp(_param_vel_p.get());
-	_velocity_controller.setKi(_param_vel_i.get());
-	_velocity_controller.setKd(_param_vel_d.get());
+	_velocity_controller.setGains(_param_vel_p.get(), _param_vel_i.get(), _param_vel_d.get());
 
 	// Update trajectory planner limits
 	Vector3f max_vel(_param_max_velocity.get(), 0.0f, 0.0f);
 	Vector3f max_acc(_param_max_acceleration.get(), 0.0f, 0.0f);
-	Vector3f max_jerk(_param_max_jerk.get(), 0.0f, 0.0f);
 
 	_trajectory_generator.setMaxVelocity(max_vel);
 	_trajectory_generator.setMaxAcceleration(max_acc);
-	_trajectory_generator.setMaxJerk(max_jerk);
+	_trajectory_generator.setMaxJerk(_param_max_jerk.get());
 
 	PX4_DEBUG("Motion controller parameters updated: pos_p=%.3f, vel_p=%.3f, max_vel=%.2f",
 		  (double)_param_pos_p.get(),
