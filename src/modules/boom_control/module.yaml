@@ -362,50 +362,6 @@ parameters:
           unit: s
           decimal: 1
 
-        BOOM_OA_LEN:
-          description:
-            short: O-A distance
-            long: Distance from chassis reference point O to pivot A
-          type: float
-          default: 500.0
-          min: 100.0
-          max: 1000.0
-          unit: mm
-          decimal: 1
-
-        BOOM_OB_LEN:
-          description:
-            short: O-B distance
-            long: Distance from chassis reference point O to boom end B
-          type: float
-          default: 1000.0
-          min: 500.0
-          max: 2000.0
-          unit: mm
-          decimal: 1
-
-        BOOM_AB_MIN:
-          description:
-            short: AB minimum length
-            long: Minimum boom arm length from A to B
-          type: float
-          default: 800.0
-          min: 500.0
-          max: 1500.0
-          unit: mm
-          decimal: 1
-
-        BOOM_AB_MAX:
-          description:
-            short: AB maximum length
-            long: Maximum boom arm length from A to B
-          type: float
-          default: 1200.0
-          min: 800.0
-          max: 2000.0
-          unit: mm
-          decimal: 1
-
         BOOM_ANG_MIN:
           description:
             short: Minimum angle OAB

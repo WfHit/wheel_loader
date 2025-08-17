@@ -94,17 +94,16 @@ private:
 	// Core control functions
 	bool update_speed_setpoint();
 	void update_encoder_feedback();
-	void updateEncoderData();       // EKF2-style encoder instance discovery and selection
+	void update_hbridge_status();
 	void run_speed_controller();
 	void publish_motor_command();
-	void update_hbridge_status();
-	void updateHBridgeStatus();     // EKF2-style hbridge instance discovery and selection
 	void check_safety_conditions();
 
 	// Parameter and utility functions
 	void parameters_update();
 	float constrain_pwm(float value) const;
 	bool is_setpoint_valid() const;
+	void set_speed_setpoint(float speed_rad_s);
 
 	// uORB subscriptions
 	uORB::Subscription _param_update_sub{ORB_ID(parameter_update)};
@@ -113,12 +112,6 @@ private:
 	// Instance-specific subscriptions - initialized in init()
 	uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _encoder_sub{ORB_ID::sensor_quad_encoder};
 	uORB::SubscriptionMultiArray<hbridge_status_s> _hbridge_status_sub{ORB_ID::hbridge_status};
-
-	// EKF2-style instance selection for SubscriptionMultiArray
-	int _encoder_selected{-1};              // Selected instance for encoder
-	int _hbridge_status_selected{-1};       // Selected instance for hbridge status
-	hrt_abstime _last_encoder_update{0};
-	hrt_abstime _last_hbridge_status_update{0};
 
 	// uORB publications
 	uORB::PublicationMulti<hbridge_command_s> _motor_cmd_pub{ORB_ID(hbridge_command)};
