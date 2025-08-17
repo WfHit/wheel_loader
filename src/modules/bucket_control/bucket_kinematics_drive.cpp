@@ -48,11 +48,11 @@ void BucketKinematicsDrive::update_configuration()
 	_config.crank_joint_to_pivot_angle = _param_crank_pivot_ang.get();
 
 	// Link dimensions
-	_config.drive_bellcrank_length = _param_drive_bc_len.get();
+	_config.drive_bellcrank_length = _param_bellcrank_len.get();
 
 	// Physical and safety limits from quad encoder
-	_config.actuator_min_length = _param_actuator_min.get();
-	_config.actuator_max_length = _param_actuator_max.get();
+	_config.actuator_min_length = _param_encoder_pos_min.get();
+	_config.actuator_max_length = _param_encoder_pos_max.get();
 
 	// Note: Triangle angles (bellcrank_boom_alignment_offset, coupler_to_pivot_angle)
 	// are set via set_triangle_angles() method called from parent BucketKinematics

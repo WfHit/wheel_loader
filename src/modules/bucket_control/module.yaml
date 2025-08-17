@@ -603,33 +603,36 @@ parameters:
             default: 0.0
             unit: deg
 
-        BCT_DRIVE_BC_LEN:
+        BCT_BELLCRK_LEN:
             description:
-                short: Drive BC link length (mm)
+                short: Bellcrank arm length (mm)
                 long: |
-                    Length of BC link in drive kinematics chain.
+                    Length of the bellcrank arm in the drive kinematics linkage system.
+                    This is the BC link in the four-bar mechanism.
             type: float
             min: 50.0
             max: 500.0
             default: 200.0
             unit: mm
 
-        BCT_AB_MIN:
+        BCT_ENC_POS_MIN:
             description:
-                short: Actuator min position (mm)
+                short: Encoder minimum position (mm)
                 long: |
-                    Minimum actuator position from quad encoder.
+                    Minimum actuator position limit based on quadrature encoder readings.
+                    Used for operational range safety validation.
             type: float
             min: 0.0
             max: 1000.0
             default: 100.0
             unit: mm
 
-        BCT_AB_MAX:
+        BCT_ENC_POS_MAX:
             description:
-                short: Actuator max position (mm)
+                short: Encoder maximum position (mm)
                 long: |
-                    Maximum actuator position from quad encoder.
+                    Maximum actuator position limit based on quadrature encoder readings.
+                    Used for operational range safety validation.
             type: float
             min: 0.0
             max: 1000.0

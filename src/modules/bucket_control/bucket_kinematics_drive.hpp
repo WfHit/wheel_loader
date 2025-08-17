@@ -158,11 +158,11 @@ private:
 		(ParamFloat<px4::params::BCT_CRK_PIV_ANG>) _param_crank_pivot_ang,
 
 		// Link dimensions
-		(ParamFloat<px4::params::BCT_DRIVE_BC_LEN>) _param_drive_bc_len,
+		(ParamFloat<px4::params::BCT_BELLCRK_LEN>) _param_bellcrank_len,
 
 		// Physical and safety limits from quad encoder
-		(ParamFloat<px4::params::BCT_AB_MIN>) _param_actuator_min,
-		(ParamFloat<px4::params::BCT_AB_MAX>) _param_actuator_max
+		(ParamFloat<px4::params::BCT_ENC_POS_MIN>) _param_encoder_pos_min,
+		(ParamFloat<px4::params::BCT_ENC_POS_MAX>) _param_encoder_pos_max
 	);
 
 	// =========================
