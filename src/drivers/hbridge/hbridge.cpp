@@ -58,6 +58,7 @@ extern hbridge_manager_config_t hbridge_manager_config;
 HBridge *HBridge::_instances[MAX_INSTANCES] = {};
 px4::atomic<uint8_t> HBridge::_num_instances{0};
 HBridge *HBridge::_manager_instance = nullptr;
+px4::atomic<uint32_t> HBridge::_initialized_pwm_channels{0};
 
 HBridge::HBridge(uint8_t instance) :
 	ModuleParams(nullptr),
@@ -111,6 +112,16 @@ HBridge::~HBridge()
 
 	// Unregister this instance
 	if (_instance < MAX_INSTANCES && _instances[_instance] == this) {
+		// Remove this channel from the initialized PWM channels mask
+		if (_board_config != nullptr) {
+			uint32_t current_channels = _initialized_pwm_channels.load();
+			uint32_t this_channel_mask = (1 << _board_config->pwm_ch);
+			uint32_t new_channels = current_channels & ~this_channel_mask;
+			_initialized_pwm_channels.store(new_channels);
+			PX4_DEBUG("Removed PWM channel %d from initialized mask (remaining: 0x%08lx)",
+					  _board_config->pwm_ch, (unsigned long)new_channels);
+		}
+
 		_instances[_instance] = nullptr;
 		_num_instances.fetch_sub(1);
 	}
@@ -209,18 +220,29 @@ bool HBridge::configure_hardware()
 		px4_arch_gpiowrite(_board_config->dir_gpio, 0); // Default to reverse
 	}
 
-	// Initialize PWM system for this channel only
-	uint32_t channel_mask = (1 << _board_config->pwm_ch);
+	// Read-modify-write approach for PWM channel initialization
+	// Get current initialized channels and add this channel to the mask
+	uint32_t current_channels = _initialized_pwm_channels.load();
+	uint32_t this_channel_mask = (1 << _board_config->pwm_ch);
+	uint32_t new_channels = current_channels | this_channel_mask;
 
-	int ret = up_motor_pwm_init(channel_mask);
-	if (ret < 0) {
-		PX4_ERR("Motor PWM init failed for channel %d: %d", _board_config->pwm_ch, ret);
-		return false;
+	// Only call up_motor_pwm_init if this channel isn't already initialized
+	if ((current_channels & this_channel_mask) == 0) {
+		int ret = up_motor_pwm_init(new_channels);
+		if (ret < 0) {
+			PX4_ERR("Motor PWM init failed for channel %d: %d", _board_config->pwm_ch, ret);
+			return false;
+		}
+
+		// Update the initialized channels mask atomically
+		_initialized_pwm_channels.store(new_channels);
+
+		up_motor_pwm_set_rate(MOTOR_PWM_FREQ_25KHZ);
+		up_motor_pwm_arm(true, new_channels);
+		PX4_INFO("Motor PWM channel %d initialized (total channels: 0x%08lx)", _board_config->pwm_ch, (unsigned long)new_channels);
+	} else {
+		PX4_INFO("Motor PWM channel %d already initialized", _board_config->pwm_ch);
 	}
-
-	up_motor_pwm_set_rate(MOTOR_PWM_FREQ_25KHZ);
-	up_motor_pwm_arm(true, channel_mask);
-	PX4_INFO("Motor PWM channel %d initialized", _board_config->pwm_ch);
 
 	return true;
 }

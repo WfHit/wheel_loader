@@ -86,6 +86,7 @@ private:
 	static HBridge *_instances[MAX_INSTANCES];
 	static px4::atomic<uint8_t> _num_instances;
 	static HBridge *_manager_instance; // Special manager instance
+	static px4::atomic<uint32_t> _initialized_pwm_channels; // Track initialized PWM channels
 
 	// Instance details
 	const uint8_t _instance;
