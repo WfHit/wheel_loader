@@ -142,7 +142,7 @@ bool QuadratureEncoder::init()
     }
 
     // Set up timing configuration
-    uint32_t poll_rate = static_cast<uint32_t>(math::constrain(_param_poll_rate.get(), 10, 1000));
+    uint32_t poll_rate = static_cast<uint32_t>(math::constrain(_param_poll_rate.get(), static_cast<int32_t>(10), static_cast<int32_t>(1000)));
     _run_interval_us = 1000000 / poll_rate;
 
     // Check if this instance is enabled
