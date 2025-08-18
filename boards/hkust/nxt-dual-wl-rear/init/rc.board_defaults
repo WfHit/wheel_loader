@@ -70,7 +70,7 @@ param set-default LS_3_ENABLE 1       # Steering Right Limit
 param set-default HBRIDGE_ENABLE 1     # Enable H-Bridge system
 param set-default HBRIDGE_DIR_REV0 1   # Channel 0 direction reverse
 param set-default HBRIDGE_DIR_REV1 0   # Channel 1 direction normal
-param set-default HBRIDGE_0_FLIM 255   # Channel 0 forward limit (rear_wheel)
-param set-default HBRIDGE_0_RLIM 255   # Channel 0 reverse limit (rear_wheel)
-param set-default HBRIDGE_1_FLIM 0     # Channel 1 forward limit (boom) instance 0
-param set-default HBRIDGE_1_RLIM 1     # Channel 1 reverse limit (boom) instance 1
+param set-default HBRIDGE_0_FLIM 0     # Channel 0 forward limit (boom) instance 0
+param set-default HBRIDGE_0_RLIM 1     # Channel 0 reverse limit (boom) instance 1
+param set-default HBRIDGE_1_FLIM 255   # Channel 1 forward limit (rear_wheel)
+param set-default HBRIDGE_1_RLIM 255   # Channel 1 reverse limit (rear_wheel)
