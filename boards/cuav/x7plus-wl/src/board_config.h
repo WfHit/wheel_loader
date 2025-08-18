@@ -247,7 +247,7 @@
 	}
 
 /* Quadrature Encoders */
-#define BOARD_NUM_QUADRATURE_ENCODERS 0
+#define BOARD_NUM_QUAD_ENCODERS 0
 
 /* WK2132 I2C-to-UART Bridge Configuration */
 #define BOARD_HAS_WK2132              1

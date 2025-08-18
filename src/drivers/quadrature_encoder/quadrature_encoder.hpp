@@ -53,21 +53,6 @@ static constexpr uint8_t MAX_INSTANCES = 2;
 static constexpr uint8_t MANAGER_INSTANCE = 255; // Special instance for lifecycle management
 
 /**
- * @brief Board-specific encoder hardware configuration
- *
- * This structure defines the hardware configuration for each encoder instance.
- * It should be defined in the board-specific configuration files.
- */
-struct encoder_config_t {
-    const char *name;              ///< Human readable identifier for this encoder
-    uint32_t gpio_pin_a;          ///< GPIO pin number for quadrature channel A
-    uint32_t gpio_pin_b;          ///< GPIO pin number for quadrature channel B
-    uint32_t gpio_pin_index;      ///< GPIO pin for index/zero signal (0 = not used)
-    float resolution;             ///< Board-specific resolution hint (for validation)
-    bool inverted;                ///< Hardware wiring requires direction inversion
-};
-
-/**
  * @brief Multi-instance quadrature encoder driver
  *
  * This driver follows the PX4 multi-instance pattern where a manager instance
@@ -120,7 +105,7 @@ private:
     static QuadratureEncoder *_manager_instance;
 
     // === Hardware Configuration ===
-    const encoder_config_t *_board_config{nullptr};
+    const quad_encoder_config_t *_board_config{nullptr};
 
     // === Encoder State ===
     struct EncoderState {
@@ -150,7 +135,7 @@ private:
     // === Configuration ===
     bool configure_encoder();
     void update_encoder_configuration();
-    const encoder_config_t* get_board_config(uint8_t instance);
+    const quad_encoder_config_t* get_board_config(uint8_t instance);
 
     // === Data Processing ===
     bool read_encoder_state();

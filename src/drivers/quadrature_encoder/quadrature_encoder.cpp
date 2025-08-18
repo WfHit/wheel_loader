@@ -53,11 +53,7 @@
 #include <uORB/topics/quad_encoder_reset.h>
 #include <uORB/topics/parameter_update.h>
 #include <px4_arch/quad_encoder.h>
-
-// External declaration of board configuration
-#ifdef BOARD_HAS_ENCODER_CONFIG
-extern const encoder_config_t g_encoder_config[];
-#endif
+#include <px4_arch/board_encoder.h>
 
 // Static storage for multiple instances
 QuadratureEncoder *QuadratureEncoder::_instances[MAX_INSTANCES] = {};
@@ -117,11 +113,11 @@ QuadratureEncoder::~QuadratureEncoder()
     perf_free(_fault_perf);
 }
 
-const encoder_config_t* QuadratureEncoder::get_board_config(uint8_t instance)
+const quad_encoder_config_t* QuadratureEncoder::get_board_config(uint8_t instance)
 {
-#ifdef BOARD_HAS_ENCODER_CONFIG
-    if (instance < BOARD_NUM_ENCODERS) {
-        return &g_encoder_config[instance];
+#ifdef BOARD_HAS_QUAD_ENCODER_CONFIG
+    if (instance < BOARD_NUM_QUAD_ENCODERS) {
+        return board_get_encoder_config(instance);
     }
 #endif
     return nullptr;
@@ -164,7 +160,7 @@ bool QuadratureEncoder::init()
     // Start work queue
     ScheduleOnInterval(_run_interval_us);
 
-    PX4_INFO("QuadratureEncoder %d initialized: %s", _instance, _board_config->name);
+    PX4_INFO("QuadratureEncoder %d initialized: %s", _instance, board_get_encoder_name(_instance));
     return true;
 }
 
@@ -452,13 +448,12 @@ int QuadratureEncoder::print_status()
     }
 
     PX4_INFO("");
-    PX4_INFO("Instance %d: %s", _instance, _board_config->name);
+    PX4_INFO("Instance %d: %s", _instance, board_get_encoder_name(_instance));
     PX4_INFO("  Enabled: %s", is_instance_enabled() ? "YES" : "NO");
     PX4_INFO("  Poll rate: %ld Hz", _param_poll_rate.get());
     PX4_INFO("  Overflow: %d", get_instance_overflow());
     PX4_INFO("  Resolution: %.6f units/pulse", static_cast<double>(get_instance_resolution()));
     PX4_INFO("  Reverse: %s", get_instance_reverse() ? "YES" : "NO");
-    PX4_INFO("  Inverted: %s", _board_config->inverted ? "YES" : "NO");
     PX4_INFO("  Position: %.3f", _encoder_state.position);
     PX4_INFO("  Velocity: %.3f", _encoder_state.velocity);
 
@@ -507,7 +502,7 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
         PX4_INFO("Quadrature encoder manager started");
     }
 
-#ifdef BOARD_HAS_ENCODER_CONFIG
+#ifdef BOARD_HAS_QUAD_ENCODER_CONFIG
     bool any_started = false;
 
     if (target_instance >= 0) {
@@ -515,7 +510,8 @@ int QuadratureEncoder::task_spawn(int argc, char *argv[])
         any_started = start_instance(target_instance);
     } else {
         // Start all enabled instances
-        for (int i = 0; i < math::min(MAX_INSTANCES, BOARD_NUM_ENCODERS); i++) {
+        for (int i = 0; i < math::min(static_cast<int>(MAX_INSTANCES),
+                                      static_cast<int>(BOARD_NUM_QUAD_ENCODERS)); i++) {
             if (start_instance(i)) {
                 any_started = true;
             }

@@ -235,21 +235,17 @@
 #define BUCKET_LOAD_LIMIT_SW2_GPIO         /* PB0  */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN0)   /* PWM7 */
 #define BUCKET_DUMP_LIMIT_SW2_GPIO         /* PB1  */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN1)   /* PWM8 */
 
-/* Quadrature Encoder Configuration for Front Board */
-#define BOARD_NUM_QUADRATURE_ENCODERS      2
-#define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
+/* Quad Encoder Configuration for Front Board */
+#define BOARD_NUM_QUAD_ENCODERS            2
+#define BOARD_HAS_QUAD_ENCODER_CONFIG      1
 
-/* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
-/* RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases) */
-/* TELEM1 port pins (PD5/PD6) - Quad encoder 2 from motor encoder (A/B phases) */
-#define QENCODER1_A_GPIO_RAW               /* PB12 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTB|GPIO_PIN12)
-#define QENCODER1_B_GPIO_RAW               /* PB13 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTB|GPIO_PIN13)
-#define QENCODER2_A_GPIO_RAW               /* PD5 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN5)
-#define QENCODER2_B_GPIO_RAW               /* PD6 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN6)
-
-/* Quadrature Encoder Configuration */
-#define QENCODER_DEFAULT_PPR               1024        /* Default pulses per revolution */
-#define QENCODER_DEFAULT_MODE              0           /* 0=Relative, 1=Absolute */
+/* Quad Encoder GPIO pins - Motor encoder A/B phases */
+/* RC port pins (PB12/PB13) - Encoder 1 from wheel encoder (A/B phases) */
+/* TELEM1 port pins (PD5/PD6) - Encoder 2 from bucket encoder (A/B phases) */
+#define QUAD_ENCODER1_A_GPIO               /* PB12 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTB|GPIO_PIN12)
+#define QUAD_ENCODER1_B_GPIO               /* PB13 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTB|GPIO_PIN13)
+#define QUAD_ENCODER2_A_GPIO               /* PD5 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN5)
+#define QUAD_ENCODER2_B_GPIO               /* PD6 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN6)
 
 #define PX4_GPIO_INIT_LIST { \
 		PX4_ADC_GPIO, \

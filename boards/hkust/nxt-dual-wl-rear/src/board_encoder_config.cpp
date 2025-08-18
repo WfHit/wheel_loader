@@ -3,15 +3,15 @@
 #include <board_config.h>
 
 // Board encoder configurations
-const quad_encoder_config_t g_board_encoder_configs[BOARD_NUM_QUADRATURE_ENCODERS] = {
+const quad_encoder_config_t g_board_encoder_configs[BOARD_NUM_QUAD_ENCODERS] = {
 	{
-		.gpio_a = QENCODER_A_GPIO,
-		.gpio_b = QENCODER_B_GPIO,
+		.gpio_a = QUAD_ENCODER_A_GPIO,
+		.gpio_b = QUAD_ENCODER_B_GPIO,
 		.overflow_count = 0,  // 0 = no auto-reset
 	}
 };
 
 // Board encoder names
-const char *g_board_encoder_names[BOARD_NUM_QUADRATURE_ENCODERS] = {
+const char *g_board_encoder_names[BOARD_NUM_QUAD_ENCODERS] = {
 	"Rear Wheel Motor"
 };
