@@ -37,8 +37,8 @@ param set-default ST3215_BAUDRATE 115200 # Baudrate for ST3215
 param set-default ST3215_MIN_POS -2.618  # Min position (rad)
 param set-default ST3215_MAX_POS 2.618   # Max position (rad)
 param set-default ST3215_MAX_SPD 2.0     # Max speed (rad/s)
-param set-default ST3215_LEFT_LMT 4      # Use steering left limit (function 4)
-param set-default ST3215_RIGHT_LMT 5     # Use steering right limit (function 5)
+param set-default ST3215_LEFT_LMT 2      # Use steering left limit (function 4) instance 2
+param set-default ST3215_RIGHT_LMT 3     # Use steering right limit (function 5) instance 3
 
 # Rear wheel loader specific parameters
 # Enable boom control module
@@ -57,10 +57,10 @@ param set-default QENC0_RES 1.0       # Resolution: 2*pi/52 rad/pulse for 13-lin
 param set-default QENC0_REV 0         # Normal direction
 
 # Test Serial Driver Configuration
-param set-default TEST_CFG_DEV 701  # Use TST1 port (index 701)
+param set-default TEST_CFG_DEV 701    # Use TST1 port (index 701)
 
 # Limit Sensor System Configuration
-param set-default LIMIT_SENSOR_EN 1    # Enable limit sensor system
+param set-default LIMIT_SENSOR_EN 1   # Enable limit sensor system
 param set-default LS_0_ENABLE 1       # Boom Up Limit
 param set-default LS_1_ENABLE 1       # Boom Down Limit
 param set-default LS_2_ENABLE 1       # Steering Left Limit
@@ -70,7 +70,7 @@ param set-default LS_3_ENABLE 1       # Steering Right Limit
 param set-default HBRIDGE_ENABLE 1     # Enable H-Bridge system
 param set-default HBRIDGE_DIR_REV0 0   # Channel 0 direction normal
 param set-default HBRIDGE_DIR_REV1 1   # Channel 1 direction reverse
-param set-default HBRIDGE_0_FLIM 2     # Channel 0 forward limit (steering left)
-param set-default HBRIDGE_0_RLIM 3     # Channel 0 reverse limit (steering right)
-param set-default HBRIDGE_1_FLIM 255   # Channel 1 forward limit disabled
-param set-default HBRIDGE_1_RLIM 255   # Channel 1 reverse limit disabled
+param set-default HBRIDGE_0_FLIM 255   # Channel 0 forward limit (rear_wheel)
+param set-default HBRIDGE_0_RLIM 255   # Channel 0 reverse limit (rear_wheel)
+param set-default HBRIDGE_1_FLIM 0     # Channel 1 forward limit (boom) instance 0
+param set-default HBRIDGE_1_RLIM 1     # Channel 1 reverse limit (boom) instance 12

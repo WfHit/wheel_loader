@@ -105,22 +105,12 @@
 #define BOARD_ADC_OPEN_CIRCUIT_V     (1.6f)
 
 
-
 /* Define Battery 1 Voltage Divider and A per V
  */
 
 // #define BOARD_BATTERY1_V_DIV         (11.0f)     /* measured with the provided PM board */
 // #define BOARD_BATTERY1_A_PER_V       (40.0f)
 // #define BOARD_BATTERY2_V_DIV         (11.0f)     /* measured with the provided PM board */
-
-/* PWM
- * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
- * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
- */
-#define DIRECT_PWM_OUTPUT_CHANNELS   2
-
-#define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
-
 
 /* Spare GPIO */
 #define GPIO_PA4                       	/* PA4 */  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_SET|GPIO_PORTA|GPIO_PIN4)
@@ -204,8 +194,15 @@
 /* This board provides the board_on_reset interface */
 #define BOARD_HAS_ON_RESET 1
 
-/* DRV8701 H-bridge support */
-// #define BOARD_HAS_DRV8701_HBRIDGE          1
+/* PB12 Inverter Control - Controls SN74LVC1G86DCKR gate for PB12 signal inversion */
+#define PB12_INVERTER_CTRL_GPIO            /* PD14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
+
+/* PWM
+ * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
+ * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
+ */
+#define DIRECT_PWM_OUTPUT_CHANNELS   			2
+#define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -217,12 +214,6 @@
 /* UART7 RX - Enable signal for DRV8701 H-bridge */
 #define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
-// #define BOARD_HAS_LIMIT_SWITCHES           1
-/* Limit Sensor Configuration for Front Board */
-/* Only bucket load and dump sensors are configured on front board */
-#define BOARD_NUM_LIMIT_SENSORS            2
-#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
-
 /* H-Bridge Configuration for Front Board */
 /* Single H-Bridge instance for front wheel drive */
 #define BOARD_NUM_HBRIDGES                 1
@@ -233,6 +224,11 @@
 #define GPIO_DRV8701_RIGHT_DIR             DRV8701_RIGHT_DIR_GPIO
 #define GPIO_DRV8701_ENABLE                DRV8701_ENABLE_GPIO
 
+/* Limit Sensor Configuration for Front Board */
+/* Only bucket load and dump sensors are configured on front board */
+#define BOARD_NUM_LIMIT_SENSORS            2
+#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
+
 /* PWM5-8 - Limit switch inputs for bucket operations */
 #define BUCKET_DUMP_LIMIT_SW1_GPIO         /* PB10 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
 #define BUCKET_LOAD_LIMIT_SW1_GPIO         /* PB11 */ (GPIO_INPUT|GPIO_FLOAT|GPIO_PORTB|GPIO_PIN11)  /* PWM6 */
@@ -242,9 +238,6 @@
 /* Quadrature Encoder Configuration for Front Board */
 #define BOARD_NUM_QUADRATURE_ENCODERS      2
 #define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
-
-/* PB12 Inverter Control - Controls SN74LVC1G86DCKR gate for PB12 signal inversion */
-#define PB12_INVERTER_CTRL_GPIO            /* PD14 */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
 
 /* Quadrature Encoder GPIO pins - Motor encoder A/B phases */
 /* RC port pins (PC6/PC7) - Quad encoder 1 from motor encoder (A/B phases) */

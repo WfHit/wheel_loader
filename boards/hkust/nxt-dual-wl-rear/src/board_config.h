@@ -147,15 +147,6 @@
 // #define BOARD_BATTERY1_A_PER_V       (40.0f)
 // #define BOARD_BATTERY2_V_DIV         (11.0f)     /* measured with the provided PM board */
 
-/* PWM
- * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
- * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
- */
-#define DIRECT_PWM_OUTPUT_CHANNELS   2
-
-#define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
-
-
 /* Tone alarm output */
 
 #define TONE_ALARM_TIMER        4 /* Timer 4 */
@@ -177,6 +168,28 @@
 /* High-resolution timer */
 #define HRT_TIMER               8  /* use timer1 for the HRT */
 #define HRT_TIMER_CHANNEL       1  /* use capture/compare channel 1 */
+
+// #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
+// #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
+
+/* SD card bringup does not work if performed on the IDLE thread because it
+ * will cause waiting.  Use either:
+ *
+ *  CONFIG_LIB_BOARDCTL=y, OR
+ *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
+ */
+#define SDIO_SLOTNO             0  /* Only one slot */
+#define SDIO_MINOR              0
+#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
+   !defined(CONFIG_BOARD_INITTHREAD)
+#  warning SDIO initialization cannot be perfomed on the IDLE thread
+#endif
+
+/* This board provides a DMA pool and APIs */
+#define BOARD_DMA_ALLOC_POOL_SIZE 5120
+
+/* This board provides the board_on_reset interface */
+#define BOARD_HAS_ON_RESET 1
 
 /* GPIO Pin Usage for WL-Rear:
  * TELEM1 port pins (PD5/PD6) - Quad encoder from motor encoder (A/B phases)
@@ -208,30 +221,16 @@
 /* ST3125 Servo Serial Port */
 // #define ST3125_SERVO_SERIAL_PORT           "/dev/ttyS1"  /* TELEM1 port for ST3125 servo */
 
-// #define GPIO_SBUS_INV                  (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTD|GPIO_PIN14)
-// #define RC_INVERT_INPUT(_invert_true)  px4_arch_gpiowrite(GPIO_SBUS_INV, _invert_true);
-
-/* SD card bringup does not work if performed on the IDLE thread because it
- * will cause waiting.  Use either:
- *
- *  CONFIG_LIB_BOARDCTL=y, OR
- *  CONFIG_BOARD_INITIALIZE=y && CONFIG_BOARD_INITTHREAD=y
+/* PWM
+ * PWM1-4 available for PWM output (PWM5-8 used as limit switch GPIO inputs)
+ * PWM1,4 used as DIR signals (GPIO), PWM2,3 used as PWM signals for DRV8701
  */
-#define SDIO_SLOTNO             0  /* Only one slot */
-#define SDIO_MINOR              0
-#if defined(CONFIG_BOARD_INITIALIZE) && !defined(CONFIG_LIB_BOARDCTL) && \
-   !defined(CONFIG_BOARD_INITTHREAD)
-#  warning SDIO initialization cannot be perfomed on the IDLE thread
-#endif
+#define DIRECT_PWM_OUTPUT_CHANNELS   		2
+#define BOARD_HAS_PWM  DIRECT_PWM_OUTPUT_CHANNELS
 
-/* This board provides a DMA pool and APIs */
-#define BOARD_DMA_ALLOC_POOL_SIZE 5120
-
-/* This board provides the board_on_reset interface */
-#define BOARD_HAS_ON_RESET 1
-
-/* DRV8701 H-bridge support */
-// #define BOARD_HAS_DRV8701_HBRIDGE          1
+/* H-Bridge Configuration for Rear Board */
+#define BOARD_NUM_HBRIDGES                 	1
+#define BOARD_HAS_HBRIDGE_CONFIG           	1
 
 /* DRV8701 H-Bridge Control and Limit Switch Configuration */
 /* PWM1 (PE13) and PWM4 (PE14) - Direction signals for DRV8701 H-bridge */
@@ -243,15 +242,10 @@
 /* UART7 RX - Enable signal for DRV8701 H-bridge */
 #define DRV8701_ENABLE_GPIO                /* PE7  */ (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTE|GPIO_PIN7)
 
-// #define BOARD_HAS_LIMIT_SWITCHES           1
 /* Limit Sensor Configuration for Rear Board */
 /* Only boom and steering sensors are configured on rear board */
-#define BOARD_NUM_LIMIT_SENSORS            4
-#define BOARD_HAS_LIMIT_SENSOR_CONFIG      1
-
-/* H-Bridge Configuration for Rear Board */
-#define BOARD_NUM_HBRIDGES                 1
-#define BOARD_HAS_HBRIDGE_CONFIG           1
+#define BOARD_NUM_LIMIT_SENSORS            	4
+#define BOARD_HAS_LIMIT_SENSOR_CONFIG      	1
 
 /* PWM5-8 - Limit switch inputs for boom and steering operations */
 #define STEERING_RIGHT_LIMIT_SW_GPIO       /* PB10 */ (GPIO_INPUT|GPIO_PULLUP|GPIO_PORTB|GPIO_PIN10)  /* PWM5 */
@@ -261,7 +255,7 @@
 
 
 /* Quadrature Encoder Configuration for Rear Board */
-#define BOARD_NUM_QUADRATURE_ENCODERS      1
+#define BOARD_NUM_QUADRATURE_ENCODERS      	1
 #define BOARD_HAS_QUADRATURE_ENCODER_CONFIG 1
 
 /* Quadrature Encoder GPIO pins - Motor encoder A/B phases */

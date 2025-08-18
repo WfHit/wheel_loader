@@ -70,7 +70,7 @@ param set-default LS_3_ENABLE 0       # Not configured on front board
 param set-default HBRIDGE_ENABLE 1     # Enable H-Bridge system
 param set-default HBRIDGE_DIR_REV0 0   # Channel 0 direction normal
 param set-default HBRIDGE_DIR_REV1 0   # Channel 1 direction normal
-param set-default HBRIDGE_0_FLIM 255   # Channel 0 forward limit disabled
-param set-default HBRIDGE_0_RLIM 255   # Channel 0 reverse limit disabled
+param set-default HBRIDGE_0_FLIM 0     # Channel 0 forward limit disabled (bucket) instance 0
+param set-default HBRIDGE_0_RLIM 1     # Channel 0 reverse limit disabled (bucket) instance 1
 param set-default HBRIDGE_1_FLIM 255   # Channel 1 forward limit disabled
 param set-default HBRIDGE_1_RLIM 255   # Channel 1 reverse limit disabled
