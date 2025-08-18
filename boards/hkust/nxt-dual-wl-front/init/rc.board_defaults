@@ -39,25 +39,21 @@ param set-default WL_FRONT_WHEEL_KP 0.5
 param set-default WL_FRONT_WHEEL_KI 0.1
 param set-default WL_FRONT_WHEEL_KD 0.05
 
-# Quadrature encoder auto-start configuration
-# Enable auto-start for encoder instances 0 and 1 (front wheel and bucket)
-param set-default QE_AUTO_START 3  # Bits 0 and 1 set (instances 0 and 1)
-
 # Quadrature Encoder Configuration
 # Global encoder update rate
-param set-default QENC_RATE 100
+param set-default QE_POLL_RATE 100
 
 # Encoder 0 (Front Wheel) Configuration
-param set-default QENC0_EN 1           # Enable encoder 0
-param set-default QENC0_PPR 520        # 13-line encoder: 13 lines x 4 edges = 52 pulses per revolution
-param set-default QENC0_RES 1.0        # Resolution: 2*pi/52 rad/pulse for 13-line encoder
-param set-default QENC0_REV 0          # Normal direction
+param set-default QE_0_ENABLE 1        # Enable encoder 0
+param set-default QE_0_RESOLUTION 0.120919  # Resolution: 2*pi/52 rad/pulse for 13-line encoder (2*pi/52 = 0.120919)
+param set-default QE_0_REVERSE 0       # Normal direction
+param set-default QE_0_OVERFLOW 0      # No auto-reset (0 disables)
 
 # Encoder 1 (Bucket) Configuration
-param set-default QENC1_EN 1           # Enable encoder 1
-param set-default QENC1_PPR 280        # 7-line encoder: 7 lines x 4 edges = 28 pulses per revolution
-param set-default QENC1_RES 1.0        # Resolution: 2*pi/28 rad/pulse for 7-line encoder
-param set-default QENC1_REV 0          # Normal direction
+param set-default QE_1_ENABLE 1        # Enable encoder 1
+param set-default QE_1_RESOLUTION 0.224399  # Resolution: 2*pi/28 rad/pulse for 7-line encoder (2*pi/28 = 0.224399)
+param set-default QE_1_REVERSE 0       # Normal direction
+param set-default QE_1_OVERFLOW 0      # No auto-reset (0 disables)
 
 # Limit Sensor System Configuration
 param set-default LIMIT_SENSOR_EN 1    # Enable limit sensor system
