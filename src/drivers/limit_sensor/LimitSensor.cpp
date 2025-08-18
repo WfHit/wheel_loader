@@ -79,13 +79,8 @@ LimitSensor::LimitSensor(uint8_t instance) :
     // Set manager instance if this is the manager
     if (_instance == MANAGER_INSTANCE) {
         _manager_instance = this;
-    } else {
-        // Register regular instances
-        if (_instance < MAX_INSTANCES) {
-            _instances[_instance] = this;
-            _num_instances.fetch_add(1);
-        }
     }
+    // Note: Regular instances are registered in start_instance() after successful init
 }
 
 LimitSensor::~LimitSensor()
@@ -590,7 +585,11 @@ bool LimitSensor::start_instance(int instance)
 
     // Initialize instance
     if (obj->init()) {
-		// Instance initialization successful
+		// Instance initialization successful - register it
+        if (instance < MAX_INSTANCES) {
+            _instances[instance] = obj;
+            _num_instances.fetch_add(1);
+        }
         PX4_INFO("Started limit sensor instance %d", instance);
         return true;
     } else {
@@ -601,15 +600,15 @@ bool LimitSensor::start_instance(int instance)
 
 int LimitSensor::custom_command(int argc, char *argv[])
 {
-    const char *command = argv[1];
+    const char *command = argv[0];
 
     if (!strcmp(command, "stop_instance")) {
-        if (argc < 3) {
+        if (argc < 2) {
             PX4_ERR("Missing instance number");
             return PX4_ERROR;
         }
 
-        int instance = atoi(argv[2]);
+        int instance = atoi(argv[1]);
         if (instance < 0 || instance >= MAX_INSTANCES) {
             PX4_ERR("Invalid instance %d, must be 0-%d", instance, MAX_INSTANCES - 1);
             return PX4_ERROR;
@@ -618,8 +617,6 @@ int LimitSensor::custom_command(int argc, char *argv[])
         if (_instances[instance] != nullptr) {
             PX4_INFO("Stopping limit sensor instance %d", instance);
             delete _instances[instance];
-            _instances[instance] = nullptr;
-            _num_instances.fetch_sub(1);
             PX4_INFO("Limit sensor instance %d stopped", instance);
         } else {
             PX4_INFO("Instance %d is not running", instance);

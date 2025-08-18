@@ -42,7 +42,6 @@
 #include <uORB/topics/quad_encoder_reset.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/Subscription.hpp>
-#include <uORB/PublicationMulti.hpp>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/atomic.h>
 #include <px4_arch/quad_encoder.h>
@@ -132,7 +131,7 @@ private:
     } _encoder_state;
 
     // === uORB Communication ===
-    uORB::PublicationMulti<sensor_quad_encoder_s> _pub_encoder;          // Multi-instance publication
+    orb_advert_t _pub_handle{nullptr};                                    // Multi-instance publication handle
     uORB::Subscription _reset_sub{ORB_ID(quad_encoder_reset)};           // Position reset events
     uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};  // Parameter update notifications
 
@@ -155,8 +154,8 @@ private:
 
     // === Data Processing ===
     bool read_encoder_state();
-    bool process_encoder_data();
     void publish_encoder_data();
+    bool init_publication();
 
     // === Calculation Helpers ===
     int32_t calculate_delta_counter(int32_t current_counter);

@@ -248,6 +248,85 @@ menuconfig ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
 
 ```
 
+## Command Line Argument Handling
+
+### custom_command() Implementation
+
+When implementing `custom_command()` functions in modules, always use the correct argument indexing pattern:
+
+```cpp
+int Module::custom_command(int argc, char *argv[])
+{
+    // CORRECT: argv[0] contains the command name
+    const char *command = argv[0];
+
+    if (!strcmp(command, "my_command")) {
+        if (argc < 2) {  // Command name + 1 argument
+            PX4_ERR("Usage: module my_command <arg1>");
+            return PX4_ERROR;
+        }
+
+        // CORRECT: Arguments start from argv[1]
+        int arg1 = atoi(argv[1]);
+        float arg2 = atof(argv[2]);  // if argc >= 3
+
+        // Process command...
+        return PX4_OK;
+    }
+
+    return print_usage("unknown command");
+}
+```
+
+### Common Mistakes to Avoid
+
+```cpp
+// WRONG: Don't use argv[1] for command name
+const char *command = argv[1];  // ❌ INCORRECT
+
+// WRONG: Don't offset argument indices
+int instance = atoi(argv[2]);   // ❌ Should be argv[1]
+
+// WRONG: Don't add extra 1 to argc validation
+if (argc < 4) {                 // ❌ Should be argc < 3
+```
+
+### Command Line Flow Example
+
+For command: `hbridge manual 0 0.5`
+
+```cpp
+// In custom_command():
+// argc = 3
+// argv[0] = "manual"     ← Command name
+// argv[1] = "0"         ← First argument
+// argv[2] = "0.5"       ← Second argument
+
+const char *command = argv[0];  // "manual"
+int instance = atoi(argv[1]);   // 0
+float duty = atof(argv[2]);     // 0.5
+```
+
+### Reference Implementation
+
+See `HBridge::custom_command()` for the correct pattern:
+- Uses `argv[0]` for command name
+- Arguments start from `argv[1]`
+- Proper `argc` validation
+
+### Validation Template
+
+```cpp
+if (!strcmp(command, "command_name")) {
+    if (argc < REQUIRED_ARGS + 1) {  // +1 for command name
+        PX4_ERR("Usage: module command_name <arg1> [arg2]");
+        return PX4_ERROR;
+    }
+
+    // Process argv[1], argv[2], etc.
+}
+```
+
 ## Formatting Rules
 
 ### Indentation
@@ -352,5 +431,67 @@ To keep parameter names under 16 characters, use these abbreviations:
 - [ ] Kconfig file created?
 - [ ] module.yaml NOT in CMakeLists.txt?
 - [ ] Tab indentation (4 spaces)?
+- [ ] Instance registration after init() success?
+- [ ] Destructor handles unregistration safely?
+
+## Multi-Instance Lifecycle Management
+
+### Critical Pattern: Instance Registration Timing
+
+**Correct Pattern**: Register instances ONLY after successful initialization:
+
+```cpp
+bool MyDriver::start_instance(int instance) {
+    MyDriver *obj = new MyDriver(instance);
+
+    if (obj->init()) {
+        // Register ONLY after successful init
+        if (instance < MAX_INSTANCES) {
+            _instances[instance] = obj;
+            _num_instances.fetch_add(1);
+        }
+        return true;
+    } else {
+        delete obj;  // Never registered, safe to delete
+        return false;
+    }
+}
+```
+
+**Why This Matters**: If you register in the constructor and init() fails, you'll have a dangling pointer in the instances array that print_status() will try to dereference.
+
+### Safe Destructor Pattern
+
+Always check instance validity before unregistering:
+
+```cpp
+MyDriver::~MyDriver() {
+    // Other cleanup...
+
+    // Safe unregistration check
+    if (_instance < MAX_INSTANCES && _instances[_instance] == this) {
+        _instances[_instance] = nullptr;
+        _num_instances.fetch_sub(1);
+    }
+}
+```
+
+### Stop Instance Pattern
+
+Let destructor handle cleanup to avoid double-cleanup:
+
+```cpp
+// Good: Let destructor handle unregistration
+if (_instances[instance] != nullptr) {
+    delete _instances[instance];  // Destructor handles cleanup
+}
+
+// Bad: Manual cleanup causes double-cleanup
+if (_instances[instance] != nullptr) {
+    delete _instances[instance];
+    _instances[instance] = nullptr;  // ← Redundant, destructor does this
+    _num_instances.fetch_sub(1);    // ← Double decrement!
+}
+```
 
 This style guide ensures consistency with PX4 standards while adhering to the specific requirements for the wheel loader project.
