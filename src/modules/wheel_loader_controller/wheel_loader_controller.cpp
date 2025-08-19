@@ -568,7 +568,7 @@ bool WheelLoaderController::isValidStateTransition(ControlState from, ControlSta
 
 	// Mode transition can be entered from operational states
 	if (to == ControlState::MODE_TRANSITION) {
-		return from == ControlState::MANUAL_OPERATION || from == ControlState::AUTO_OPERATION || 
+		return from == ControlState::MANUAL_OPERATION || from == ControlState::AUTO_OPERATION ||
 		       from == ControlState::IDLE;
 	}
 
@@ -578,7 +578,7 @@ bool WheelLoaderController::isValidStateTransition(ControlState from, ControlSta
 		return to == ControlState::IDLE;
 
 	case ControlState::IDLE:
-		return to == ControlState::MANUAL_OPERATION || to == ControlState::AUTO_OPERATION || 
+		return to == ControlState::MANUAL_OPERATION || to == ControlState::AUTO_OPERATION ||
 		       to == ControlState::TASK_EXECUTION || to == ControlState::MODE_TRANSITION;
 
 	case ControlState::MANUAL_OPERATION:
@@ -648,7 +648,7 @@ void WheelLoaderController::publishCommands()
 		break;
 	}
 
-	if (has_valid_command && _control_state != ControlState::EMERGENCY_STOP && 
+	if (has_valid_command && _control_state != ControlState::EMERGENCY_STOP &&
 	    _control_state != ControlState::MODE_TRANSITION) {
 		// Apply safety limits
 		applyCommandLimits(active_cmd);
@@ -695,8 +695,10 @@ void WheelLoaderController::publishStatus()
 
 	// System health
 	status.system_health = static_cast<uint8_t>(evaluateOverallHealth());
-	status.motor_fault = (front_wheel_status.controller_healthy == false) || (rear_wheel_status.controller_healthy == false);
-	status.communication_fault = (_front_wheel_health == HealthState::ERROR) || (_rear_wheel_health == HealthState::ERROR);
+	status.motor_fault = (front_wheel_status.controller_healthy == false) ||
+	                     (rear_wheel_status.controller_healthy == false);
+	status.communication_fault = (_front_wheel_health == HealthState::ERROR) ||
+	                             (_rear_wheel_health == HealthState::ERROR);
 
 	// Temperature monitoring (use front wheel as representative)
 	status.motor_temperature = front_wheel_status.motor_temperature_c;
@@ -894,7 +896,7 @@ WheelLoaderController::HealthState WheelLoaderController::evaluateOverallHealth(
 
 void WheelLoaderController::updateParams()
 {
-	updateParams();
+	ModuleParams::updateParams();
 
 	// Update control rate if parameter changed
 	float new_rate = _control_rate.get();
@@ -954,7 +956,7 @@ void WheelLoaderController::processVlaCommand()
 	if (_vla_valid && (hrt_absolute_time() - _last_vla_time) > (_vla_timeout.get() * 1e6f)) {
 		_vla_valid = false;
 		PX4_WARN("VLA command timeout - switching to manual mode");
-		
+
 		// Auto fallback to manual mode on VLA timeout
 		if (_operation_mode == OperationMode::AUTO_MODE) {
 			transitionToMode(OperationMode::MANUAL_MODE);
@@ -987,7 +989,7 @@ void WheelLoaderController::transitionToMode(OperationMode new_mode)
 	}
 
 	PX4_INFO("Transitioning from mode %d to mode %d", (int)_operation_mode, (int)new_mode);
-	
+
 	_previous_operation_mode = _operation_mode;
 	_operation_mode = OperationMode::TRANSITION_MODE;
 	_mode_transition_start_time = hrt_absolute_time();
@@ -1127,10 +1129,6 @@ int WheelLoaderController::custom_command(int argc, char *argv[])
 	if (!is_running()) {
 		print_usage("not running");
 		return 1;
-	}
-
-	if (!strcmp(argv[0], "status")) {
-		return get_instance()->print_status();
 	}
 
 	return print_usage("unknown command");
