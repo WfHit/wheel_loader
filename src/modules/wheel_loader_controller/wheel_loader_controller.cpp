@@ -47,28 +47,30 @@ WheelLoaderController::WheelLoaderController() :
 WheelLoaderController::~WheelLoaderController()
 {
 	perf_free(_cycle_perf);
-	perf_free(_emergency_stop_perf);
 }
 
 bool WheelLoaderController::init()
 {
 	// Initialize performance counters
 	_cycle_perf = perf_alloc(PC_ELAPSED, MODULE_NAME ": cycle");
-	_emergency_stop_perf = perf_alloc(PC_COUNT, MODULE_NAME ": emergency_stops");
 
 	// Set initial state
 	_control_state = ControlState::INITIALIZING;
 	_state_entered_time = hrt_absolute_time();
 
 	// Update parameters
-	updateParams();
+	ModuleParams::updateParams();
 
-	// Initialize subsystem health states
-	_boom_health = HealthState::UNKNOWN;
-	_bucket_health = HealthState::UNKNOWN;
-	_steering_health = HealthState::UNKNOWN;
-	_front_wheel_health = HealthState::UNKNOWN;
-	_rear_wheel_health = HealthState::UNKNOWN;
+	// Initialize components
+	if (!_safety_manager.init()) {
+		PX4_ERR("Failed to initialize safety manager");
+		return false;
+	}
+
+	if (!_mode_manager.init()) {
+		PX4_ERR("Failed to initialize mode manager");
+		return false;
+	}
 
 	ScheduleOnInterval(CONTROL_INTERVAL_US);
 
@@ -92,21 +94,18 @@ void WheelLoaderController::Run()
 		updateParams();
 	}
 
+	// Update components
+	_safety_manager.update();
+	_mode_manager.update(_operation_mode_param.get());
+
 	// Process incoming commands and update state
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
 	processVlaCommand();
-	processSlipEstimation();
 
 	// Process mode switching and management
 	processModeSwitch();
-
-	// Update subsystem health monitoring
-	updateSubsystemHealth();
-
-	// Perform safety checks
-	performSafetyChecks();
 
 	// Update control state
 	updateControlState();
@@ -256,7 +255,7 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 	float timeout_us = _cmd_timeout.get() * 1_s;
 
 	// Emergency stop has highest priority
-	if (_emergency_stop_active) {
+	if (_safety_manager.isEmergencyStopActive()) {
 		return CommandSource::NONE;
 	}
 
@@ -266,11 +265,11 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 	}
 
 	// Select command source based on operation mode
-	switch (_operation_mode) {
+	switch (_mode_manager.getCurrentMode()) {
 	case OperationMode::AUTO_MODE:
 		// In auto mode, prioritize VLA commands
 		if (_vla_valid && (now - _vla_command.timestamp) < timeout_us) {
-			return CommandSource::SMOL_VLA;
+			return CommandSource::VLA;
 		}
 		// Fall back to task execution if VLA not available
 		if ((now - _task_command.timestamp) < timeout_us) {
@@ -398,7 +397,7 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	boom_cmd.extend_position_cmd = cmd.boom_extend_cmd;
 	boom_cmd.control_mode = (cmd.hydraulic_mode == wheel_loader_command_s::HYDRAULIC_MODE_MANUAL) ?
 							boom_command_s::MODE_VELOCITY : boom_command_s::MODE_POSITION;
-	boom_cmd.emergency_stop = cmd.emergency_stop || _emergency_stop_active;
+	boom_cmd.emergency_stop = cmd.emergency_stop || _safety_manager.isEmergencyStopActive();
 	boom_cmd.command_priority = boom_command_s::PRIORITY_NORMAL;
 
 	// Generate bucket command
@@ -419,7 +418,7 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	steering_cmd.command_priority = steering_command_s::PRIORITY_NORMAL;
 
 	// Apply emergency stop overrides
-	if (cmd.emergency_stop || _emergency_stop_active) {
+	if (cmd.emergency_stop || _safety_manager.isEmergencyStopActive()) {
 		front_wheel_cmd.front_wheel_speed_rad_s = 0.0f;
 		rear_wheel_cmd.rear_wheel_speed_rad_s = 0.0f;
 	}
@@ -439,17 +438,17 @@ void WheelLoaderController::updateControlState()
 
 	switch (_control_state) {
 	case ControlState::INITIALIZING:
-		if (isSystemHealthy()) {
+		if (_safety_manager.isSystemHealthy()) {
 			new_state = ControlState::IDLE;
 		}
 		break;
 
 	case ControlState::IDLE:
-		if (_emergency_stop_active) {
+		if (_safety_manager.isEmergencyStopActive()) {
 			new_state = ControlState::EMERGENCY_STOP;
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_OPERATION;
-		} else if (active_source == CommandSource::SMOL_VLA) {
+		} else if (active_source == CommandSource::VLA) {
 			new_state = ControlState::AUTO_OPERATION;
 		} else if (active_source == CommandSource::TASK_EXECUTION) {
 			new_state = ControlState::TASK_EXECUTION;
@@ -457,7 +456,7 @@ void WheelLoaderController::updateControlState()
 		break;
 
 	case ControlState::MANUAL_OPERATION:
-		if (_emergency_stop_active) {
+		if (_safety_manager.isEmergencyStopActive()) {
 			new_state = ControlState::EMERGENCY_STOP;
 		} else if (active_source != CommandSource::MANUAL) {
 			new_state = ControlState::IDLE;
@@ -465,7 +464,7 @@ void WheelLoaderController::updateControlState()
 		break;
 
 	case ControlState::AUTO_OPERATION:
-		if (_emergency_stop_active) {
+		if (_safety_manager.isEmergencyStopActive()) {
 			new_state = ControlState::EMERGENCY_STOP;
 		} else if (active_source == CommandSource::MANUAL) {
 			// Manual override always takes precedence
@@ -484,7 +483,7 @@ void WheelLoaderController::updateControlState()
 		break;
 
 	case ControlState::TASK_EXECUTION:
-		if (_emergency_stop_active) {
+		if (_safety_manager.isEmergencyStopActive()) {
 			new_state = ControlState::EMERGENCY_STOP;
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_OPERATION;
@@ -496,13 +495,13 @@ void WheelLoaderController::updateControlState()
 	case ControlState::MODE_TRANSITION:
 		// Mode transition is handled by processModeSwitch()
 		// This state will transition automatically after timeout
-		if (_emergency_stop_active) {
+		if (_safety_manager.isEmergencyStopActive()) {
 			new_state = ControlState::EMERGENCY_STOP;
 		}
 		break;
 
 	case ControlState::EMERGENCY_STOP:
-		if (!_emergency_stop_active && isSystemHealthy()) {
+		if (!_safety_manager.isEmergencyStopActive() && _safety_manager.isSystemHealthy()) {
 			new_state = ControlState::IDLE;
 		}
 		break;
@@ -966,18 +965,16 @@ void WheelLoaderController::processVlaCommand()
 
 void WheelLoaderController::processModeSwitch()
 {
-	// Check parameter for operation mode change
-	int requested_mode = _operation_mode_param.get();
-	OperationMode target_mode = (requested_mode == 1) ? OperationMode::AUTO_MODE : OperationMode::MANUAL_MODE;
+	// Mode switching is now handled by the mode manager in its update() method
+	// The mode manager is updated in the main Run() loop
 
-	// Handle mode transition request
-	if (target_mode != _operation_mode && _control_state != ControlState::MODE_TRANSITION) {
-		transitionToMode(target_mode);
-	}
-
-	// Handle ongoing mode transition
-	if (_control_state == ControlState::MODE_TRANSITION) {
-		handleModeTransition();
+	// Check if we need to handle VLA timeout fallback
+	if (_mode_manager.getCurrentMode() == OperationMode::AUTO_MODE) {
+		hrt_abstime now = hrt_absolute_time();
+		if (!_vla_valid && _last_vla_time > 0 && (now - _last_vla_time) > (_vla_timeout.get() * 1_s)) {
+			// VLA timeout - request fallback to manual mode
+			_mode_manager.requestModeTransition(OperationMode::MANUAL_MODE);
+		}
 	}
 }
 
