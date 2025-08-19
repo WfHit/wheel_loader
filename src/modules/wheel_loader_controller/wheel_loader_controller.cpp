@@ -96,7 +96,11 @@ void WheelLoaderController::Run()
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
+	processSmolVlaCommand();
 	processSlipEstimation();
+	
+	// Process mode switching and management
+	processModeSwitch();
 
 	// Update subsystem health monitoring
 	updateSubsystemHealth();
@@ -256,19 +260,34 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 		return CommandSource::NONE;
 	}
 
-	// Manual control has priority over autonomous
+	// Manual control always has priority over autonomous (safety requirement)
 	if ((now - _manual_command.timestamp) < timeout_us) {
 		return CommandSource::MANUAL;
 	}
 
-	// Task execution
-	if ((now - _task_command.timestamp) < timeout_us) {
-		return CommandSource::TASK_EXECUTION;
-	}
+	// Select command source based on operation mode
+	switch (_operation_mode) {
+	case OperationMode::AUTO_MODE:
+		// In auto mode, prioritize SmolVLA commands
+		if (_smol_vla_valid && (now - _smol_vla_command.timestamp) < timeout_us) {
+			return CommandSource::SMOL_VLA;
+		}
+		// Fall back to task execution if SmolVLA not available
+		if ((now - _task_command.timestamp) < timeout_us) {
+			return CommandSource::TASK_EXECUTION;
+		}
+		break;
 
-	// External commands
-	if ((now - _external_command.timestamp) < timeout_us) {
-		return CommandSource::EXTERNAL;
+	case OperationMode::MANUAL_MODE:
+		// In manual mode, only accept external commands as backup
+		if ((now - _external_command.timestamp) < timeout_us) {
+			return CommandSource::EXTERNAL;
+		}
+		break;
+
+	case OperationMode::TRANSITION_MODE:
+		// During transition, no autonomous commands accepted
+		break;
 	}
 
 	return CommandSource::NONE;
@@ -423,57 +442,75 @@ void WheelLoaderController::updateControlState()
 		if (isSystemHealthy()) {
 			new_state = ControlState::IDLE;
 		}
-
 		break;
 
 	case ControlState::IDLE:
 		if (_emergency_stop_active) {
 			new_state = ControlState::EMERGENCY_STOP;
-
 		} else if (active_source == CommandSource::MANUAL) {
-			new_state = ControlState::MANUAL_CONTROL;
-
+			new_state = ControlState::MANUAL_OPERATION;
+		} else if (active_source == CommandSource::SMOL_VLA) {
+			new_state = ControlState::AUTO_OPERATION;
 		} else if (active_source == CommandSource::TASK_EXECUTION) {
 			new_state = ControlState::TASK_EXECUTION;
 		}
-
 		break;
 
-	case ControlState::MANUAL_CONTROL:
+	case ControlState::MANUAL_OPERATION:
 		if (_emergency_stop_active) {
 			new_state = ControlState::EMERGENCY_STOP;
-
 		} else if (active_source != CommandSource::MANUAL) {
 			new_state = ControlState::IDLE;
 		}
+		break;
 
+	case ControlState::AUTO_OPERATION:
+		if (_emergency_stop_active) {
+			new_state = ControlState::EMERGENCY_STOP;
+		} else if (active_source == CommandSource::MANUAL) {
+			// Manual override always takes precedence
+			new_state = ControlState::MANUAL_OPERATION;
+		} else if (active_source != CommandSource::SMOL_VLA) {
+			new_state = ControlState::IDLE;
+		} else {
+			// Process auto load/dump sequences
+			if (_auto_load_enable.get()) {
+				processAutoLoadSequence();
+			}
+			if (_auto_dump_enable.get()) {
+				processAutoDumpSequence();
+			}
+		}
 		break;
 
 	case ControlState::TASK_EXECUTION:
 		if (_emergency_stop_active) {
 			new_state = ControlState::EMERGENCY_STOP;
-
 		} else if (active_source == CommandSource::MANUAL) {
-			new_state = ControlState::MANUAL_CONTROL;
-
+			new_state = ControlState::MANUAL_OPERATION;
 		} else if (active_source == CommandSource::NONE) {
 			new_state = ControlState::IDLE;
 		}
+		break;
 
+	case ControlState::MODE_TRANSITION:
+		// Mode transition is handled by processModeSwitch()
+		// This state will transition automatically after timeout
+		if (_emergency_stop_active) {
+			new_state = ControlState::EMERGENCY_STOP;
+		}
 		break;
 
 	case ControlState::EMERGENCY_STOP:
 		if (!_emergency_stop_active && isSystemHealthy()) {
 			new_state = ControlState::IDLE;
 		}
-
 		break;
 
 	case ControlState::ERROR:
 		if (isSystemHealthy()) {
 			new_state = ControlState::IDLE;
 		}
-
 		break;
 	}
 
@@ -529,19 +566,33 @@ bool WheelLoaderController::isValidStateTransition(ControlState from, ControlSta
 		return true;
 	}
 
+	// Mode transition can be entered from operational states
+	if (to == ControlState::MODE_TRANSITION) {
+		return from == ControlState::MANUAL_OPERATION || from == ControlState::AUTO_OPERATION || 
+		       from == ControlState::IDLE;
+	}
+
 	// Other transitions depend on current state
 	switch (from) {
 	case ControlState::INITIALIZING:
 		return to == ControlState::IDLE;
 
 	case ControlState::IDLE:
-		return to == ControlState::MANUAL_CONTROL || to == ControlState::TASK_EXECUTION;
+		return to == ControlState::MANUAL_OPERATION || to == ControlState::AUTO_OPERATION || 
+		       to == ControlState::TASK_EXECUTION || to == ControlState::MODE_TRANSITION;
 
-	case ControlState::MANUAL_CONTROL:
-		return to == ControlState::TASK_EXECUTION;
+	case ControlState::MANUAL_OPERATION:
+		return to == ControlState::AUTO_OPERATION || to == ControlState::TASK_EXECUTION ||
+		       to == ControlState::MODE_TRANSITION;
+
+	case ControlState::AUTO_OPERATION:
+		return to == ControlState::MANUAL_OPERATION || to == ControlState::MODE_TRANSITION;
 
 	case ControlState::TASK_EXECUTION:
-		return to == ControlState::MANUAL_CONTROL;
+		return to == ControlState::MANUAL_OPERATION || to == ControlState::AUTO_OPERATION;
+
+	case ControlState::MODE_TRANSITION:
+		return to == ControlState::MANUAL_OPERATION || to == ControlState::AUTO_OPERATION;
 
 	default:
 		return false;
@@ -568,11 +619,17 @@ void WheelLoaderController::publishCommands()
 
 	switch (_active_command_source) {
 	case CommandSource::MANUAL:
-		if (_control_state == ControlState::MANUAL_CONTROL) {
+		if (_control_state == ControlState::MANUAL_OPERATION) {
 			active_cmd = _manual_command;
 			has_valid_command = true;
 		}
+		break;
 
+	case CommandSource::SMOL_VLA:
+		if (_control_state == ControlState::AUTO_OPERATION) {
+			active_cmd = _smol_vla_command;
+			has_valid_command = true;
+		}
 		break;
 
 	case CommandSource::TASK_EXECUTION:
@@ -580,7 +637,6 @@ void WheelLoaderController::publishCommands()
 			active_cmd = _task_command;
 			has_valid_command = true;
 		}
-
 		break;
 
 	case CommandSource::EXTERNAL:
@@ -592,7 +648,8 @@ void WheelLoaderController::publishCommands()
 		break;
 	}
 
-	if (has_valid_command && _control_state != ControlState::EMERGENCY_STOP) {
+	if (has_valid_command && _control_state != ControlState::EMERGENCY_STOP && 
+	    _control_state != ControlState::MODE_TRANSITION) {
 		// Apply safety limits
 		applyCommandLimits(active_cmd);
 
@@ -872,6 +929,234 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 	_task_id = -1;
 
 	return PX4_ERROR;
+}
+
+void WheelLoaderController::processSmolVlaCommand()
+{
+	if (_smol_vla_command_sub.updated()) {
+		smol_vla_command_s smol_cmd;
+
+		if (_smol_vla_command_sub.copy(&smol_cmd)) {
+			_current_smol_vla_data = smol_cmd;
+			_last_smol_vla_time = hrt_absolute_time();
+			_smol_vla_valid = smol_cmd.valid_prediction && !smol_cmd.emergency_stop;
+
+			// Convert SmolVLA command to wheel loader command
+			if (_smol_vla_valid && _operation_mode == OperationMode::AUTO_MODE) {
+				convertSmolVlaToWheelLoaderCommand(smol_cmd, _smol_vla_command);
+				_smol_vla_command.timestamp = smol_cmd.timestamp;
+				_smol_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
+			}
+		}
+	}
+
+	// Check for SmolVLA timeout
+	if (_smol_vla_valid && (hrt_absolute_time() - _last_smol_vla_time) > (_smol_vla_timeout.get() * 1e6f)) {
+		_smol_vla_valid = false;
+		PX4_WARN("SmolVLA command timeout - switching to manual mode");
+		
+		// Auto fallback to manual mode on SmolVLA timeout
+		if (_operation_mode == OperationMode::AUTO_MODE) {
+			transitionToMode(OperationMode::MANUAL_MODE);
+		}
+	}
+}
+
+void WheelLoaderController::processModeSwitch()
+{
+	// Check parameter for operation mode change
+	int requested_mode = _operation_mode_param.get();
+	OperationMode target_mode = (requested_mode == 1) ? OperationMode::AUTO_MODE : OperationMode::MANUAL_MODE;
+
+	// Handle mode transition request
+	if (target_mode != _operation_mode && _control_state != ControlState::MODE_TRANSITION) {
+		transitionToMode(target_mode);
+	}
+
+	// Handle ongoing mode transition
+	if (_control_state == ControlState::MODE_TRANSITION) {
+		handleModeTransition();
+	}
+}
+
+void WheelLoaderController::transitionToMode(OperationMode new_mode)
+{
+	if (!isValidModeTransition(_operation_mode, new_mode)) {
+		PX4_WARN("Invalid mode transition from %d to %d", (int)_operation_mode, (int)new_mode);
+		return;
+	}
+
+	PX4_INFO("Transitioning from mode %d to mode %d", (int)_operation_mode, (int)new_mode);
+	
+	_previous_operation_mode = _operation_mode;
+	_operation_mode = OperationMode::TRANSITION_MODE;
+	_mode_transition_start_time = hrt_absolute_time();
+	transitionToState(ControlState::MODE_TRANSITION);
+
+	// Set target mode
+	if (new_mode == OperationMode::AUTO_MODE) {
+		_operation_mode = OperationMode::AUTO_MODE;
+	} else {
+		_operation_mode = OperationMode::MANUAL_MODE;
+	}
+}
+
+bool WheelLoaderController::isValidModeTransition(OperationMode from, OperationMode to)
+{
+	// Manual mode can always override auto mode (safety requirement)
+	if (to == OperationMode::MANUAL_MODE) {
+		return true;
+	}
+
+	// Auto mode requires SmolVLA to be enabled and valid
+	if (to == OperationMode::AUTO_MODE) {
+		return _smol_vla_enable.get() && _smol_vla_valid;
+	}
+
+	return false;
+}
+
+void WheelLoaderController::handleModeTransition()
+{
+	hrt_abstime now = hrt_absolute_time();
+	float transition_time = (now - _mode_transition_start_time) / 1e6f;
+
+	// Check if transition time exceeded
+	if (transition_time > _mode_transition_time.get()) {
+		// Complete transition
+		if (_operation_mode == OperationMode::AUTO_MODE) {
+			transitionToState(ControlState::AUTO_OPERATION);
+			PX4_INFO("Transitioned to AUTO mode");
+		} else {
+			transitionToState(ControlState::MANUAL_OPERATION);
+			PX4_INFO("Transitioned to MANUAL mode");
+		}
+	}
+}
+
+void WheelLoaderController::convertSmolVlaToWheelLoaderCommand(const smol_vla_command_s &smol_cmd, wheel_loader_command_s &wl_cmd)
+{
+	// Convert SmolVLA outputs to wheel loader commands
+	wl_cmd.timestamp = smol_cmd.timestamp;
+	wl_cmd.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
+
+	// Convert position commands to motion commands
+	// This is a simplified conversion - real implementation would use proper kinematics
+	float dx = smol_cmd.vehicle_position_x; // Simplified: assume relative to current position
+	float dy = smol_cmd.vehicle_position_y;
+	float target_heading = smol_cmd.vehicle_heading;
+
+	// Simple velocity control based on position error
+	float speed_factor = math::constrain(sqrtf(dx*dx + dy*dy), 0.0f, 1.0f);
+	float base_speed = smol_cmd.operation_speed * speed_factor;
+
+	// Apply safety limits
+	base_speed = math::constrain(base_speed, 0.0f, _safe_speed.get());
+
+	// Set wheel speeds (simplified differential drive model)
+	wl_cmd.front_left_wheel_speed = base_speed;
+	wl_cmd.front_right_wheel_speed = base_speed;
+	wl_cmd.rear_left_wheel_speed = base_speed;
+	wl_cmd.rear_right_wheel_speed = base_speed;
+
+	// Convert bucket and boom positions to hydraulic commands
+	wl_cmd.bucket_angle_cmd = smol_cmd.bucket_pitch;
+	wl_cmd.boom_lift_cmd = smol_cmd.bucket_position_z * 0.1f; // Scale factor for boom lift
+	wl_cmd.boom_extend_cmd = smol_cmd.bucket_position_x * 0.1f; // Scale factor for boom extend
+
+	// Set steering based on heading error
+	wl_cmd.steering_angle_cmd = math::constrain(target_heading * 0.5f, -0.5f, 0.5f);
+
+	// Set operation modes
+	wl_cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_VELOCITY;
+	wl_cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_AUTO;
+
+	// Enable traction and stability control for autonomous operation
+	wl_cmd.traction_control_enabled = true;
+	wl_cmd.stability_control_enabled = true;
+	wl_cmd.max_slip_ratio = 0.2f;
+	wl_cmd.traction_gain = 0.8f;
+
+	// Safety settings
+	wl_cmd.emergency_stop = smol_cmd.emergency_stop;
+	wl_cmd.enable_hydraulics = smol_cmd.sequence_enable;
+	wl_cmd.enable_drivetrain = smol_cmd.sequence_enable;
+	wl_cmd.max_vehicle_speed = _safe_speed.get();
+	wl_cmd.max_hydraulic_speed = 0.5f; // Conservative hydraulic speed
+
+	// Task execution context
+	wl_cmd.task_id = smol_cmd.sequence_id;
+	wl_cmd.task_phase = smol_cmd.operation_phase;
+}
+
+void WheelLoaderController::processAutoLoadSequence()
+{
+	if (_current_smol_vla_data.operation_mode != smol_vla_command_s::OPERATION_LOAD) {
+		return;
+	}
+
+	// Implement auto load sequence based on operation phase
+	switch (_current_smol_vla_data.operation_phase) {
+	case smol_vla_command_s::PHASE_APPROACH:
+		// Approach loading position
+		PX4_DEBUG("Auto load: Approaching");
+		break;
+
+	case smol_vla_command_s::PHASE_ENGAGE:
+		// Lower bucket and engage with material
+		PX4_DEBUG("Auto load: Engaging");
+		break;
+
+	case smol_vla_command_s::PHASE_EXECUTE:
+		// Scoop material
+		PX4_DEBUG("Auto load: Scooping");
+		break;
+
+	case smol_vla_command_s::PHASE_RETRACT:
+		// Lift bucket and retract
+		PX4_DEBUG("Auto load: Retracting");
+		break;
+
+	case smol_vla_command_s::PHASE_COMPLETE:
+		// Load sequence complete
+		PX4_DEBUG("Auto load: Complete");
+		break;
+	}
+}
+
+void WheelLoaderController::processAutoDumpSequence()
+{
+	if (_current_smol_vla_data.operation_mode != smol_vla_command_s::OPERATION_DUMP) {
+		return;
+	}
+
+	// Implement auto dump sequence based on operation phase
+	switch (_current_smol_vla_data.operation_phase) {
+	case smol_vla_command_s::PHASE_APPROACH:
+		// Approach dump position
+		PX4_DEBUG("Auto dump: Approaching");
+		break;
+
+	case smol_vla_command_s::PHASE_ENGAGE:
+		// Position bucket for dumping
+		PX4_DEBUG("Auto dump: Positioning");
+		break;
+
+	case smol_vla_command_s::PHASE_EXECUTE:
+		// Dump material
+		PX4_DEBUG("Auto dump: Dumping");
+		break;
+
+	case smol_vla_command_s::PHASE_RETRACT:
+		// Lower bucket and retract
+		PX4_DEBUG("Auto dump: Retracting");
+		break;
+
+	case smol_vla_command_s::PHASE_COMPLETE:
+		// Dump sequence complete
+		PX4_DEBUG("Auto dump: Complete");
+		break;
+	}
 }
 
 int WheelLoaderController::print_usage(const char *reason)

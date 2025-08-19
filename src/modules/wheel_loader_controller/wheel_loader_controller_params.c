@@ -167,3 +167,70 @@ PARAM_DEFINE_INT32(WLC_FRONT_WHEEL, 0);
  * @group Wheel Loader Controller
  */
 PARAM_DEFINE_INT32(WLC_REAR_WHEEL, 1);
+
+/**
+ * Operation mode
+ *
+ * Primary operation mode selection: 0=Manual (RC), 1=Auto (SmolVLA).
+ *
+ * @value 0 Manual RC Control
+ * @value 1 SmolVLA Autonomous
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_OP_MODE, 0);
+
+/**
+ * SmolVLA interface enable
+ *
+ * Enable SmolVLA autonomous control interface.
+ *
+ * @boolean
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_SMOL_EN, 1);
+
+/**
+ * SmolVLA command timeout
+ *
+ * Maximum time without receiving SmolVLA commands before fallback to manual.
+ *
+ * @unit s
+ * @min 0.1
+ * @max 5.0
+ * @decimal 1
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_FLOAT(WLC_SMOL_TO, 1.0f);
+
+/**
+ * Mode transition time
+ *
+ * Time allowed for safe transition between operation modes.
+ *
+ * @unit s
+ * @min 0.1
+ * @max 3.0
+ * @decimal 1
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_FLOAT(WLC_MODE_TRANS_T, 1.0f);
+
+/**
+ * Auto load sequence enable
+ *
+ * Enable autonomous loading sequence in SmolVLA mode.
+ *
+ * @boolean
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_AUTO_LOAD_EN, 1);
+
+/**
+ * Auto dump sequence enable
+ *
+ * Enable autonomous dumping sequence in SmolVLA mode.
+ *
+ * @boolean
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_AUTO_DUMP_EN, 1);
