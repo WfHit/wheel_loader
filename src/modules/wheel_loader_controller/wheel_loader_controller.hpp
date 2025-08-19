@@ -34,14 +34,13 @@
 #pragma once
 
 // System includes first
-#include <px4_platform_common/defines.h>
+#include <drivers/drv_hrt.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 // Library includes
 #include <lib/perf/perf_counter.h>
-#include <drivers/drv_hrt.h>
 
 // uORB includes (use lowercase topic names)
 #include <uORB/Publication.hpp>
@@ -73,12 +72,35 @@ using namespace time_literals;
  * Central coordination and control module for wheel loader operations.
  * Manages command arbitration, subsystem coordination, state management,
  * and safety oversight for the complete wheel loader system.
+ *
+ * The module supports dual operation modes:
+ * - Manual RC Control: Direct control via RC transmitter/joystick
+ * - VLA Autonomous: Vision-Language-Action autonomous operation
+ *
+ * Key features:
+ * - Command arbitration with safety priority (manual always overrides autonomous)
+ * - Subsystem health monitoring and fault detection
+ * - Emergency stop functionality accessible from any state
+ * - Smooth mode transitions with timeout protection
+ * - Slip detection and traction control integration
+ *
+ * @note This implementation follows PX4 coding standards including:
+ * - Tab-based indentation (4-space display width)
+ * - Proper uORB message handling
+ * - Parameter validation and bounds checking
+ * - Performance monitoring and safety oversight
  */
 class WheelLoaderController : public ModuleBase<WheelLoaderController>,
-							  public ModuleParams,
-							  public px4::ScheduledWorkItem
+	public ModuleParams,
+	public px4::ScheduledWorkItem
 {
 public:
+	static constexpr float CONTROL_RATE_HZ = 50.0f;
+	static constexpr uint64_t CONTROL_INTERVAL_US = 1_s / CONTROL_RATE_HZ;
+	static constexpr float COMMAND_TIMEOUT_S = 0.5f;
+	static constexpr float HEALTH_TIMEOUT_S = 1.0f;
+	static constexpr float MAX_EMERGENCY_STOP_TIME_S = 0.1f;
+
 	WheelLoaderController();
 	~WheelLoaderController() override;
 
@@ -127,13 +149,6 @@ private:
 		ERROR = 3,
 		CRITICAL = 4
 	};
-
-	// Constants
-	static constexpr float CONTROL_RATE_HZ = 50.0f;
-	static constexpr uint64_t CONTROL_INTERVAL_US = 1_s / CONTROL_RATE_HZ;
-	static constexpr float COMMAND_TIMEOUT_S = 0.5f;
-	static constexpr float HEALTH_TIMEOUT_S = 1.0f;
-	static constexpr float MAX_EMERGENCY_STOP_TIME_S = 0.1f;
 
 	// Core processing functions
 	void processWheelLoaderCommand();
@@ -248,8 +263,8 @@ private:
 	float _traction_reduction_factor{1.0f};
 
 	// Performance counters
-	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
-	perf_counter_t _emergency_stop_perf{perf_alloc(PC_COUNT, MODULE_NAME": emergency_stops")};
+	perf_counter_t _cycle_perf;
+	perf_counter_t _emergency_stop_perf;
 
 	// Parameters
 	DEFINE_PARAMETERS(
