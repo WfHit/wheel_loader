@@ -70,15 +70,15 @@ The wheel loader controller module has been completely regenerated according to 
 
 ✅ **Clear States**: INITIALIZING, IDLE, MANUAL_OPERATION, AUTO_OPERATION, TASK_EXECUTION, MODE_TRANSITION, EMERGENCY_STOP, ERROR
 ✅ **Valid Transitions**: Enforced transition rules
-✅ **Command Arbitration**: Priority-based command source selection (Manual > SmolVLA > Task > External)
+✅ **Command Arbitration**: Priority-based command source selection (Manual > VLA > Task > External)
 ✅ **Timeout Handling**: Automatic fallback on command loss
-✅ **Dual Operation Modes**: Manual RC control and SmolVLA autonomous operation
+✅ **Dual Operation Modes**: Manual RC control and VLA autonomous operation
 
-### New: SmolVLA Dual Operation Mode Support
+### New: VLA Dual Operation Mode Support
 
-✅ **AUTO MODE (SmolVLA-Driven)**:
-- SmolVLA Interface Module: Receives bucket position and pose outputs
-- Autonomous Command Processing: Converts SmolVLA outputs to subsystem commands
+✅ **AUTO MODE (VLA-Driven)**:
+- VLA Interface Module: Receives bucket position and pose outputs
+- Autonomous Command Processing: Converts VLA outputs to subsystem commands
 - Auto Load/Dump Controller: Implements autonomous sequences
 
 ✅ **MANUAL MODE (RC Control)**:
@@ -98,7 +98,7 @@ The wheel loader controller module has been completely regenerated according to 
 - wheel_loader_command (high-level commands)
 - manual_control_setpoint (joystick/RC)
 - task_execution_command (autonomous tasks)
-- smol_vla_command (SmolVLA autonomous interface)
+- smol_vla_command (VLA autonomous interface)
 - Subsystem status messages
 
 ✅ **Output Messages**:
@@ -112,7 +112,7 @@ The wheel loader controller module has been completely regenerated according to 
 ✅ **Safety Parameters**: WLC_MAX_SPEED, WLC_MAX_ACCEL, WLC_ESTOP_EN
 ✅ **Health Parameters**: WLC_HEALTH_TO
 ✅ **Operation Parameters**: WLC_SAFE_SPEED, WLC_SAFE_ACCEL
-✅ **SmolVLA Parameters**: WLC_OP_MODE, WLC_SMOL_EN, WLC_SMOL_TO, WLC_MODE_TRANS_T
+✅ **VLA Parameters**: WLC_OP_MODE, WLC_SMOL_EN, WLC_SMOL_TO, WLC_MODE_TRANS_T
 ✅ **Auto Sequence Parameters**: WLC_AUTO_LOAD_EN, WLC_AUTO_DUMP_EN
 ✅ **Debug Parameters**: WLC_DIAG_EN
 

@@ -55,7 +55,7 @@
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/slip_estimation.h>
-#include <uORB/topics/smol_vla_command.h>
+#include <uORB/topics/vla_command.h>
 #include <uORB/topics/steering_command.h>
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/task_execution_command.h>
@@ -96,7 +96,7 @@ private:
 		INITIALIZING = 0,
 		IDLE = 1,
 		MANUAL_OPERATION = 2,       // RC/joystick direct control (replaces MANUAL_CONTROL)
-		AUTO_OPERATION = 3,         // SmolVLA-driven autonomous control
+		AUTO_OPERATION = 3,         // VLA-driven autonomous control
 		TASK_EXECUTION = 4,         // Traditional task execution (kept for compatibility)
 		MODE_TRANSITION = 5,        // Safe switching between operation modes
 		EMERGENCY_STOP = 6,
@@ -107,7 +107,7 @@ private:
 	enum class CommandSource : uint8_t {
 		NONE = 0,
 		MANUAL = 1,             // RC/joystick control
-		SMOL_VLA = 2,          // SmolVLA autonomous control
+		VLA = 2,          // VLA autonomous control
 		TASK_EXECUTION = 3,     // Traditional task execution
 		EXTERNAL = 4            // External system commands
 	};
@@ -115,7 +115,7 @@ private:
 	// Operation modes for dual control system
 	enum class OperationMode : uint8_t {
 		MANUAL_MODE = 0,        // RC control mode
-		AUTO_MODE = 1,          // SmolVLA autonomous mode
+		AUTO_MODE = 1,          // VLA autonomous mode
 		TRANSITION_MODE = 2     // Transitioning between modes
 	};
 
@@ -140,7 +140,7 @@ private:
 	void processTaskExecution();
 	void processVehicleCommand();
 	void processSlipEstimation();
-	void processSmolVlaCommand();
+	void processVlaCommand();
 	void updateControlState();
 	void publishCommands();
 	void publishStatus();
@@ -151,10 +151,10 @@ private:
 	bool isValidModeTransition(OperationMode from, OperationMode to);
 	void handleModeTransition();
 
-	// Auto operation functions (SmolVLA interface)
+	// Auto operation functions (VLA interface)
 	void processAutoLoadSequence();
 	void processAutoDumpSequence();
-	void convertSmolVlaToWheelLoaderCommand(const smol_vla_command_s &smol_cmd, wheel_loader_command_s &wl_cmd);
+	void convertVlaToWheelLoaderCommand(const vla_command_s &vla_cmd, wheel_loader_command_s &wl_cmd);
 
 	// Command processing and arbitration
 	CommandSource selectActiveCommandSource();
@@ -181,7 +181,7 @@ private:
 	uORB::Subscription _wheel_loader_command_sub{ORB_ID(wheel_loader_command)};
 	uORB::Subscription _manual_control_setpoint_sub{ORB_ID(manual_control_setpoint)};
 	uORB::Subscription _task_execution_command_sub{ORB_ID(task_execution_command)};
-	uORB::Subscription _smol_vla_command_sub{ORB_ID(smol_vla_command)};
+	uORB::Subscription _vla_command_sub{ORB_ID(vla_command)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
@@ -215,14 +215,14 @@ private:
 	// Command storage
 	wheel_loader_command_s _current_command{};
 	wheel_loader_command_s _manual_command{};
-	wheel_loader_command_s _smol_vla_command{};
+	wheel_loader_command_s _vla_command{};
 	wheel_loader_command_s _task_command{};
 	wheel_loader_command_s _external_command{};
 
-	// SmolVLA interface data
-	smol_vla_command_s _current_smol_vla_data{};
-	hrt_abstime _last_smol_vla_time{0};
-	bool _smol_vla_valid{false};
+	// VLA interface data
+	vla_command_s _current_vla_data{};
+	hrt_abstime _last_vla_time{0};
+	bool _vla_valid{false};
 
 	// Safety state
 	bool _emergency_stop_active{false};
@@ -266,8 +266,8 @@ private:
 		(ParamFloat<px4::params::WLC_SAFE_SPEED>) _safe_speed,
 		// New parameters for dual operation modes
 		(ParamInt<px4::params::WLC_OP_MODE>) _operation_mode_param,
-		(ParamInt<px4::params::WLC_SMOL_EN>) _smol_vla_enable,
-		(ParamFloat<px4::params::WLC_SMOL_TO>) _smol_vla_timeout,
+		(ParamInt<px4::params::WLC_VLA_EN>) _vla_enable,
+		(ParamFloat<px4::params::WLC_VLA_TO>) _vla_timeout,
 		(ParamFloat<px4::params::WLC_MODE_TRANS_T>) _mode_transition_time,
 		(ParamInt<px4::params::WLC_AUTO_LOAD_EN>) _auto_load_enable,
 		(ParamInt<px4::params::WLC_AUTO_DUMP_EN>) _auto_dump_enable

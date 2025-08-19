@@ -96,9 +96,9 @@ void WheelLoaderController::Run()
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
-	processSmolVlaCommand();
+	processVlaCommand();
 	processSlipEstimation();
-	
+
 	// Process mode switching and management
 	processModeSwitch();
 
@@ -268,11 +268,11 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 	// Select command source based on operation mode
 	switch (_operation_mode) {
 	case OperationMode::AUTO_MODE:
-		// In auto mode, prioritize SmolVLA commands
-		if (_smol_vla_valid && (now - _smol_vla_command.timestamp) < timeout_us) {
+		// In auto mode, prioritize VLA commands
+		if (_vla_valid && (now - _vla_command.timestamp) < timeout_us) {
 			return CommandSource::SMOL_VLA;
 		}
-		// Fall back to task execution if SmolVLA not available
+		// Fall back to task execution if VLA not available
 		if ((now - _task_command.timestamp) < timeout_us) {
 			return CommandSource::TASK_EXECUTION;
 		}
@@ -627,7 +627,7 @@ void WheelLoaderController::publishCommands()
 
 	case CommandSource::SMOL_VLA:
 		if (_control_state == ControlState::AUTO_OPERATION) {
-			active_cmd = _smol_vla_command;
+			active_cmd = _vla_command;
 			has_valid_command = true;
 		}
 		break;
@@ -931,31 +931,31 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 	return PX4_ERROR;
 }
 
-void WheelLoaderController::processSmolVlaCommand()
+void WheelLoaderController::processVlaCommand()
 {
-	if (_smol_vla_command_sub.updated()) {
-		smol_vla_command_s smol_cmd;
+	if (_vla_command_sub.updated()) {
+		vla_command_s vla_cmd;
 
-		if (_smol_vla_command_sub.copy(&smol_cmd)) {
-			_current_smol_vla_data = smol_cmd;
-			_last_smol_vla_time = hrt_absolute_time();
-			_smol_vla_valid = smol_cmd.valid_prediction && !smol_cmd.emergency_stop;
+		if (_vla_command_sub.copy(&vla_cmd)) {
+			_current_vla_data = vla_cmd;
+			_last_vla_time = hrt_absolute_time();
+			_vla_valid = vla_cmd.valid_command && !vla_cmd.emergency_stop;
 
-			// Convert SmolVLA command to wheel loader command
-			if (_smol_vla_valid && _operation_mode == OperationMode::AUTO_MODE) {
-				convertSmolVlaToWheelLoaderCommand(smol_cmd, _smol_vla_command);
-				_smol_vla_command.timestamp = smol_cmd.timestamp;
-				_smol_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
+			// Convert VLA command to wheel loader command
+			if (_vla_valid && _operation_mode == OperationMode::AUTO_MODE) {
+				convertVlaToWheelLoaderCommand(vla_cmd, _vla_command);
+				_vla_command.timestamp = vla_cmd.timestamp;
+				_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
 			}
 		}
 	}
 
-	// Check for SmolVLA timeout
-	if (_smol_vla_valid && (hrt_absolute_time() - _last_smol_vla_time) > (_smol_vla_timeout.get() * 1e6f)) {
-		_smol_vla_valid = false;
-		PX4_WARN("SmolVLA command timeout - switching to manual mode");
+	// Check for VLA timeout
+	if (_vla_valid && (hrt_absolute_time() - _last_vla_time) > (_vla_timeout.get() * 1e6f)) {
+		_vla_valid = false;
+		PX4_WARN("VLA command timeout - switching to manual mode");
 		
-		// Auto fallback to manual mode on SmolVLA timeout
+		// Auto fallback to manual mode on VLA timeout
 		if (_operation_mode == OperationMode::AUTO_MODE) {
 			transitionToMode(OperationMode::MANUAL_MODE);
 		}
@@ -1008,9 +1008,9 @@ bool WheelLoaderController::isValidModeTransition(OperationMode from, OperationM
 		return true;
 	}
 
-	// Auto mode requires SmolVLA to be enabled and valid
+	// Auto mode requires VLA to be enabled and valid
 	if (to == OperationMode::AUTO_MODE) {
-		return _smol_vla_enable.get() && _smol_vla_valid;
+		return _vla_enable.get() && _vla_valid;
 	}
 
 	return false;
@@ -1034,129 +1034,65 @@ void WheelLoaderController::handleModeTransition()
 	}
 }
 
-void WheelLoaderController::convertSmolVlaToWheelLoaderCommand(const smol_vla_command_s &smol_cmd, wheel_loader_command_s &wl_cmd)
+void WheelLoaderController::convertVlaToWheelLoaderCommand(const vla_command_s &vla_cmd, wheel_loader_command_s &wl_cmd)
 {
-	// Convert SmolVLA outputs to wheel loader commands
-	wl_cmd.timestamp = smol_cmd.timestamp;
+	// Convert VLA outputs to wheel loader commands
+	wl_cmd.timestamp = vla_cmd.timestamp;
 	wl_cmd.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
 
-	// Convert position commands to motion commands
-	// This is a simplified conversion - real implementation would use proper kinematics
-	float dx = smol_cmd.vehicle_position_x; // Simplified: assume relative to current position
-	float dy = smol_cmd.vehicle_position_y;
-	float target_heading = smol_cmd.vehicle_heading;
+	// Map normalized VLA commands to wheel loader controls
+	wl_cmd.forward_speed = math::constrain(vla_cmd.forward_speed, -1.0f, 1.0f);
+	wl_cmd.steering_angle = math::constrain(vla_cmd.steering_angle, -1.0f, 1.0f);
 
-	// Simple velocity control based on position error
-	float speed_factor = math::constrain(sqrtf(dx*dx + dy*dy), 0.0f, 1.0f);
-	float base_speed = smol_cmd.operation_speed * speed_factor;
+	// Hydraulic controls
+	wl_cmd.boom_lift = math::constrain(vla_cmd.boom_lift, -1.0f, 1.0f);
+	wl_cmd.bucket_tilt = math::constrain(vla_cmd.bucket_tilt, -1.0f, 1.0f);
 
-	// Apply safety limits
-	base_speed = math::constrain(base_speed, 0.0f, _safe_speed.get());
+	// Operation mode mapping
+	switch (vla_cmd.operation_mode) {
+		case vla_command_s::OPERATION_LOAD:
+			wl_cmd.operation_mode = wheel_loader_command_s::MODE_LOAD;
+			break;
+		case vla_command_s::OPERATION_DUMP:
+			wl_cmd.operation_mode = wheel_loader_command_s::MODE_DUMP;
+			break;
+		default:
+			wl_cmd.operation_mode = wheel_loader_command_s::MODE_MANUAL;
+			break;
+	}
 
-	// Set wheel speeds (simplified differential drive model)
-	wl_cmd.front_left_wheel_speed = base_speed;
-	wl_cmd.front_right_wheel_speed = base_speed;
-	wl_cmd.rear_left_wheel_speed = base_speed;
-	wl_cmd.rear_right_wheel_speed = base_speed;
-
-	// Convert bucket and boom positions to hydraulic commands
-	wl_cmd.bucket_angle_cmd = smol_cmd.bucket_pitch;
-	wl_cmd.boom_lift_cmd = smol_cmd.bucket_position_z * 0.1f; // Scale factor for boom lift
-	wl_cmd.boom_extend_cmd = smol_cmd.bucket_position_x * 0.1f; // Scale factor for boom extend
-
-	// Set steering based on heading error
-	wl_cmd.steering_angle_cmd = math::constrain(target_heading * 0.5f, -0.5f, 0.5f);
-
-	// Set operation modes
-	wl_cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_VELOCITY;
-	wl_cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_AUTO;
-
-	// Enable traction and stability control for autonomous operation
-	wl_cmd.traction_control_enabled = true;
-	wl_cmd.stability_control_enabled = true;
-	wl_cmd.max_slip_ratio = 0.2f;
-	wl_cmd.traction_gain = 0.8f;
-
-	// Safety settings
-	wl_cmd.emergency_stop = smol_cmd.emergency_stop;
-	wl_cmd.enable_hydraulics = smol_cmd.sequence_enable;
-	wl_cmd.enable_drivetrain = smol_cmd.sequence_enable;
-	wl_cmd.max_vehicle_speed = _safe_speed.get();
-	wl_cmd.max_hydraulic_speed = 0.5f; // Conservative hydraulic speed
-
-	// Task execution context
-	wl_cmd.task_id = smol_cmd.sequence_id;
-	wl_cmd.task_phase = smol_cmd.operation_phase;
+	// Emergency handling
+	if (vla_cmd.emergency_stop) {
+		wl_cmd.emergency_stop = true;
+		wl_cmd.forward_speed = 0.0f;
+		wl_cmd.steering_angle = 0.0f;
+		wl_cmd.boom_lift = 0.0f;
+		wl_cmd.bucket_tilt = 0.0f;
+	}
 }
 
 void WheelLoaderController::processAutoLoadSequence()
 {
-	if (_current_smol_vla_data.operation_mode != smol_vla_command_s::OPERATION_LOAD) {
+	if (_current_vla_data.operation_mode != vla_command_s::OPERATION_LOAD) {
 		return;
 	}
 
-	// Implement auto load sequence based on operation phase
-	switch (_current_smol_vla_data.operation_phase) {
-	case smol_vla_command_s::PHASE_APPROACH:
-		// Approach loading position
-		PX4_DEBUG("Auto load: Approaching");
-		break;
-
-	case smol_vla_command_s::PHASE_ENGAGE:
-		// Lower bucket and engage with material
-		PX4_DEBUG("Auto load: Engaging");
-		break;
-
-	case smol_vla_command_s::PHASE_EXECUTE:
-		// Scoop material
-		PX4_DEBUG("Auto load: Scooping");
-		break;
-
-	case smol_vla_command_s::PHASE_RETRACT:
-		// Lift bucket and retract
-		PX4_DEBUG("Auto load: Retracting");
-		break;
-
-	case smol_vla_command_s::PHASE_COMPLETE:
-		// Load sequence complete
-		PX4_DEBUG("Auto load: Complete");
-		break;
-	}
+	// Implement auto load sequence based on operation mode
+	PX4_DEBUG("Auto load sequence active");
+	// Simplified load sequence - actual implementation would depend on
+	// specific wheel loader hydraulic system integration
 }
 
 void WheelLoaderController::processAutoDumpSequence()
 {
-	if (_current_smol_vla_data.operation_mode != smol_vla_command_s::OPERATION_DUMP) {
+	if (_current_vla_data.operation_mode != vla_command_s::OPERATION_DUMP) {
 		return;
 	}
 
-	// Implement auto dump sequence based on operation phase
-	switch (_current_smol_vla_data.operation_phase) {
-	case smol_vla_command_s::PHASE_APPROACH:
-		// Approach dump position
-		PX4_DEBUG("Auto dump: Approaching");
-		break;
-
-	case smol_vla_command_s::PHASE_ENGAGE:
-		// Position bucket for dumping
-		PX4_DEBUG("Auto dump: Positioning");
-		break;
-
-	case smol_vla_command_s::PHASE_EXECUTE:
-		// Dump material
-		PX4_DEBUG("Auto dump: Dumping");
-		break;
-
-	case smol_vla_command_s::PHASE_RETRACT:
-		// Lower bucket and retract
-		PX4_DEBUG("Auto dump: Retracting");
-		break;
-
-	case smol_vla_command_s::PHASE_COMPLETE:
-		// Dump sequence complete
-		PX4_DEBUG("Auto dump: Complete");
-		break;
-	}
+	// Implement auto dump sequence based on operation mode
+	PX4_DEBUG("Auto dump sequence active");
+	// Simplified dump sequence - actual implementation would depend on
+	// specific wheel loader hydraulic system integration
 }
 
 int WheelLoaderController::print_usage(const char *reason)
