@@ -68,10 +68,29 @@ The wheel loader controller module has been completely regenerated according to 
 
 ### State Machine Design
 
-✅ **Clear States**: INITIALIZING, IDLE, MANUAL_CONTROL, TASK_EXECUTION, EMERGENCY_STOP, ERROR
+✅ **Clear States**: INITIALIZING, IDLE, MANUAL_OPERATION, AUTO_OPERATION, TASK_EXECUTION, MODE_TRANSITION, EMERGENCY_STOP, ERROR
 ✅ **Valid Transitions**: Enforced transition rules
-✅ **Command Arbitration**: Priority-based command source selection
+✅ **Command Arbitration**: Priority-based command source selection (Manual > SmolVLA > Task > External)
 ✅ **Timeout Handling**: Automatic fallback on command loss
+✅ **Dual Operation Modes**: Manual RC control and SmolVLA autonomous operation
+
+### New: SmolVLA Dual Operation Mode Support
+
+✅ **AUTO MODE (SmolVLA-Driven)**:
+- SmolVLA Interface Module: Receives bucket position and pose outputs
+- Autonomous Command Processing: Converts SmolVLA outputs to subsystem commands
+- Auto Load/Dump Controller: Implements autonomous sequences
+
+✅ **MANUAL MODE (RC Control)**:
+- RC Input Processing: Direct manual control
+- Direct Control Mapping: Joystick movements → wheel speeds and hydraulics
+- Manual Override: Always takes precedence over autonomous operation
+
+✅ **Mode Management System**:
+- Mode Selection Interface: Safe switching between AUTO and MANUAL modes
+- Priority System: Manual mode always overrides auto mode for safety
+- Transition Logic: Smooth handover with proper state management
+- Safety Interlocks: Emergency stop works in both modes
 
 ### Message Interface
 
@@ -79,6 +98,7 @@ The wheel loader controller module has been completely regenerated according to 
 - wheel_loader_command (high-level commands)
 - manual_control_setpoint (joystick/RC)
 - task_execution_command (autonomous tasks)
+- smol_vla_command (SmolVLA autonomous interface)
 - Subsystem status messages
 
 ✅ **Output Messages**:
@@ -92,6 +112,8 @@ The wheel loader controller module has been completely regenerated according to 
 ✅ **Safety Parameters**: WLC_MAX_SPEED, WLC_MAX_ACCEL, WLC_ESTOP_EN
 ✅ **Health Parameters**: WLC_HEALTH_TO
 ✅ **Operation Parameters**: WLC_SAFE_SPEED, WLC_SAFE_ACCEL
+✅ **SmolVLA Parameters**: WLC_OP_MODE, WLC_SMOL_EN, WLC_SMOL_TO, WLC_MODE_TRANS_T
+✅ **Auto Sequence Parameters**: WLC_AUTO_LOAD_EN, WLC_AUTO_DUMP_EN
 ✅ **Debug Parameters**: WLC_DIAG_EN
 
 ## Code Quality Features
