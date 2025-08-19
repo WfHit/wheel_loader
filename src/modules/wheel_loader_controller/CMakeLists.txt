@@ -38,6 +38,8 @@ px4_add_module(
 	SRCS
 		wheel_loader_controller.cpp
 		wheel_loader_controller_main.cpp
+		wheel_loader_safety_manager.cpp
+		wheel_loader_mode_manager.cpp
 		# DO NOT include wheel_loader_controller_params.c here
 	DEPENDS
 		mathlib

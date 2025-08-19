@@ -66,6 +66,10 @@
 
 using namespace time_literals;
 
+// Component includes (required for composition)
+#include "wheel_loader_safety_manager.hpp"
+#include "wheel_loader_mode_manager.hpp"
+
 /**
  * @brief Wheel Loader Controller Module
  *
@@ -134,37 +138,18 @@ private:
 		EXTERNAL = 4            // External system commands
 	};
 
-	// Operation modes for dual control system
-	enum class OperationMode : uint8_t {
-		MANUAL_MODE = 0,        // RC control mode
-		AUTO_MODE = 1,          // VLA autonomous mode
-		TRANSITION_MODE = 2     // Transitioning between modes
-	};
-
-	// System health states
-	enum class HealthState : uint8_t {
-		UNKNOWN = 0,
-		HEALTHY = 1,
-		WARNING = 2,
-		ERROR = 3,
-		CRITICAL = 4
-	};
+	// Import types from components
+	using OperationMode = WheelLoaderModeManager::OperationMode;
+	using HealthState = WheelLoaderSafetyManager::HealthState;
 
 	// Core processing functions
 	void processWheelLoaderCommand();
 	void processTaskExecution();
 	void processVehicleCommand();
-	void processSlipEstimation();
 	void processVlaCommand();
-	void updateControlState();
-	void publishCommands();
-	void publishStatus();
 
-	// Mode management functions
+	// Mode management functions (delegated to mode manager)
 	void processModeSwitch();
-	void transitionToMode(OperationMode new_mode);
-	bool isValidModeTransition(OperationMode from, OperationMode to);
-	void handleModeTransition();
 
 	// Auto operation functions (VLA interface)
 	void processAutoLoadSequence();
@@ -177,20 +162,20 @@ private:
 	void applyCommandLimits(wheel_loader_command_s &cmd);
 	void generateSubsystemCommands(const wheel_loader_command_s &cmd);
 
-	// Safety and health monitoring
-	void performSafetyChecks();
-	void updateSubsystemHealth();
-	void handleEmergencyStop();
-	bool isSystemHealthy();
-	HealthState evaluateOverallHealth();
-
 	// State management
+	void updateControlState();
 	void transitionToState(ControlState new_state);
 	bool isValidStateTransition(ControlState from, ControlState to);
 	void resetControlState();
+	void publishCommands();
+	void publishStatus();
 
 	// Parameter updates
 	void updateParams();
+
+	// Core components (using composition for better maintainability and testing)
+	WheelLoaderSafetyManager _safety_manager;           // Safety and health monitoring
+	WheelLoaderModeManager _mode_manager;               // Operation mode management
 
 	// uORB subscriptions
 	uORB::Subscription _wheel_loader_command_sub{ORB_ID(wheel_loader_command)};
@@ -199,13 +184,6 @@ private:
 	uORB::Subscription _vla_command_sub{ORB_ID(vla_command)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-
-	// Subsystem status subscriptions
-	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
-	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
-	uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
-	uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
-	uORB::SubscriptionMultiArray<wheel_status_s, 2> _wheel_status_subs{ORB_ID::wheel_status};
 
 	// uORB publications
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_pub{ORB_ID(wheel_loader_status)};
@@ -221,11 +199,8 @@ private:
 	ControlState _control_state{ControlState::INITIALIZING};
 	ControlState _previous_state{ControlState::INITIALIZING};
 	CommandSource _active_command_source{CommandSource::NONE};
-	OperationMode _operation_mode{OperationMode::MANUAL_MODE};
-	OperationMode _previous_operation_mode{OperationMode::MANUAL_MODE};
 	hrt_abstime _state_entered_time{0};
 	hrt_abstime _last_command_time{0};
-	hrt_abstime _mode_transition_start_time{0};
 
 	// Command storage
 	wheel_loader_command_s _current_command{};
@@ -239,32 +214,8 @@ private:
 	hrt_abstime _last_vla_time{0};
 	bool _vla_valid{false};
 
-	// Safety state
-	bool _emergency_stop_active{false};
-	bool _safety_override_active{false};
-	hrt_abstime _emergency_stop_time{0};
-
-	// Subsystem health tracking
-	HealthState _boom_health{HealthState::UNKNOWN};
-	HealthState _bucket_health{HealthState::UNKNOWN};
-	HealthState _steering_health{HealthState::UNKNOWN};
-	HealthState _front_wheel_health{HealthState::UNKNOWN};
-	HealthState _rear_wheel_health{HealthState::UNKNOWN};
-	hrt_abstime _last_boom_status_time{0};
-	hrt_abstime _last_bucket_status_time{0};
-	hrt_abstime _last_steering_status_time{0};
-	hrt_abstime _last_wheel_status_time[2]{0, 0};
-
-	// Slip detection and traction control
-	slip_estimation_s _current_slip_data{};
-	bool _slip_detected{false};
-	bool _critical_slip{false};
-	hrt_abstime _last_slip_estimation_time{0};
-	float _traction_reduction_factor{1.0f};
-
 	// Performance counters
 	perf_counter_t _cycle_perf;
-	perf_counter_t _emergency_stop_perf;
 
 	// Parameters
 	DEFINE_PARAMETERS(
