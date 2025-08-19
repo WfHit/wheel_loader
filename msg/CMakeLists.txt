@@ -253,6 +253,7 @@ set(msg_files
 	SteeringSetpoint.msg
 	SteeringStatus.msg
 	SlipEstimation.msg
+	SmolVlaCommand.msg
 	TractionControl.msg
 	PredictiveTraction.msg
 	LoadAwareTorque.msg
