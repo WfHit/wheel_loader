@@ -1148,32 +1148,54 @@ void ST3215Servo::process_limit_sensors()
 {
 	limit_sensor_s limit_msg;
 
-	// Process all limit sensor instances
+	// Cache limit function IDs to avoid repeated calls
+	int left_limit_function = get_limit_sensor_function(true);
+	int right_limit_function = get_limit_sensor_function(false);
+
+	// Process limit sensor instances - more efficient than nested loops
 	for (uint8_t instance = 0; instance < _limit_sensor_sub.size(); instance++) {
-		// Process all pending limit sensor messages for this instance
-		while (_limit_sensor_sub[instance].update(&limit_msg)) {
-			// Check if this limit sensor function matches our configured left or right limit
-			int left_limit_function = get_limit_sensor_function(true);
-			int right_limit_function = get_limit_sensor_function(false);
-
-			bool limit_affects_servo = ((left_limit_function != 255 && limit_msg.function == left_limit_function) ||
-						    (right_limit_function != 255 && limit_msg.function == right_limit_function));
-
-			if (limit_affects_servo) {
-				bool was_active = _safety_stop_active;
-				_safety_stop_active = limit_msg.state;
-				_active_limit_function = limit_msg.state ? limit_msg.function : 255;
-
-				// If limit just became active, emergency stop the servo (direction doesn't matter since torque is disabled)
-				if (limit_msg.state && !was_active) {
+		// Use updated() and copy() pattern like HBridge instead of while loop
+		if (_limit_sensor_sub[instance].updated() &&
+			_limit_sensor_sub[instance].copy(&limit_msg)) {
+			
+			// Check if this message is for our configured left limit
+			if (left_limit_function != 255 && limit_msg.function == left_limit_function) {
+				bool was_left_active = _left_limit_active;
+				_left_limit_active = limit_msg.state;
+				
+				// Handle state changes for left limit
+				if (limit_msg.state && !was_left_active) {
+					_safety_stop_active = true;
+					_active_limit_function = limit_msg.function;
 					emergency_stop();
 					PX4_WARN("Servo emergency stop due to limit sensor function %d", limit_msg.function);
+				} else if (!limit_msg.state && was_left_active) {
+					// Check if any other limit is still active before clearing safety stop
+					if (!_right_limit_active) {
+						_safety_stop_active = false;
+						_active_limit_function = 255;
+						PX4_INFO("Limit sensor released, servo movement allowed again");
+					}
 				}
-				// If limit was released, log recovery
-				else if (!limit_msg.state && was_active) {
-					_safety_stop_active = false;
-					_active_limit_function = 255;
-					PX4_INFO("Limit sensor released, servo movement allowed again");
+			}
+			// Check if this message is for our configured right limit
+			else if (right_limit_function != 255 && limit_msg.function == right_limit_function) {
+				bool was_right_active = _right_limit_active;
+				_right_limit_active = limit_msg.state;
+				
+				// Handle state changes for right limit
+				if (limit_msg.state && !was_right_active) {
+					_safety_stop_active = true;
+					_active_limit_function = limit_msg.function;
+					emergency_stop();
+					PX4_WARN("Servo emergency stop due to limit sensor function %d", limit_msg.function);
+				} else if (!limit_msg.state && was_right_active) {
+					// Check if any other limit is still active before clearing safety stop
+					if (!_left_limit_active) {
+						_safety_stop_active = false;
+						_active_limit_function = 255;
+						PX4_INFO("Limit sensor released, servo movement allowed again");
+					}
 				}
 			}
 		}

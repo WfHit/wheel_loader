@@ -145,6 +145,8 @@ private:
 	// Safety state
 	bool _safety_stop_active{false};   // Emergency stop due to limit sensor
 	uint8_t _active_limit_function{255}; // Which limit function is active (255 = none)
+	bool _left_limit_active{false};    // Left rotation limit sensor state
+	bool _right_limit_active{false};   // Right rotation limit sensor state
 
 	// Command flags for process_command_line
 	bool _flag_ping{false};
