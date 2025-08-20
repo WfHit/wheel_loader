@@ -29,9 +29,9 @@ The wheel loader robot acts as:
 
 The design follows PX4 coding style and architectural patterns:
 - Snake_case file naming (`wheel_loader_robot.hpp`, `wheel_loader_robot.cpp`)
-- CamelCase class names (`WheelLoaderController`)
+- CamelCase class names (`WheelLoaderRobot`)
 - Underscore prefix for private members (`_control_state`, `_safety_manager`)
-- Parameter naming with 16-character limit (`WLC_` prefix)
+- Parameter naming with 16-character limit (`WLR_` prefix)
 - Tab indentation (4 spaces width)
 - Proper inheritance from PX4 base classes
 
@@ -54,11 +54,11 @@ The design follows PX4 coding style and architectural patterns:
 ### Message Flow
 
 ```
-External Commands → WheelLoaderController → Subsystem Controllers → Hardware
+External Commands → WheelLoaderRobot → Subsystem Controllers → Hardware
                  ↑
 Manual Control ─┘
 
-Hardware → Subsystem Status → WheelLoaderController → WheelLoaderStatus → External Systems
+Hardware → Subsystem Status → WheelLoaderRobot → WheelLoaderStatus → External Systems
 ```
 
 ### Key uORB Messages
@@ -82,7 +82,7 @@ Hardware → Subsystem Status → WheelLoaderController → WheelLoaderStatus �
 ### Class Structure
 
 ```cpp
-class WheelLoaderController : public ModuleBase<WheelLoaderController>,
+class WheelLoaderRobot : public ModuleBase<WheelLoaderRobot>,
                              public ModuleParams,
                              public px4::ScheduledWorkItem
 {
@@ -292,21 +292,21 @@ Each wheel controller provides:
 
 ### Parameter Naming Convention
 
-All parameters use `WLC_` prefix (Wheel Loader Robot):
+All parameters use `WLR_` prefix (Wheel Loader Robot):
 
 ```c
 // Control parameters
-PARAM_DEFINE_FLOAT(WLC_CTRL_RATE, 50.0f);    // Control loop rate (Hz)
-PARAM_DEFINE_FLOAT(WLC_CMD_TIMEOUT, 0.5f);   // Command timeout (s)
+PARAM_DEFINE_FLOAT(WLR_CTRL_RATE, 50.0f);    // Control loop rate (Hz)
+PARAM_DEFINE_FLOAT(WLR_CMD_TIMEOUT, 0.5f);   // Command timeout (s)
 
 // Safety parameters
-PARAM_DEFINE_FLOAT(WLC_MAX_SPEED, 5.0f);     // Maximum vehicle speed (m/s)
-PARAM_DEFINE_FLOAT(WLC_MAX_ACCEL, 2.0f);     // Maximum acceleration (m/s²)
-PARAM_DEFINE_INT32(WLC_ESTOP_EN, 1);         // Emergency stop enable
+PARAM_DEFINE_FLOAT(WLR_MAX_SPEED, 5.0f);     // Maximum vehicle speed (m/s)
+PARAM_DEFINE_FLOAT(WLR_MAX_ACCEL, 2.0f);     // Maximum acceleration (m/s²)
+PARAM_DEFINE_INT32(WLR_ESTOP_EN, 1);         // Emergency stop enable
 
 // Health monitoring
-PARAM_DEFINE_FLOAT(WLC_HEALTH_TO, 1.0f);     // Health timeout (s)
-PARAM_DEFINE_INT32(WLC_DIAG_EN, 0);          // Diagnostic mode enable
+PARAM_DEFINE_FLOAT(WLR_HEALTH_TO, 1.0f);     // Health timeout (s)
+PARAM_DEFINE_INT32(WLR_DIAG_EN, 0);          // Diagnostic mode enable
 ```
 
 ### Parameter Categories

@@ -264,19 +264,19 @@ private:
 
 	// Parameters
 	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::WLC_MAX_SPEED>) _max_speed,
-		(ParamFloat<px4::params::WLC_MAX_ACCEL>) _max_accel,
-		(ParamFloat<px4::params::WLC_CMD_TIMEOUT>) _cmd_timeout,
-		(ParamFloat<px4::params::WLC_HEALTH_TO>) _health_timeout,
-		(ParamInt<px4::params::WLC_ESTOP_EN>) _estop_enable,
-		(ParamInt<px4::params::WLC_DIAG_EN>) _diagnostic_enable,
-		(ParamInt<px4::params::WLC_FRONT_WHEEL>) _front_wheel_idx,
-		(ParamInt<px4::params::WLC_REAR_WHEEL>) _rear_wheel_idx,
-		(ParamFloat<px4::params::WLC_CTRL_RATE>) _control_rate,
-		(ParamFloat<px4::params::WLC_SAFE_ACCEL>) _safe_accel,
-		(ParamFloat<px4::params::WLC_SAFE_SPEED>) _safe_speed,
-		(ParamFloat<px4::params::WLC_MODE_TO>) _mode_transition_timeout,
-		(ParamInt<px4::params::WLC_AUTO_EN>) _auto_mode_enable,
-		(ParamFloat<px4::params::WLC_VLA_TIMEOUT>) _vla_timeout
+		(ParamFloat<px4::params::WLR_MAX_SPEED>) _max_speed,
+		(ParamFloat<px4::params::WLR_MAX_ACCEL>) _max_accel,
+		(ParamFloat<px4::params::WLR_CMD_TIMEOUT>) _cmd_timeout,
+		(ParamFloat<px4::params::WLR_HEALTH_TO>) _health_timeout,
+		(ParamInt<px4::params::WLR_ESTOP_EN>) _estop_enable,
+		(ParamInt<px4::params::WLR_DIAG_EN>) _diagnostic_enable,
+		(ParamInt<px4::params::WLR_FRONT_WHEEL>) _front_wheel_idx,
+		(ParamInt<px4::params::WLR_REAR_WHEEL>) _rear_wheel_idx,
+		(ParamFloat<px4::params::WLR_CTRL_RATE>) _control_rate,
+		(ParamFloat<px4::params::WLR_SAFE_ACCEL>) _safe_accel,
+		(ParamFloat<px4::params::WLR_SAFE_SPEED>) _safe_speed,
+		(ParamFloat<px4::params::WLR_MODE_TO>) _mode_transition_timeout,
+		(ParamInt<px4::params::WLR_AUTO_EN>) _auto_mode_enable,
+		(ParamFloat<px4::params::WLR_VLA_TIMEOUT>) _vla_timeout
 	)
 };

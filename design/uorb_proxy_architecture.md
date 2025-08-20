@@ -62,7 +62,7 @@ The Distributed uORB System enables control of a wheel loader with multiple cont
 /workspaces/wheel_loader/
 ├── src/
 │   ├── modules/
-│   │   ├── wheel_loader_control/        # Main wheel loader robot
+│   │   ├── wheel_loader_robot/         # Main wheel loader robot
 │   │   ├── traction_control/            # Traction control algorithms
 │   │   ├── uorb_uart_bridge/           # uORB UART bridge (X7+)
 │   │   └── uorb_uart_proxy/            # uORB UART proxy (NXT boards)
@@ -191,7 +191,7 @@ Sensor → orb_publish() → Proxy → UART → Bridge → uORB → orb_copy() �
 uorb_uart_bridge start
 
 # Start wheel loader robot with traction control
-wheel_loader_control start --enable-traction
+wheel_loader_robot start --enable-traction
 
 # Monitor status
 uorb_uart_bridge status

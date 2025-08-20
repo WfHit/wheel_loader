@@ -57,7 +57,7 @@ void SlipEstimator::runEKFEstimation(slip_estimation_s &slip)
 Specific parameter optimization for articulated vehicle dynamics:
 
 ```cpp
-void WheelLoaderController::configureEKF2ForArticulated()
+void WheelLoaderRobot::configureEKF2ForArticulated()
 {
     // Set EKF2 parameters optimized for articulated vehicles
     param_set(param_find("EKF2_OF_CTRL"), &(int32_t){0}); // Disable optical flow
