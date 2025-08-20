@@ -792,15 +792,15 @@ int ST3215Servo::print_status()
 	}
 
 	// Show limit sensor configuration
-	int left_limit = get_limit_sensor_function(true);
-	int right_limit = get_limit_sensor_function(false);
-	PX4_INFO("  Left Limit Function: %s", (left_limit == 255) ? "Disabled" : "Enabled");
-	PX4_INFO("  Right Limit Function: %s", (right_limit == 255) ? "Disabled" : "Enabled");
+	uint8_t left_limit = get_left_limit_id();
+	uint8_t right_limit = get_right_limit_id();
+	PX4_INFO("  Left Limit Sensor: %s", (left_limit == 255) ? "Disabled" : "Enabled");
+	PX4_INFO("  Right Limit Sensor: %s", (right_limit == 255) ? "Disabled" : "Enabled");
 	if (left_limit != 255) {
-		PX4_INFO("    Left Function ID: %d", left_limit);
+		PX4_INFO("    Left Sensor ID: %d, Active: %s", left_limit, _left_limit_active ? "YES" : "NO");
 	}
 	if (right_limit != 255) {
-		PX4_INFO("    Right Function ID: %d", right_limit);
+		PX4_INFO("    Right Sensor ID: %d, Active: %s", right_limit, _right_limit_active ? "YES" : "NO");
 	}
 
 	if (_connection_ok) {
@@ -913,8 +913,11 @@ int ST3215Servo::custom_command(int argc, char *argv[])
 			PX4_ERR("driver not running");
 			return 1;
 		}
+		// Reset all safety states (legacy and new HBridge pattern)
 		_object.load()->_safety_stop_active = false;
 		_object.load()->_active_limit_function = 255;
+		_object.load()->_left_limit_active = false;
+		_object.load()->_right_limit_active = false;
 		PX4_INFO("Safety stop reset - servo movement allowed again");
 		return 0;
 	}
@@ -1148,35 +1151,50 @@ void ST3215Servo::process_limit_sensors()
 {
 	limit_sensor_s limit_msg;
 
-	// Process all limit sensor instances
-	for (uint8_t instance = 0; instance < _limit_sensor_sub.size(); instance++) {
-		// Process all pending limit sensor messages for this instance
-		while (_limit_sensor_sub[instance].update(&limit_msg)) {
-			// Check if this limit sensor function matches our configured left or right limit
-			int left_limit_function = get_limit_sensor_function(true);
-			int right_limit_function = get_limit_sensor_function(false);
-
-			bool limit_affects_servo = ((left_limit_function != 255 && limit_msg.function == left_limit_function) ||
-						    (right_limit_function != 255 && limit_msg.function == right_limit_function));
-
-			if (limit_affects_servo) {
-				bool was_active = _safety_stop_active;
-				_safety_stop_active = limit_msg.state;
-				_active_limit_function = limit_msg.state ? limit_msg.function : 255;
-
-				// If limit just became active, emergency stop the servo (direction doesn't matter since torque is disabled)
-				if (limit_msg.state && !was_active) {
-					emergency_stop();
-					PX4_WARN("Servo emergency stop due to limit sensor function %d", limit_msg.function);
-				}
-				// If limit was released, log recovery
-				else if (!limit_msg.state && was_active) {
-					_safety_stop_active = false;
-					_active_limit_function = 255;
-					PX4_INFO("Limit sensor released, servo movement allowed again");
-				}
-			}
+	// Check left limit sensor (HBridge pattern with bounds checking)
+	uint8_t left_limit_id = get_left_limit_id();
+	if (left_limit_id != 255 && left_limit_id < _limit_sensor_sub.size() &&
+		_limit_sensor_sub[left_limit_id].updated() &&
+		_limit_sensor_sub[left_limit_id].copy(&limit_msg)) {
+		bool was_active = _left_limit_active;
+		_left_limit_active = limit_msg.state;
+		
+		// Emergency stop if limit just became active
+		if (limit_msg.state && !was_active) {
+			emergency_stop();
+			PX4_WARN("Servo emergency stop due to left limit sensor activation");
 		}
+		// Log recovery if limit was released
+		else if (!limit_msg.state && was_active) {
+			PX4_INFO("Left limit sensor released, servo movement allowed again");
+		}
+	}
+
+	// Check right limit sensor (HBridge pattern with bounds checking)
+	uint8_t right_limit_id = get_right_limit_id();
+	if (right_limit_id != 255 && right_limit_id < _limit_sensor_sub.size() &&
+		_limit_sensor_sub[right_limit_id].updated() &&
+		_limit_sensor_sub[right_limit_id].copy(&limit_msg)) {
+		bool was_active = _right_limit_active;
+		_right_limit_active = limit_msg.state;
+		
+		// Emergency stop if limit just became active
+		if (limit_msg.state && !was_active) {
+			emergency_stop();
+			PX4_WARN("Servo emergency stop due to right limit sensor activation");
+		}
+		// Log recovery if limit was released
+		else if (!limit_msg.state && was_active) {
+			PX4_INFO("Right limit sensor released, servo movement allowed again");
+		}
+	}
+	
+	// Update legacy safety state for backward compatibility
+	_safety_stop_active = _left_limit_active || _right_limit_active;
+	if (_safety_stop_active) {
+		_active_limit_function = _left_limit_active ? get_left_limit_id() : get_right_limit_id();
+	} else {
+		_active_limit_function = 255;
 	}
 }
 
@@ -1192,18 +1210,21 @@ bool ST3215Servo::check_servo_safety(float goal_position)
 		return false;
 	}
 
-	// Check direction-specific limit sensors
+	// Check direction-specific limit sensors (HBridge pattern)
 	// Determine rotation direction based on current vs goal position
 	float position_delta = goal_position - _current_position;
 
 	if (fabsf(position_delta) > 0.01f) {  // Only check if there's significant movement
 		bool rotating_left = position_delta > 0;  // Positive delta = left rotation
-		int limit_function = get_limit_sensor_function(rotating_left);
-
-		// If this direction has a configured limit sensor, check if it's specifically active
-		if (limit_function != 255 && _safety_stop_active && _active_limit_function == limit_function) {
-			PX4_WARN("Rotation blocked by %s limit sensor (function %d)",
-				 rotating_left ? "left" : "right", limit_function);
+		
+		// Check the specific limit sensor for this direction
+		if (rotating_left && get_left_limit_id() != 255 && get_left_limit_id() < _limit_sensor_sub.size() && _left_limit_active) {
+			PX4_WARN("Rotation blocked by left limit sensor (ID %d)", get_left_limit_id());
+			return false;
+		}
+		
+		if (!rotating_left && get_right_limit_id() != 255 && get_right_limit_id() < _limit_sensor_sub.size() && _right_limit_active) {
+			PX4_WARN("Rotation blocked by right limit sensor (ID %d)", get_right_limit_id());
 			return false;
 		}
 	}
