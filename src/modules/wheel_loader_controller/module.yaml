@@ -113,7 +113,7 @@ parameters:
           min: 0
           max: 15
 
-        WLC_MODE_TRANS_TO:
+        WLC_MODE_TO:
           description:
             short: Mode transition timeout
             long: Maximum time allowed for transitioning between operation modes.
@@ -133,10 +133,10 @@ parameters:
           min: 0
           max: 1
 
-        WLC_AI_TIMEOUT:
+        WLC_VLA_TIMEOUT:
           description:
-            short: AI communication timeout
-            long: Maximum time without receiving AI output before reverting to manual mode.
+            short: VLA communication timeout
+            long: Maximum time without receiving VLA output before reverting to manual mode.
           type: float
           default: 1.0
           min: 0.1

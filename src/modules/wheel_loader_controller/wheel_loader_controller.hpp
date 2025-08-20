@@ -102,7 +102,7 @@ private:
 		IDLE = 1,
 		MANUAL_CONTROL = 2,
 		TASK_EXECUTION = 3,
-		AUTO_OPERATION = 4,		// AI autonomous control
+		AUTO_OPERATION = 4,		// VLA autonomous control
 		MODE_TRANSITION = 5,	// Transitioning between operation modes
 		EMERGENCY_STOP = 6,
 		ERROR = 7
@@ -113,7 +113,7 @@ private:
 		NONE = 0,
 		MANUAL = 1,
 		TASK_EXECUTION = 2,
-		AI = 3,					// AI autonomous commands
+		VLA = 3,				// VLA autonomous commands
 		EXTERNAL = 4
 	};
 
@@ -129,7 +129,7 @@ private:
 	// Operation modes for dual-mode control
 	enum class OperationMode : uint8_t {
 		MANUAL = 0,				// Manual RC/joystick control
-		AUTO = 1,				// Autonomous AI control
+		AUTO = 1,				// Autonomous VLA control
 		TRANSITION = 2			// Transitioning between modes
 	};
 
@@ -225,7 +225,7 @@ private:
 	wheel_loader_command_s _manual_command{};
 	wheel_loader_command_s _task_command{};
 	wheel_loader_command_s _external_command{};
-	wheel_loader_command_s _ai_command{};
+	wheel_loader_command_s _vla_command{};
 
 	// Operation mode management
 	OperationMode _operation_mode{OperationMode::MANUAL};
@@ -275,8 +275,8 @@ private:
 		(ParamFloat<px4::params::WLC_CTRL_RATE>) _control_rate,
 		(ParamFloat<px4::params::WLC_SAFE_ACCEL>) _safe_accel,
 		(ParamFloat<px4::params::WLC_SAFE_SPEED>) _safe_speed,
-		(ParamFloat<px4::params::WLC_MODE_TRANS_TO>) _mode_transition_timeout,
+		(ParamFloat<px4::params::WLC_MODE_TO>) _mode_transition_timeout,
 		(ParamInt<px4::params::WLC_AUTO_EN>) _auto_mode_enable,
-		(ParamFloat<px4::params::WLC_AI_TIMEOUT>) _ai_timeout
+		(ParamFloat<px4::params::WLC_VLA_TIMEOUT>) _vla_timeout
 	)
 };
