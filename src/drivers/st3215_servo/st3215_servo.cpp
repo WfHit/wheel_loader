@@ -1158,7 +1158,7 @@ void ST3215Servo::process_limit_sensors()
 		_limit_sensor_sub[left_limit_id].copy(&limit_msg)) {
 		bool was_active = _left_limit_active;
 		_left_limit_active = limit_msg.state;
-		
+
 		// Emergency stop if limit just became active
 		if (limit_msg.state && !was_active) {
 			emergency_stop();
@@ -1177,7 +1177,7 @@ void ST3215Servo::process_limit_sensors()
 		_limit_sensor_sub[right_limit_id].copy(&limit_msg)) {
 		bool was_active = _right_limit_active;
 		_right_limit_active = limit_msg.state;
-		
+
 		// Emergency stop if limit just became active
 		if (limit_msg.state && !was_active) {
 			emergency_stop();
@@ -1188,7 +1188,7 @@ void ST3215Servo::process_limit_sensors()
 			PX4_INFO("Right limit sensor released, servo movement allowed again");
 		}
 	}
-	
+
 	// Update legacy safety state for backward compatibility
 	_safety_stop_active = _left_limit_active || _right_limit_active;
 	if (_safety_stop_active) {
@@ -1216,13 +1216,13 @@ bool ST3215Servo::check_servo_safety(float goal_position)
 
 	if (fabsf(position_delta) > 0.01f) {  // Only check if there's significant movement
 		bool rotating_left = position_delta > 0;  // Positive delta = left rotation
-		
+
 		// Check the specific limit sensor for this direction
 		if (rotating_left && get_left_limit_id() != 255 && get_left_limit_id() < _limit_sensor_sub.size() && _left_limit_active) {
 			PX4_WARN("Rotation blocked by left limit sensor (ID %d)", get_left_limit_id());
 			return false;
 		}
-		
+
 		if (!rotating_left && get_right_limit_id() != 255 && get_right_limit_id() < _limit_sensor_sub.size() && _right_limit_active) {
 			PX4_WARN("Rotation blocked by right limit sensor (ID %d)", get_right_limit_id());
 			return false;
@@ -1245,15 +1245,6 @@ void ST3215Servo::emergency_stop()
 			PX4_ERR("Failed to emergency stop servo %d", servo_id);
 		}
 	}
-}
-
-int ST3215Servo::get_limit_sensor_function(bool left_rotation) const
-{
-	// Return the limit sensor function ID for the given rotation direction
-	// 255 means disabled
-	// left_rotation = true: positive position delta (left rotation)
-	// left_rotation = false: negative position delta (right rotation)
-	return left_rotation ? _param_left_limit.get() : _param_right_limit.get();
 }
 
 extern "C" __EXPORT int st3215_servo_main(int argc, char *argv[])

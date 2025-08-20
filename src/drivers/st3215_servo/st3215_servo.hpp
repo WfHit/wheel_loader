@@ -115,8 +115,7 @@ private:
 	void process_limit_sensors();
 	bool check_servo_safety(float goal_position);
 	void emergency_stop();
-	int get_limit_sensor_function(bool left_rotation) const;
-	
+
 	// Limit sensor utilities (HBridge pattern)
 	uint8_t get_left_limit_id() const { return static_cast<uint8_t>(_param_left_limit.get()); }
 	uint8_t get_right_limit_id() const { return static_cast<uint8_t>(_param_right_limit.get()); }
@@ -149,8 +148,8 @@ private:
 	// Safety state
 	bool _safety_stop_active{false};   // Emergency stop due to limit sensor (legacy)
 	uint8_t _active_limit_function{255}; // Which limit function is active (255 = none, legacy)
-	
-	// HBridge pattern limit sensor states  
+
+	// HBridge pattern limit sensor states
 	bool _left_limit_active{false};    // Left rotation limit sensor state
 	bool _right_limit_active{false};   // Right rotation limit sensor state
 

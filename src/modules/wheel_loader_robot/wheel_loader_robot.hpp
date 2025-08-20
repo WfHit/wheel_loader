@@ -57,18 +57,13 @@
 #include <uORB/topics/bucket_status.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/slip_estimation.h>
 #include <uORB/topics/steering_command.h>
-#include <uORB/topics/steering_status.h>
-#include <uORB/topics/task_execution_command.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/wheel_loader_command.h>
 #include <uORB/topics/wheel_loader_status.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
-#include <uORB/topics/wheel_status.h>
 #include <uORB/topics/vla_command.h>
 #include <uORB/topics/operation_mode_command.h>
-#include <uORB/topics/operation_mode_status.h>
 
 using namespace time_literals;
 
@@ -78,6 +73,11 @@ using namespace time_literals;
  * Central coordination and control module for wheel loader operations.
  * Manages command arbitration, subsystem coordination, state management,
  * and safety oversight for the complete wheel loader system.
+ *
+ * This module acts as the high-level coordinator and sends commands to:
+ * - Chassis control module (for wheel/steering control)
+ * - Boom control module
+ * - Bucket control module
  */
 class WheelLoaderRobot : public ModuleBase<WheelLoaderRobot>,
 						 public ModuleParams,
@@ -101,20 +101,18 @@ private:
 		INITIALIZING = 0,
 		IDLE = 1,
 		MANUAL_CONTROL = 2,
-		TASK_EXECUTION = 3,
-		AUTO_OPERATION = 4,		// VLA autonomous control
-		MODE_TRANSITION = 5,	// Transitioning between operation modes
-		EMERGENCY_STOP = 6,
-		ERROR = 7
+		AUTO_OPERATION = 3,		// VLA autonomous control
+		MODE_TRANSITION = 4,	// Transitioning between operation modes
+		EMERGENCY_STOP = 5,
+		ERROR = 6
 	};
 
 	// Command source identification
 	enum class CommandSource : uint8_t {
 		NONE = 0,
 		MANUAL = 1,
-		TASK_EXECUTION = 2,
-		VLA = 3,				// VLA autonomous commands
-		EXTERNAL = 4
+		VLA = 2,				// VLA autonomous commands
+		EXTERNAL = 3
 	};
 
 	// System health states
@@ -141,12 +139,9 @@ private:
 	static constexpr float MAX_EMERGENCY_STOP_TIME_S = 0.1f;
 
 	// Core processing functions
-	void processWheelLoaderCommand();
-	void processTaskExecution();
 	void processVehicleCommand();
 	void processVlaCommand();				// Process VLA autonomous commands
 	void processOperationModeCommand();	// Process mode switching commands
-	void processSlipEstimation();
 	void updateControlState();
 	void publishCommands();
 	void publishStatus();
@@ -187,9 +182,7 @@ private:
 	void updateParams();
 
 	// uORB subscriptions
-	uORB::Subscription _wheel_loader_command_sub{ORB_ID(wheel_loader_command)};
 	uORB::Subscription _manual_control_setpoint_sub{ORB_ID(manual_control_setpoint)};
-	uORB::Subscription _task_execution_command_sub{ORB_ID(task_execution_command)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _vla_command_sub{ORB_ID(vla_command)};
@@ -198,13 +191,9 @@ private:
 	// Subsystem status subscriptions
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
-	uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
-	uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};
-	uORB::SubscriptionMultiArray<wheel_status_s, 2> _wheel_status_subs{ORB_ID::wheel_status};
 
 	// uORB publications
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_pub{ORB_ID(wheel_loader_status)};
-	uORB::Publication<operation_mode_status_s> _operation_mode_status_pub{ORB_ID(operation_mode_status)};
 
 	// Subsystem command publications
 	uORB::PublicationMulti<wheel_speeds_setpoint_s> _front_wheel_setpoint_pub{ORB_ID(wheel_speeds_setpoint)};
@@ -220,11 +209,9 @@ private:
 	hrt_abstime _state_entered_time{0};
 	hrt_abstime _last_command_time{0};
 
-	// Command storage
+	// Current active command
 	wheel_loader_command_s _current_command{};
 	wheel_loader_command_s _manual_command{};
-	wheel_loader_command_s _task_command{};
-	wheel_loader_command_s _external_command{};
 	wheel_loader_command_s _vla_command{};
 
 	// Operation mode management
@@ -243,20 +230,8 @@ private:
 	// Subsystem health tracking
 	HealthState _boom_health{HealthState::UNKNOWN};
 	HealthState _bucket_health{HealthState::UNKNOWN};
-	HealthState _steering_health{HealthState::UNKNOWN};
-	HealthState _front_wheel_health{HealthState::UNKNOWN};
-	HealthState _rear_wheel_health{HealthState::UNKNOWN};
 	hrt_abstime _last_boom_status_time{0};
 	hrt_abstime _last_bucket_status_time{0};
-	hrt_abstime _last_steering_status_time{0};
-	hrt_abstime _last_wheel_status_time[2]{0, 0};
-
-	// Slip detection and traction control
-	slip_estimation_s _current_slip_data{};
-	bool _slip_detected{false};
-	bool _critical_slip{false};
-	hrt_abstime _last_slip_estimation_time{0};
-	float _traction_reduction_factor{1.0f};
 
 	// Performance counters
 	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
@@ -270,8 +245,6 @@ private:
 		(ParamFloat<px4::params::WLR_HEALTH_TO>) _health_timeout,
 		(ParamInt<px4::params::WLR_ESTOP_EN>) _estop_enable,
 		(ParamInt<px4::params::WLR_DIAG_EN>) _diagnostic_enable,
-		(ParamInt<px4::params::WLR_FRONT_WHEEL>) _front_wheel_idx,
-		(ParamInt<px4::params::WLR_REAR_WHEEL>) _rear_wheel_idx,
 		(ParamFloat<px4::params::WLR_CTRL_RATE>) _control_rate,
 		(ParamFloat<px4::params::WLR_SAFE_ACCEL>) _safe_accel,
 		(ParamFloat<px4::params::WLR_SAFE_SPEED>) _safe_speed,
