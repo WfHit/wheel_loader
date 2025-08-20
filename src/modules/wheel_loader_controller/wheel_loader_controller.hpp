@@ -66,8 +66,9 @@
 #include <uORB/topics/wheel_loader_status.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/wheel_status.h>
-#include <uORB/topics/smol_vla_output.h>
+#include <uORB/topics/ai_output.h>
 #include <uORB/topics/operation_mode_command.h>
+#include <uORB/topics/operation_mode_status.h>
 
 using namespace time_literals;
 
@@ -101,7 +102,7 @@ private:
 		IDLE = 1,
 		MANUAL_CONTROL = 2,
 		TASK_EXECUTION = 3,
-		AUTO_OPERATION = 4,		// SmolVLA autonomous control
+		AUTO_OPERATION = 4,		// AI autonomous control
 		MODE_TRANSITION = 5,	// Transitioning between operation modes
 		EMERGENCY_STOP = 6,
 		ERROR = 7
@@ -112,7 +113,7 @@ private:
 		NONE = 0,
 		MANUAL = 1,
 		TASK_EXECUTION = 2,
-		SMOL_VLA = 3,			// SmolVLA autonomous commands
+		AI = 3,					// AI autonomous commands
 		EXTERNAL = 4
 	};
 
@@ -128,7 +129,7 @@ private:
 	// Operation modes for dual-mode control
 	enum class OperationMode : uint8_t {
 		MANUAL = 0,				// Manual RC/joystick control
-		AUTO = 1,				// Autonomous SmolVLA control
+		AUTO = 1,				// Autonomous AI control
 		TRANSITION = 2			// Transitioning between modes
 	};
 
@@ -143,7 +144,7 @@ private:
 	void processWheelLoaderCommand();
 	void processTaskExecution();
 	void processVehicleCommand();
-	void processSmolVlaOutput();		// Process SmolVLA autonomous commands
+	void processAiOutput();				// Process AI autonomous commands
 	void processOperationModeCommand();	// Process mode switching commands
 	void processSlipEstimation();
 	void updateControlState();
@@ -155,13 +156,13 @@ private:
 	bool validateCommand(const wheel_loader_command_s &cmd);
 	void applyCommandLimits(wheel_loader_command_s &cmd);
 	void generateSubsystemCommands(const wheel_loader_command_s &cmd);
-	wheel_loader_command_s convertSmolVlaToCommand(const smol_vla_output_s &smol_output);
+	wheel_loader_command_s convertAiToCommand(const ai_output_s &ai_output);
 
 	// Auto load/dump controller functions
-	void processAutoLoadSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output);
-	void processAutoDumpSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output);
-	bool isLoadSequenceComplete(const smol_vla_output_s &smol_output);
-	bool isDumpSequenceComplete(const smol_vla_output_s &smol_output);
+	void processAutoLoadSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output);
+	void processAutoDumpSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output);
+	bool isLoadSequenceComplete(const ai_output_s &ai_output);
+	bool isDumpSequenceComplete(const ai_output_s &ai_output);
 
 	// Mode management functions
 	bool requestModeTransition(OperationMode new_mode);
@@ -191,7 +192,7 @@ private:
 	uORB::Subscription _task_execution_command_sub{ORB_ID(task_execution_command)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _smol_vla_output_sub{ORB_ID(smol_vla_output)};
+	uORB::Subscription _ai_output_sub{ORB_ID(ai_output)};
 	uORB::Subscription _operation_mode_command_sub{ORB_ID(operation_mode_command)};
 
 	// Subsystem status subscriptions
@@ -203,7 +204,7 @@ private:
 
 	// uORB publications
 	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_pub{ORB_ID(wheel_loader_status)};
-	uORB::Publication<operation_mode_command_s> _operation_mode_status_pub{ORB_ID(operation_mode_command)};
+	uORB::Publication<operation_mode_status_s> _operation_mode_status_pub{ORB_ID(operation_mode_status)};
 
 	// Subsystem command publications
 	uORB::PublicationMulti<wheel_speeds_setpoint_s> _front_wheel_setpoint_pub{ORB_ID(wheel_speeds_setpoint)};
@@ -224,15 +225,15 @@ private:
 	wheel_loader_command_s _manual_command{};
 	wheel_loader_command_s _task_command{};
 	wheel_loader_command_s _external_command{};
-	wheel_loader_command_s _smol_vla_command{};
+	wheel_loader_command_s _ai_command{};
 
 	// Operation mode management
 	OperationMode _operation_mode{OperationMode::MANUAL};
 	OperationMode _requested_mode{OperationMode::MANUAL};
 	bool _mode_transition_requested{false};
 	hrt_abstime _mode_transition_start_time{0};
-	hrt_abstime _last_smol_vla_output_time{0};
-	smol_vla_output_s _current_smol_vla_output{};
+	hrt_abstime _last_ai_output_time{0};
+	ai_output_s _current_ai_output{};
 
 	// Safety state
 	bool _emergency_stop_active{false};
@@ -276,6 +277,6 @@ private:
 		(ParamFloat<px4::params::WLC_SAFE_SPEED>) _safe_speed,
 		(ParamFloat<px4::params::WLC_MODE_TRANS_TO>) _mode_transition_timeout,
 		(ParamInt<px4::params::WLC_AUTO_EN>) _auto_mode_enable,
-		(ParamFloat<px4::params::WLC_SMOL_TIMEOUT>) _smol_vla_timeout
+		(ParamFloat<px4::params::WLC_AI_TIMEOUT>) _ai_timeout
 	)
 };
