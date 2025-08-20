@@ -96,6 +96,8 @@ void WheelLoaderController::Run()
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
+	processSmolVlaOutput();
+	processOperationModeCommand();
 	processSlipEstimation();
 
 	// Update subsystem health monitoring
@@ -246,6 +248,102 @@ void WheelLoaderController::processSlipEstimation()
 	}
 }
 
+void WheelLoaderController::processSmolVlaOutput()
+{
+	if (_smol_vla_output_sub.updated()) {
+		smol_vla_output_s smol_output;
+
+		if (_smol_vla_output_sub.copy(&smol_output)) {
+			_current_smol_vla_output = smol_output;
+			_last_smol_vla_output_time = hrt_absolute_time();
+
+			// Only process if in auto mode or transitioning to auto
+			if (_operation_mode == OperationMode::AUTO || 
+				(_operation_mode == OperationMode::TRANSITION && _requested_mode == OperationMode::AUTO)) {
+				
+				// Validate SmolVLA output
+				if (smol_output.valid_output && smol_output.confidence_score > 0.5f) {
+					// Convert SmolVLA output to wheel loader command
+					_smol_vla_command = convertSmolVlaToCommand(smol_output);
+					_smol_vla_command.timestamp = smol_output.timestamp;
+					_smol_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL; // Use existing source type
+					
+					if (_diagnostic_enable.get()) {
+						PX4_INFO("SmolVLA command: pos(%.2f,%.2f,%.2f) conf=%.2f", 
+							(double)smol_output.bucket_position_x,
+							(double)smol_output.bucket_position_y, 
+							(double)smol_output.bucket_position_z,
+							(double)smol_output.confidence_score);
+					}
+				} else {
+					if (_diagnostic_enable.get()) {
+						PX4_WARN("Invalid SmolVLA output: valid=%d conf=%.2f", 
+							smol_output.valid_output, (double)smol_output.confidence_score);
+					}
+				}
+
+				// Handle emergency stop from SmolVLA
+				if (smol_output.emergency_stop) {
+					PX4_WARN("Emergency stop commanded by SmolVLA");
+					_emergency_stop_active = true;
+				}
+			}
+		}
+	}
+
+	// Check for SmolVLA communication timeout
+	if (_operation_mode == OperationMode::AUTO) {
+		hrt_abstime now = hrt_absolute_time();
+		if (now - _last_smol_vla_output_time > _smol_vla_timeout.get() * 1_s) {
+			PX4_WARN("SmolVLA communication timeout - switching to manual mode");
+			requestModeTransition(OperationMode::MANUAL);
+		}
+	}
+}
+
+void WheelLoaderController::processOperationModeCommand()
+{
+	if (_operation_mode_command_sub.updated()) {
+		operation_mode_command_s mode_cmd;
+
+		if (_operation_mode_command_sub.copy(&mode_cmd)) {
+			if (mode_cmd.mode_switch_request) {
+				OperationMode requested_mode = static_cast<OperationMode>(mode_cmd.operation_mode);
+				
+				if (_diagnostic_enable.get()) {
+					PX4_INFO("Mode switch requested: %d -> %d", 
+						static_cast<int>(_operation_mode), static_cast<int>(requested_mode));
+				}
+
+				// Validate and request mode transition
+				if (isValidModeTransition(_operation_mode, requested_mode)) {
+					if (requestModeTransition(requested_mode)) {
+						PX4_INFO("Mode transition initiated");
+					} else {
+						PX4_WARN("Mode transition request denied by safety system");
+					}
+				} else {
+					PX4_WARN("Invalid mode transition requested");
+				}
+			}
+
+			// Handle manual override activation
+			if (mode_cmd.manual_override_active && _operation_mode == OperationMode::AUTO) {
+				PX4_INFO("Manual override activated");
+				enforceManualOverride();
+			}
+
+			// Handle emergency mode switch
+			if (mode_cmd.emergency_mode_switch) {
+				PX4_WARN("Emergency mode switch to manual");
+				_operation_mode = OperationMode::MANUAL;
+				_requested_mode = OperationMode::MANUAL;
+				_mode_transition_requested = false;
+			}
+		}
+	}
+}
+
 WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandSource()
 {
 	hrt_abstime now = hrt_absolute_time();
@@ -259,6 +357,11 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 	// Manual control has priority over autonomous
 	if ((now - _manual_command.timestamp) < timeout_us) {
 		return CommandSource::MANUAL;
+	}
+
+	// SmolVLA autonomous control (only when in AUTO mode)
+	if (_operation_mode == OperationMode::AUTO && (now - _smol_vla_command.timestamp) < timeout_us) {
+		return CommandSource::SMOL_VLA;
 	}
 
 	// Task execution
@@ -418,6 +521,9 @@ void WheelLoaderController::updateControlState()
 	ControlState new_state = _control_state;
 	CommandSource active_source = selectActiveCommandSource();
 
+	// Handle mode transitions first
+	handleModeTransition();
+
 	switch (_control_state) {
 	case ControlState::INITIALIZING:
 		if (isSystemHealthy()) {
@@ -433,6 +539,9 @@ void WheelLoaderController::updateControlState()
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_CONTROL;
 
+		} else if (active_source == CommandSource::SMOL_VLA) {
+			new_state = ControlState::AUTO_OPERATION;
+
 		} else if (active_source == CommandSource::TASK_EXECUTION) {
 			new_state = ControlState::TASK_EXECUTION;
 		}
@@ -443,8 +552,41 @@ void WheelLoaderController::updateControlState()
 		if (_emergency_stop_active) {
 			new_state = ControlState::EMERGENCY_STOP;
 
+		} else if (active_source == CommandSource::SMOL_VLA && _operation_mode == OperationMode::AUTO) {
+			new_state = ControlState::AUTO_OPERATION;
+
 		} else if (active_source != CommandSource::MANUAL) {
 			new_state = ControlState::IDLE;
+		}
+
+		break;
+
+	case ControlState::AUTO_OPERATION:
+		if (_emergency_stop_active) {
+			new_state = ControlState::EMERGENCY_STOP;
+
+		} else if (active_source == CommandSource::MANUAL || _operation_mode == OperationMode::MANUAL) {
+			new_state = ControlState::MANUAL_CONTROL;
+
+		} else if (active_source != CommandSource::SMOL_VLA) {
+			new_state = ControlState::IDLE;
+		}
+
+		break;
+
+	case ControlState::MODE_TRANSITION:
+		if (_emergency_stop_active) {
+			new_state = ControlState::EMERGENCY_STOP;
+
+		} else if (!_mode_transition_requested) {
+			// Transition complete, go to appropriate state based on final mode
+			if (_operation_mode == OperationMode::MANUAL) {
+				new_state = (active_source == CommandSource::MANUAL) ? ControlState::MANUAL_CONTROL : ControlState::IDLE;
+			} else if (_operation_mode == OperationMode::AUTO) {
+				new_state = (active_source == CommandSource::SMOL_VLA) ? ControlState::AUTO_OPERATION : ControlState::IDLE;
+			} else {
+				new_state = ControlState::IDLE;
+			}
 		}
 
 		break;
@@ -456,6 +598,9 @@ void WheelLoaderController::updateControlState()
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_CONTROL;
 
+		} else if (active_source == CommandSource::SMOL_VLA && _operation_mode == OperationMode::AUTO) {
+			new_state = ControlState::AUTO_OPERATION;
+
 		} else if (active_source == CommandSource::NONE) {
 			new_state = ControlState::IDLE;
 		}
@@ -465,6 +610,17 @@ void WheelLoaderController::updateControlState()
 	case ControlState::EMERGENCY_STOP:
 		if (!_emergency_stop_active && isSystemHealthy()) {
 			new_state = ControlState::IDLE;
+		}
+
+		break;
+
+	case ControlState::ERROR:
+		if (isSystemHealthy()) {
+			new_state = ControlState::IDLE;
+		}
+
+		break;
+	}
 		}
 
 		break;
@@ -529,19 +685,30 @@ bool WheelLoaderController::isValidStateTransition(ControlState from, ControlSta
 		return true;
 	}
 
+	// Mode transition can be entered from any operational state
+	if (to == ControlState::MODE_TRANSITION) {
+		return from != ControlState::INITIALIZING && from != ControlState::EMERGENCY_STOP && from != ControlState::ERROR;
+	}
+
 	// Other transitions depend on current state
 	switch (from) {
 	case ControlState::INITIALIZING:
 		return to == ControlState::IDLE;
 
 	case ControlState::IDLE:
-		return to == ControlState::MANUAL_CONTROL || to == ControlState::TASK_EXECUTION;
+		return to == ControlState::MANUAL_CONTROL || to == ControlState::TASK_EXECUTION || to == ControlState::AUTO_OPERATION;
 
 	case ControlState::MANUAL_CONTROL:
-		return to == ControlState::TASK_EXECUTION;
+		return to == ControlState::TASK_EXECUTION || to == ControlState::AUTO_OPERATION || to == ControlState::MODE_TRANSITION;
+
+	case ControlState::AUTO_OPERATION:
+		return to == ControlState::MANUAL_CONTROL || to == ControlState::TASK_EXECUTION || to == ControlState::MODE_TRANSITION;
+
+	case ControlState::MODE_TRANSITION:
+		return to == ControlState::MANUAL_CONTROL || to == ControlState::AUTO_OPERATION;
 
 	case ControlState::TASK_EXECUTION:
-		return to == ControlState::MANUAL_CONTROL;
+		return to == ControlState::MANUAL_CONTROL || to == ControlState::AUTO_OPERATION;
 
 	default:
 		return false;
@@ -570,6 +737,14 @@ void WheelLoaderController::publishCommands()
 	case CommandSource::MANUAL:
 		if (_control_state == ControlState::MANUAL_CONTROL) {
 			active_cmd = _manual_command;
+			has_valid_command = true;
+		}
+
+		break;
+
+	case CommandSource::SMOL_VLA:
+		if (_control_state == ControlState::AUTO_OPERATION) {
+			active_cmd = _smol_vla_command;
 			has_valid_command = true;
 		}
 
@@ -872,6 +1047,173 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 	_task_id = -1;
 
 	return PX4_ERROR;
+}
+
+wheel_loader_command_s WheelLoaderController::convertSmolVlaToCommand(const smol_vla_output_s &smol_output)
+{
+	wheel_loader_command_s cmd{};
+	cmd.timestamp = smol_output.timestamp;
+	cmd.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
+
+	// Convert bucket position to boom and bucket commands
+	// This is a simplified conversion - in practice, inverse kinematics would be used
+	float bucket_height = smol_output.bucket_position_z;
+	float bucket_reach = sqrtf(smol_output.bucket_position_x * smol_output.bucket_position_x + 
+							   smol_output.bucket_position_y * smol_output.bucket_position_y);
+	
+	// Map bucket position to boom lift and bucket angle
+	cmd.boom_lift_cmd = math::constrain(bucket_height / 3.0f, -0.5f, 1.5f); // Rough mapping
+	cmd.bucket_angle_cmd = smol_output.bucket_orientation_pitch;
+	cmd.boom_extend_cmd = math::constrain(bucket_reach / 5.0f, 0.0f, 1.0f); // Rough mapping
+
+	// Convert vehicle position to movement commands
+	// For now, use simple velocity commands based on position error
+	cmd.front_left_wheel_speed = 0.0f;  // Would calculate based on position error
+	cmd.front_right_wheel_speed = 0.0f;
+	cmd.rear_left_wheel_speed = 0.0f;
+	cmd.rear_right_wheel_speed = 0.0f;
+	
+	// Map vehicle heading to steering
+	cmd.steering_angle_cmd = math::constrain(smol_output.vehicle_heading, -0.5f, 0.5f);
+
+	// Set operation modes based on SmolVLA operation mode
+	switch (smol_output.operation_mode) {
+		case smol_vla_output_s::OPERATION_LOAD:
+		case smol_vla_output_s::OPERATION_DUMP:
+			cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_AUTO;
+			break;
+		default:
+			cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_COORDINATED;
+			break;
+	}
+
+	cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_VELOCITY;
+	cmd.emergency_stop = smol_output.emergency_stop;
+	cmd.enable_hydraulics = !smol_output.emergency_stop;
+	cmd.enable_drivetrain = !smol_output.emergency_stop;
+	cmd.max_vehicle_speed = _safe_speed.get();
+
+	return cmd;
+}
+
+bool WheelLoaderController::requestModeTransition(OperationMode new_mode)
+{
+	if (!isValidModeTransition(_operation_mode, new_mode)) {
+		return false;
+	}
+
+	// Safety checks for auto mode
+	if (new_mode == OperationMode::AUTO) {
+		if (!_auto_mode_enable.get()) {
+			PX4_WARN("Autonomous mode disabled by parameter");
+			return false;
+		}
+
+		if (!isSystemReadyForAutoMode()) {
+			PX4_WARN("System not ready for autonomous mode");
+			return false;
+		}
+	}
+
+	_requested_mode = new_mode;
+	_mode_transition_requested = true;
+	_mode_transition_start_time = hrt_absolute_time();
+	_operation_mode = OperationMode::TRANSITION;
+
+	return true;
+}
+
+bool WheelLoaderController::isValidModeTransition(OperationMode from, OperationMode to)
+{
+	// Can always transition to manual for safety
+	if (to == OperationMode::MANUAL) {
+		return true;
+	}
+
+	// Can only transition to auto from manual or idle states
+	if (to == OperationMode::AUTO) {
+		return from == OperationMode::MANUAL || from == OperationMode::TRANSITION;
+	}
+
+	// Transition state can be entered from any mode
+	if (to == OperationMode::TRANSITION) {
+		return true;
+	}
+
+	return false;
+}
+
+void WheelLoaderController::handleModeTransition()
+{
+	if (!_mode_transition_requested) {
+		return;
+	}
+
+	hrt_abstime now = hrt_absolute_time();
+	float transition_time = (now - _mode_transition_start_time) / 1e6f;
+
+	// Check for transition timeout
+	if (transition_time > _mode_transition_timeout.get()) {
+		PX4_WARN("Mode transition timeout - reverting to manual");
+		_operation_mode = OperationMode::MANUAL;
+		_requested_mode = OperationMode::MANUAL;
+		_mode_transition_requested = false;
+		return;
+	}
+
+	// Complete transition based on target mode
+	switch (_requested_mode) {
+		case OperationMode::MANUAL:
+			_operation_mode = OperationMode::MANUAL;
+			_mode_transition_requested = false;
+			PX4_INFO("Transition to manual mode complete");
+			break;
+
+		case OperationMode::AUTO:
+			if (isSystemReadyForAutoMode()) {
+				_operation_mode = OperationMode::AUTO;
+				_mode_transition_requested = false;
+				PX4_INFO("Transition to auto mode complete");
+			}
+			break;
+
+		default:
+			// Invalid target mode
+			_operation_mode = OperationMode::MANUAL;
+			_mode_transition_requested = false;
+			break;
+	}
+}
+
+bool WheelLoaderController::isSystemReadyForAutoMode()
+{
+	// Check system health
+	if (!isSystemHealthy()) {
+		return false;
+	}
+
+	// Check for recent SmolVLA communication
+	hrt_abstime now = hrt_absolute_time();
+	if (now - _last_smol_vla_output_time > _smol_vla_timeout.get() * 1_s) {
+		return false;
+	}
+
+	// Check that SmolVLA output is valid
+	if (!_current_smol_vla_output.valid_output || _current_smol_vla_output.confidence_score < 0.5f) {
+		return false;
+	}
+
+	return true;
+}
+
+void WheelLoaderController::enforceManualOverride()
+{
+	// Force switch to manual mode
+	_operation_mode = OperationMode::MANUAL;
+	_requested_mode = OperationMode::MANUAL;
+	_mode_transition_requested = false;
+	
+	PX4_INFO("Manual override enforced");
 }
 
 int WheelLoaderController::print_usage(const char *reason)

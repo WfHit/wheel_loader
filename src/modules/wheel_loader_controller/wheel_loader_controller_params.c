@@ -167,3 +167,39 @@ PARAM_DEFINE_INT32(WLC_FRONT_WHEEL, 0);
  * @group Wheel Loader Controller
  */
 PARAM_DEFINE_INT32(WLC_REAR_WHEEL, 1);
+
+/**
+ * Mode transition timeout
+ *
+ * Maximum time allowed for transitioning between operation modes.
+ *
+ * @unit s
+ * @min 0.5
+ * @max 10.0
+ * @decimal 1
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_FLOAT(WLC_MODE_TRANS_TO, 2.0f);
+
+/**
+ * Autonomous mode enable
+ *
+ * Enable autonomous SmolVLA operation mode.
+ *
+ * @boolean
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_INT32(WLC_AUTO_EN, 1);
+
+/**
+ * SmolVLA communication timeout
+ *
+ * Maximum time without receiving SmolVLA output before reverting to manual mode.
+ *
+ * @unit s
+ * @min 0.1
+ * @max 5.0
+ * @decimal 1
+ * @group Wheel Loader Controller
+ */
+PARAM_DEFINE_FLOAT(WLC_SMOL_TIMEOUT, 1.0f);

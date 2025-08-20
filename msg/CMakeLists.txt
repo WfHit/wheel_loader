@@ -267,6 +267,8 @@ set(msg_files
 	WheelLoaderCommand.msg
 	WheelLoaderSetpoint.msg
 	WheelLoaderStatus.msg
+	SmolVlaOutput.msg
+	OperationModeCommand.msg
 	YawEstimatorStatus.msg
 	versioned/ActuatorMotors.msg
 	versioned/ActuatorServos.msg
