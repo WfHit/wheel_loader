@@ -14,7 +14,6 @@ This implementation extends the existing wheel loader controller to support dual
 #### Message Definitions
 - `VlaCommand.msg`: Interface for VLA bucket position and pose outputs
 - `OperationModeCommand.msg`: Mode switching control between manual and auto
-- `OperationModeStatus.msg`: Status feedback for operation mode
 
 #### Extended State Machine
 - `AUTO_OPERATION`: VLA autonomous control state
