@@ -42,4 +42,6 @@ px4_add_module(
 	DEPENDS
 		mathlib
 		perf
+	MODULE_CONFIG
+		module.yaml
 	)

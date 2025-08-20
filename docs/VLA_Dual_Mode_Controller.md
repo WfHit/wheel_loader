@@ -1,11 +1,11 @@
-# AI Dual-Mode Wheel Loader Controller
+# VLA Dual-Mode Wheel Loader Controller
 
 ## Overview
 
 This implementation extends the existing wheel loader controller to support dual operation modes:
 
 1. **MANUAL MODE**: Traditional RC/joystick control
-2. **AUTO MODE**: Autonomous operation driven by AI algorithm
+2. **AUTO MODE**: Autonomous operation driven by VLA algorithm
 
 ## Architecture
 
@@ -17,11 +17,11 @@ This implementation extends the existing wheel loader controller to support dual
 - `OperationModeStatus.msg`: Status feedback for operation mode
 
 #### Extended State Machine
-- `AUTO_OPERATION`: AI autonomous control state
+- `AUTO_OPERATION`: VLA autonomous control state
 - `MODE_TRANSITION`: Safe mode switching state
 
 #### Command Sources
-- `AI`: New command source for autonomous operations
+- `VLA`: New command source for autonomous operations
 
 ### Integration Points
 
@@ -33,7 +33,7 @@ This implementation extends the existing wheel loader controller to support dual
 #### Command Priority (Highest to Lowest)
 1. Emergency Stop
 2. Manual Control (always overrides autonomous)
-3. AI (when in AUTO mode)
+3. VLA (when in AUTO mode)
 4. Task Execution
 5. External Commands
 

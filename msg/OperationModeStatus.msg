@@ -1,11 +1,11 @@
 # Operation mode status feedback for dual-mode wheel loader control
 # Provides status information about current operation mode
 
-uint64 timestamp                    # microseconds since boot
+uint64 timestamp                    # time since system start (microseconds)
 
 # Current status
 uint8 MODE_MANUAL = 0               # Manual RC/joystick control
-uint8 MODE_AUTO = 1                 # Autonomous AI control  
+uint8 MODE_AUTO = 1                 # Autonomous VLA control  
 uint8 MODE_TRANSITION = 2           # Transitioning between modes
 uint8 current_active_mode           # Currently active operation mode
 uint8 previous_mode                 # Previous operation mode

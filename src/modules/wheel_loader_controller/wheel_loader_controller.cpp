@@ -264,9 +264,9 @@ void WheelLoaderController::processVlaCommand()
 				// Validate VLA output
 				if (vla_command.valid_output && vla_command.confidence_score > 0.5f) {
 					// Convert VLA output to wheel loader command
-					_ai_command = convertVlaToCommand(vla_command);
-					_ai_command.timestamp = vla_command.timestamp;
-					_ai_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL; // Use existing source type
+					_vla_command = convertVlaToCommand(vla_command);
+					_vla_command.timestamp = vla_command.timestamp;
+					_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL; // Use existing source type
 					
 					if (_diagnostic_enable.get()) {
 						PX4_INFO("VLA command: pos(%.2f,%.2f,%.2f) conf=%.2f", 
@@ -294,7 +294,7 @@ void WheelLoaderController::processVlaCommand()
 	// Check for VLA communication timeout
 	if (_operation_mode == OperationMode::AUTO) {
 		hrt_abstime now = hrt_absolute_time();
-		if (now - _last_vla_command_time > _ai_timeout.get() * 1_s) {
+		if (now - _last_vla_command_time > _vla_timeout.get() * 1_s) {
 			PX4_WARN("VLA communication timeout - switching to manual mode");
 			requestModeTransition(OperationMode::MANUAL);
 		}
@@ -359,9 +359,9 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 		return CommandSource::MANUAL;
 	}
 
-	// AI autonomous control (only when in AUTO mode)
-	if (_operation_mode == OperationMode::AUTO && (now - _ai_command.timestamp) < timeout_us) {
-		return CommandSource::AI;
+	// VLA autonomous control (only when in AUTO mode)
+	if (_operation_mode == OperationMode::AUTO && (now - _vla_command.timestamp) < timeout_us) {
+		return CommandSource::VLA;
 	}
 
 	// Task execution
@@ -539,7 +539,7 @@ void WheelLoaderController::updateControlState()
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_CONTROL;
 
-		} else if (active_source == CommandSource::AI) {
+		} else if (active_source == CommandSource::VLA) {
 			new_state = ControlState::AUTO_OPERATION;
 
 		} else if (active_source == CommandSource::TASK_EXECUTION) {
@@ -552,7 +552,7 @@ void WheelLoaderController::updateControlState()
 		if (_emergency_stop_active) {
 			new_state = ControlState::EMERGENCY_STOP;
 
-		} else if (active_source == CommandSource::AI && _operation_mode == OperationMode::AUTO) {
+		} else if (active_source == CommandSource::VLA && _operation_mode == OperationMode::AUTO) {
 			new_state = ControlState::AUTO_OPERATION;
 
 		} else if (active_source != CommandSource::MANUAL) {
@@ -568,7 +568,7 @@ void WheelLoaderController::updateControlState()
 		} else if (active_source == CommandSource::MANUAL || _operation_mode == OperationMode::MANUAL) {
 			new_state = ControlState::MANUAL_CONTROL;
 
-		} else if (active_source != CommandSource::AI) {
+		} else if (active_source != CommandSource::VLA) {
 			new_state = ControlState::IDLE;
 		}
 
@@ -583,7 +583,7 @@ void WheelLoaderController::updateControlState()
 			if (_operation_mode == OperationMode::MANUAL) {
 				new_state = (active_source == CommandSource::MANUAL) ? ControlState::MANUAL_CONTROL : ControlState::IDLE;
 			} else if (_operation_mode == OperationMode::AUTO) {
-				new_state = (active_source == CommandSource::AI) ? ControlState::AUTO_OPERATION : ControlState::IDLE;
+				new_state = (active_source == CommandSource::VLA) ? ControlState::AUTO_OPERATION : ControlState::IDLE;
 			} else {
 				new_state = ControlState::IDLE;
 			}
@@ -598,7 +598,7 @@ void WheelLoaderController::updateControlState()
 		} else if (active_source == CommandSource::MANUAL) {
 			new_state = ControlState::MANUAL_CONTROL;
 
-		} else if (active_source == CommandSource::AI && _operation_mode == OperationMode::AUTO) {
+		} else if (active_source == CommandSource::VLA && _operation_mode == OperationMode::AUTO) {
 			new_state = ControlState::AUTO_OPERATION;
 
 		} else if (active_source == CommandSource::NONE) {
@@ -610,17 +610,6 @@ void WheelLoaderController::updateControlState()
 	case ControlState::EMERGENCY_STOP:
 		if (!_emergency_stop_active && isSystemHealthy()) {
 			new_state = ControlState::IDLE;
-		}
-
-		break;
-
-	case ControlState::ERROR:
-		if (isSystemHealthy()) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-	}
 		}
 
 		break;
@@ -742,9 +731,9 @@ void WheelLoaderController::publishCommands()
 
 		break;
 
-	case CommandSource::AI:
+	case CommandSource::VLA:
 		if (_control_state == ControlState::AUTO_OPERATION) {
-			active_cmd = _ai_command;
+			active_cmd = _vla_command;
 			has_valid_command = true;
 		}
 
@@ -1179,13 +1168,13 @@ bool WheelLoaderController::isSystemReadyForAutoMode()
 		return false;
 	}
 
-	// Check for recent AI communication
+	// Check for recent VLA communication
 	hrt_abstime now = hrt_absolute_time();
-	if (now - _last_vla_command_time > _ai_timeout.get() * 1_s) {
+	if (now - _last_vla_command_time > _vla_timeout.get() * 1_s) {
 		return false;
 	}
 
-	// Check that AI output is valid
+	// Check that VLA output is valid
 	if (!_current_vla_command.valid_output || _current_vla_command.confidence_score < 0.5f) {
 		return false;
 	}
@@ -1205,8 +1194,8 @@ void WheelLoaderController::enforceManualOverride()
 
 void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
-	// Basic auto load sequence based on AI bucket position commands
-	// The AI output already contains the desired bucket position, so we use it directly
+	// Basic auto load sequence based on VLA bucket position commands
+	// The VLA output already contains the desired bucket position, so we use it directly
 	// Additional load-specific safety limits can be applied here
 	
 	// Apply conservative limits for loading operations
@@ -1221,8 +1210,8 @@ void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd,
 
 void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
-	// Basic auto dump sequence based on AI bucket position commands
-	// The AI output already contains the desired bucket position, so we use it directly
+	// Basic auto dump sequence based on VLA bucket position commands
+	// The VLA output already contains the desired bucket position, so we use it directly
 	// Additional dump-specific safety limits can be applied here
 	
 	// Apply conservative limits for dumping operations
