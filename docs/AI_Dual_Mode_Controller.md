@@ -12,7 +12,7 @@ This implementation extends the existing wheel loader controller to support dual
 ### New Components
 
 #### Message Definitions
-- `AiOutput.msg`: Interface for AI bucket position and pose outputs
+- `VlaCommand.msg`: Interface for VLA bucket position and pose outputs
 - `OperationModeCommand.msg`: Mode switching control between manual and auto
 - `OperationModeStatus.msg`: Status feedback for operation mode
 
