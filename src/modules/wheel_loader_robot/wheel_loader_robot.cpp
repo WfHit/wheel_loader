@@ -31,26 +31,26 @@
  *
  ****************************************************************************/
 
-#include "wheel_loader_controller.hpp"
+#include "wheel_loader_robot.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <lib/mathlib/mathlib.h>
 #include <cstring>
 
-WheelLoaderController::WheelLoaderController() :
+WheelLoaderRobot::WheelLoaderRobot() :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
 {
 }
 
-WheelLoaderController::~WheelLoaderController()
+WheelLoaderRobot::~WheelLoaderRobot()
 {
 	perf_free(_cycle_perf);
 	perf_free(_emergency_stop_perf);
 }
 
-bool WheelLoaderController::init()
+bool WheelLoaderRobot::init()
 {
 	// Initialize performance counters
 	_cycle_perf = perf_alloc(PC_ELAPSED, MODULE_NAME ": cycle");
@@ -75,7 +75,7 @@ bool WheelLoaderController::init()
 	return true;
 }
 
-void WheelLoaderController::Run()
+void WheelLoaderRobot::Run()
 {
 	if (should_exit()) {
 		ScheduleClear();
@@ -118,7 +118,7 @@ void WheelLoaderController::Run()
 	perf_end(_cycle_perf);
 }
 
-void WheelLoaderController::processWheelLoaderCommand()
+void WheelLoaderRobot::processWheelLoaderCommand()
 {
 	if (_wheel_loader_command_sub.updated()) {
 		wheel_loader_command_s cmd;
@@ -155,7 +155,7 @@ void WheelLoaderController::processWheelLoaderCommand()
 	}
 }
 
-void WheelLoaderController::processTaskExecution()
+void WheelLoaderRobot::processTaskExecution()
 {
 	if (_task_execution_command_sub.updated()) {
 		task_execution_command_s task_cmd;
@@ -178,7 +178,7 @@ void WheelLoaderController::processTaskExecution()
 	}
 }
 
-void WheelLoaderController::processVehicleCommand()
+void WheelLoaderRobot::processVehicleCommand()
 {
 	if (_manual_control_setpoint_sub.updated()) {
 		manual_control_setpoint_s manual;
@@ -210,7 +210,7 @@ void WheelLoaderController::processVehicleCommand()
 	}
 }
 
-void WheelLoaderController::processSlipEstimation()
+void WheelLoaderRobot::processSlipEstimation()
 {
 	if (_slip_estimation_sub.updated()) {
 		slip_estimation_s slip_data;
@@ -248,7 +248,7 @@ void WheelLoaderController::processSlipEstimation()
 	}
 }
 
-void WheelLoaderController::processVlaCommand()
+void WheelLoaderRobot::processVlaCommand()
 {
 	if (_vla_command_sub.updated()) {
 		vla_command_s vla_command;
@@ -301,7 +301,7 @@ void WheelLoaderController::processVlaCommand()
 	}
 }
 
-void WheelLoaderController::processOperationModeCommand()
+void WheelLoaderRobot::processOperationModeCommand()
 {
 	if (_operation_mode_command_sub.updated()) {
 		operation_mode_command_s mode_cmd;
@@ -344,7 +344,7 @@ void WheelLoaderController::processOperationModeCommand()
 	}
 }
 
-WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandSource()
+WheelLoaderRobot::CommandSource WheelLoaderRobot::selectActiveCommandSource()
 {
 	hrt_abstime now = hrt_absolute_time();
 	float timeout_us = _cmd_timeout.get() * 1_s;
@@ -377,7 +377,7 @@ WheelLoaderController::CommandSource WheelLoaderController::selectActiveCommandS
 	return CommandSource::NONE;
 }
 
-bool WheelLoaderController::validateCommand(const wheel_loader_command_s &cmd)
+bool WheelLoaderRobot::validateCommand(const wheel_loader_command_s &cmd)
 {
 	// Check timestamp validity
 	hrt_abstime now = hrt_absolute_time();
@@ -416,7 +416,7 @@ bool WheelLoaderController::validateCommand(const wheel_loader_command_s &cmd)
 	return true;
 }
 
-void WheelLoaderController::applyCommandLimits(wheel_loader_command_s &cmd)
+void WheelLoaderRobot::applyCommandLimits(wheel_loader_command_s &cmd)
 {
 	float max_speed = _max_speed.get();
 	float max_accel = _max_accel.get();
@@ -450,7 +450,7 @@ void WheelLoaderController::applyCommandLimits(wheel_loader_command_s &cmd)
 	last_limit_time = now;
 }
 
-void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command_s &cmd)
+void WheelLoaderRobot::generateSubsystemCommands(const wheel_loader_command_s &cmd)
 {
 	hrt_abstime now = hrt_absolute_time();
 
@@ -516,7 +516,7 @@ void WheelLoaderController::generateSubsystemCommands(const wheel_loader_command
 	_steering_command_pub.publish(steering_cmd);
 }
 
-void WheelLoaderController::updateControlState()
+void WheelLoaderRobot::updateControlState()
 {
 	ControlState new_state = _control_state;
 	CommandSource active_source = selectActiveCommandSource();
@@ -634,7 +634,7 @@ void WheelLoaderController::updateControlState()
 	_active_command_source = active_source;
 }
 
-void WheelLoaderController::transitionToState(ControlState new_state)
+void WheelLoaderRobot::transitionToState(ControlState new_state)
 {
 	if (!isValidStateTransition(_control_state, new_state)) {
 		PX4_WARN("Invalid state transition from %d to %d", (int)_control_state, (int)new_state);
@@ -662,7 +662,7 @@ void WheelLoaderController::transitionToState(ControlState new_state)
 	}
 }
 
-bool WheelLoaderController::isValidStateTransition(ControlState from, ControlState to)
+bool WheelLoaderRobot::isValidStateTransition(ControlState from, ControlState to)
 {
 	// Emergency stop and error states can be entered from any state
 	if (to == ControlState::EMERGENCY_STOP || to == ControlState::ERROR) {
@@ -704,7 +704,7 @@ bool WheelLoaderController::isValidStateTransition(ControlState from, ControlSta
 	}
 }
 
-void WheelLoaderController::resetControlState()
+void WheelLoaderRobot::resetControlState()
 {
 	// Clear active commands
 	memset(&_current_command, 0, sizeof(_current_command));
@@ -716,7 +716,7 @@ void WheelLoaderController::resetControlState()
 	_safety_override_active = false;
 }
 
-void WheelLoaderController::publishCommands()
+void WheelLoaderRobot::publishCommands()
 {
 	// Select active command based on current state and source priority
 	wheel_loader_command_s active_cmd{};
@@ -776,7 +776,7 @@ void WheelLoaderController::publishCommands()
 	}
 }
 
-void WheelLoaderController::publishStatus()
+void WheelLoaderRobot::publishStatus()
 {
 	wheel_loader_status_s status{};
 	status.timestamp = hrt_absolute_time();
@@ -820,7 +820,7 @@ void WheelLoaderController::publishStatus()
 	_wheel_loader_status_pub.publish(status);
 }
 
-void WheelLoaderController::performSafetyChecks()
+void WheelLoaderRobot::performSafetyChecks()
 {
 	// Check for emergency stop conditions
 	bool emergency_triggered = false;
@@ -865,7 +865,7 @@ void WheelLoaderController::performSafetyChecks()
 	}
 }
 
-void WheelLoaderController::updateSubsystemHealth()
+void WheelLoaderRobot::updateSubsystemHealth()
 {
 	hrt_abstime now = hrt_absolute_time();
 	float health_timeout_us = _health_timeout.get() * 1_s;
@@ -959,7 +959,7 @@ void WheelLoaderController::updateSubsystemHealth()
 	}
 }
 
-void WheelLoaderController::handleEmergencyStop()
+void WheelLoaderRobot::handleEmergencyStop()
 {
 	// Send emergency stop to all subsystems
 	wheel_loader_command_s emergency_cmd{};
@@ -971,13 +971,13 @@ void WheelLoaderController::handleEmergencyStop()
 	PX4_WARN("Emergency stop procedure executed");
 }
 
-bool WheelLoaderController::isSystemHealthy()
+bool WheelLoaderRobot::isSystemHealthy()
 {
 	HealthState overall_health = evaluateOverallHealth();
 	return overall_health == HealthState::HEALTHY || overall_health == HealthState::WARNING;
 }
 
-WheelLoaderController::HealthState WheelLoaderController::evaluateOverallHealth()
+WheelLoaderRobot::HealthState WheelLoaderRobot::evaluateOverallHealth()
 {
 	HealthState worst_health = HealthState::HEALTHY;
 
@@ -999,7 +999,7 @@ WheelLoaderController::HealthState WheelLoaderController::evaluateOverallHealth(
 	return worst_health;
 }
 
-void WheelLoaderController::updateParams()
+void WheelLoaderRobot::updateParams()
 {
 	updateParams();
 
@@ -1012,9 +1012,9 @@ void WheelLoaderController::updateParams()
 	}
 }
 
-int WheelLoaderController::task_spawn(int argc, char *argv[])
+int WheelLoaderRobot::task_spawn(int argc, char *argv[])
 {
-	WheelLoaderController *instance = new WheelLoaderController();
+	WheelLoaderRobot *instance = new WheelLoaderRobot();
 
 	if (instance) {
 		_object.store(instance);
@@ -1024,7 +1024,7 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 			return PX4_OK;
 
 		} else {
-			PX4_ERR("Failed to initialize wheel loader controller");
+			PX4_ERR("Failed to initialize wheel loader robot");
 		}
 
 	} else {
@@ -1038,7 +1038,7 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 	return PX4_ERROR;
 }
 
-wheel_loader_command_s WheelLoaderController::convertVlaToCommand(const vla_command_s &vla_command)
+wheel_loader_command_s WheelLoaderRobot::convertVlaToCommand(const vla_command_s &vla_command)
 {
 	wheel_loader_command_s cmd{};
 	cmd.timestamp = vla_command.timestamp;
@@ -1072,7 +1072,7 @@ wheel_loader_command_s WheelLoaderController::convertVlaToCommand(const vla_comm
 	return cmd;
 }
 
-bool WheelLoaderController::requestModeTransition(OperationMode new_mode)
+bool WheelLoaderRobot::requestModeTransition(OperationMode new_mode)
 {
 	if (!isValidModeTransition(_operation_mode, new_mode)) {
 		return false;
@@ -1099,7 +1099,7 @@ bool WheelLoaderController::requestModeTransition(OperationMode new_mode)
 	return true;
 }
 
-bool WheelLoaderController::isValidModeTransition(OperationMode from, OperationMode to)
+bool WheelLoaderRobot::isValidModeTransition(OperationMode from, OperationMode to)
 {
 	// Can always transition to manual for safety
 	if (to == OperationMode::MANUAL) {
@@ -1119,7 +1119,7 @@ bool WheelLoaderController::isValidModeTransition(OperationMode from, OperationM
 	return false;
 }
 
-void WheelLoaderController::handleModeTransition()
+void WheelLoaderRobot::handleModeTransition()
 {
 	if (!_mode_transition_requested) {
 		return;
@@ -1161,7 +1161,7 @@ void WheelLoaderController::handleModeTransition()
 	}
 }
 
-bool WheelLoaderController::isSystemReadyForAutoMode()
+bool WheelLoaderRobot::isSystemReadyForAutoMode()
 {
 	// Check system health
 	if (!isSystemHealthy()) {
@@ -1182,7 +1182,7 @@ bool WheelLoaderController::isSystemReadyForAutoMode()
 	return true;
 }
 
-void WheelLoaderController::enforceManualOverride()
+void WheelLoaderRobot::enforceManualOverride()
 {
 	// Force switch to manual mode
 	_operation_mode = OperationMode::MANUAL;
@@ -1192,7 +1192,7 @@ void WheelLoaderController::enforceManualOverride()
 	PX4_INFO("Manual override enforced");
 }
 
-void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
+void WheelLoaderRobot::processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
 	// Basic auto load sequence based on VLA bucket position commands
 	// The VLA output already contains the desired bucket position, so we use it directly
@@ -1208,7 +1208,7 @@ void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd,
 	}
 }
 
-void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
+void WheelLoaderRobot::processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
 	// Basic auto dump sequence based on VLA bucket position commands
 	// The VLA output already contains the desired bucket position, so we use it directly
@@ -1224,19 +1224,19 @@ void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd,
 	}
 }
 
-bool WheelLoaderController::isLoadSequenceComplete(const vla_command_s &vla_command)
+bool WheelLoaderRobot::isLoadSequenceComplete(const vla_command_s &vla_command)
 {
 	// Check if load sequence is complete based on VLA feedback
 	return vla_command.sequence_complete;
 }
 
-bool WheelLoaderController::isDumpSequenceComplete(const vla_command_s &vla_command)
+bool WheelLoaderRobot::isDumpSequenceComplete(const vla_command_s &vla_command)
 {
 	// Check if dump sequence is complete based on VLA feedback
 	return vla_command.sequence_complete;
 }
 
-int WheelLoaderController::print_usage(const char *reason)
+int WheelLoaderRobot::print_usage(const char *reason)
 {
 	if (reason) {
 		PX4_WARN("%s\n", reason);
@@ -1256,14 +1256,14 @@ The module manages:
 
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("wheel_loader_controller", "controller");
+	PRINT_MODULE_USAGE_NAME("wheel_loader_robot", "controller");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
 }
 
-int WheelLoaderController::custom_command(int argc, char *argv[])
+int WheelLoaderRobot::custom_command(int argc, char *argv[])
 {
 	if (!is_running()) {
 		print_usage("not running");

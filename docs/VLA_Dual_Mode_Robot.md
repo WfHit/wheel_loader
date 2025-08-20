@@ -1,8 +1,8 @@
-# VLA Dual-Mode Wheel Loader Controller
+# VLA Dual-Mode Wheel Loader Robot
 
 ## Overview
 
-This implementation extends the existing wheel loader controller to support dual operation modes:
+This implementation extends the existing wheel loader robot to support dual operation modes:
 
 1. **MANUAL MODE**: Traditional RC/joystick control
 2. **AUTO MODE**: Autonomous operation driven by VLA algorithm
@@ -76,7 +76,7 @@ This implementation extends the existing wheel loader controller to support dual
 - `WLC_AI_TIMEOUT`: AI communication timeout (default: 1.0s)
 
 ### Enhanced Parameters
-All existing wheel loader controller parameters remain active and apply safety limits in both modes.
+All existing wheel loader robot parameters remain active and apply safety limits in both modes.
 
 ## Usage
 
@@ -128,4 +128,4 @@ Publish `AiOutput` messages containing:
 - Graceful degradation when AI is unavailable
 - Clear separation between perception (AI) and control (wheel loader)
 
-This implementation provides a solid foundation for dual-mode operation while maintaining the safety and reliability of the existing wheel loader controller.
+This implementation provides a solid foundation for dual-mode operation while maintaining the safety and reliability of the existing wheel loader robot.

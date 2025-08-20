@@ -146,7 +146,7 @@ void process_all_hbridge_status()
 6. **steering_controller.cpp** ✓ - Already using correct SubscriptionMultiArray usage for limit sensors (EKF2 style)
 
 ### System Control Modules
-7. **wheel_loader_controller.cpp** ✓ - Updated to use parameter-based wheel indices instead of hardcoded [0],[1]
+7. **wheel_loader_robot.cpp** ✓ - Updated to use parameter-based wheel indices instead of hardcoded [0],[1]
 8. **load_analysis.cpp** ✓ - Intentionally uses Pattern C (multi-instance monitoring) to monitor ALL HBridge channels
 
 ### Core Systems
@@ -158,7 +158,7 @@ void process_all_hbridge_status()
 
 **Three EKF2-Style Patterns Implemented:**
 - **Pattern A**: Instance Discovery (auto-discovery based on criteria) - used by EKF2, bucket_control, boom_control, wheel_controller
-- **Pattern B**: Parameter-Based Selection (direct targeting) - used by slip_estimator, steering_controller, wheel_loader_controller
+- **Pattern B**: Parameter-Based Selection (direct targeting) - used by slip_estimator, steering_controller, wheel_loader_robot
 - **Pattern C**: Multi-Instance Monitoring (all instances) - used by load_analysis for system-wide monitoring
 
 **Changes Made:**

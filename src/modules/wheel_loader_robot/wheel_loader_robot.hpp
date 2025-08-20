@@ -73,19 +73,19 @@
 using namespace time_literals;
 
 /**
- * @brief Wheel Loader Controller Module
+ * @brief Wheel Loader Robot Module
  *
  * Central coordination and control module for wheel loader operations.
  * Manages command arbitration, subsystem coordination, state management,
  * and safety oversight for the complete wheel loader system.
  */
-class WheelLoaderController : public ModuleBase<WheelLoaderController>,
-							  public ModuleParams,
-							  public px4::ScheduledWorkItem
+class WheelLoaderRobot : public ModuleBase<WheelLoaderRobot>,
+						 public ModuleParams,
+						 public px4::ScheduledWorkItem
 {
 public:
-	WheelLoaderController();
-	~WheelLoaderController() override;
+	WheelLoaderRobot();
+	~WheelLoaderRobot() override;
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);

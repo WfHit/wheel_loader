@@ -38,7 +38,7 @@ The Distributed uORB System enables control of a wheel loader with multiple cont
 ### Key Components
 
 #### 1. **CUAV X7+ Main Board**
-- Runs the main wheel loader controller
+- Runs the main wheel loader robot
 - Implements traction control algorithms
 - Hosts the uORB UART Bridge module
 - Manages bidirectional communication with NXT boards
@@ -62,7 +62,7 @@ The Distributed uORB System enables control of a wheel loader with multiple cont
 /workspaces/wheel_loader/
 ├── src/
 │   ├── modules/
-│   │   ├── wheel_loader_control/        # Main wheel loader controller
+│   │   ├── wheel_loader_control/        # Main wheel loader robot
 │   │   ├── traction_control/            # Traction control algorithms
 │   │   ├── uorb_uart_bridge/           # uORB UART bridge (X7+)
 │   │   └── uorb_uart_proxy/            # uORB UART proxy (NXT boards)
@@ -190,7 +190,7 @@ Sensor → orb_publish() → Proxy → UART → Bridge → uORB → orb_copy() �
 # Start uORB UART bridge
 uorb_uart_bridge start
 
-# Start wheel loader controller with traction control
+# Start wheel loader robot with traction control
 wheel_loader_control start --enable-traction
 
 # Monitor status

@@ -127,13 +127,13 @@ WL_RC_ENABLE        # Enable/disable module [0/1]
 ```
 RC Transmitter → input_rc → wheel_loader_rc_input → wheel_loader_command
                                                           ↓
-wheel_loader_controller → subsystem commands → uorb_uart_bridge
+wheel_loader_robot → subsystem commands → uorb_uart_bridge
                     ↓
             NXT Front/Rear Boards → Motor Control
 ```
 
 ### Related Modules
-- **wheel_loader_controller**: Main system coordinator
+- **wheel_loader_robot**: Main system coordinator
 - **slip_estimator**: Provides traction control data  
 - **uorb_uart_bridge**: Inter-board communication
 - **rc_update**: Base RC input processing
@@ -180,7 +180,7 @@ make tests
 Enable verbose logging:
 ```bash
 param set WL_RC_ENABLE 1
-param set WLC_DIAG_EN 1  # Enable wheel loader controller diagnostics
+param set WLC_DIAG_EN 1  # Enable wheel loader robot diagnostics
 ```
 
 ## Advanced Configuration
@@ -192,7 +192,7 @@ Modify the channel constants in `wheel_loader_rc_input.hpp` for different transm
 Customize failsafe response in the `handleFailsafe()` method for specific operational requirements.
 
 ### Traction Control Tuning
-Adjust slip response curves in the wheel loader controller's `processSlipEstimation()` method.
+Adjust slip response curves in the wheel loader robot's `processSlipEstimation()` method.
 
 ## Support
 

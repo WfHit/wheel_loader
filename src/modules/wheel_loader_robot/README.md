@@ -1,19 +1,19 @@
-# Wheel Loader Controller Implementation Summary
+# Wheel Loader Robot Implementation Summary
 
 ## Generated Files
 
-The wheel loader controller module has been completely regenerated according to the previous discussion and the PX4 coding style guide. The following files were created:
+The wheel loader robot module has been completely regenerated according to the previous discussion and the PX4 coding style guide. The following files were created:
 
 ### Core Module Files
 
-1. **`wheel_loader_controller.hpp`** - Main header file with class definition
+1. **`wheel_loader_robot.hpp`** - Main header file with class definition
    - Follows PX4 naming conventions (CamelCase class, snake_case files)
    - Proper inheritance from ModuleBase, ModuleParams, ScheduledWorkItem
    - Two-wheel controller architecture with independent front/rear publications
    - Comprehensive state machine and safety management
    - All parameters follow 16-character limit with WLC_ prefix
 
-2. **`wheel_loader_controller.cpp`** - Implementation file
+2. **`wheel_loader_robot.cpp`** - Implementation file
    - Complete state machine implementation
    - Command arbitration logic (Emergency > Manual > Task > External)
    - Safety checks and emergency stop handling
@@ -21,10 +21,10 @@ The wheel loader controller module has been completely regenerated according to 
    - Subsystem health monitoring
    - Parameter-driven configuration
 
-3. **`wheel_loader_controller_main.cpp`** - Entry point
+3. **`wheel_loader_robot_main.cpp`** - Entry point
    - Standard PX4 module entry point pattern
 
-4. **`wheel_loader_controller_params.c`** - Parameter definitions
+4. **`wheel_loader_robot_params.c`** - Parameter definitions
    - All parameters ≤16 characters with WLC_ prefix
    - Proper units and documentation
    - NOT included in CMakeLists.txt as per style guide

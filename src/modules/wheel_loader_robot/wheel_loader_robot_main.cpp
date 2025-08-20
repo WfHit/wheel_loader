@@ -31,11 +31,11 @@
  *
  ****************************************************************************/
 
-#include "wheel_loader_controller.hpp"
+#include "wheel_loader_robot.hpp"
 
-extern "C" __EXPORT int wheel_loader_controller_main(int argc, char *argv[]);
+extern "C" __EXPORT int wheel_loader_robot_main(int argc, char *argv[]);
 
-int wheel_loader_controller_main(int argc, char *argv[])
+int wheel_loader_robot_main(int argc, char *argv[])
 {
-	return WheelLoaderController::main(argc, argv);
+	return WheelLoaderRobot::main(argc, argv);
 }
