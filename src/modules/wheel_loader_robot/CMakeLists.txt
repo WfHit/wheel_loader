@@ -32,13 +32,13 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__wheel_loader_controller
-	MAIN wheel_loader_controller
+	MODULE modules__wheel_loader_robot
+	MAIN wheel_loader_robot
 	STACK_MAIN 2048
 	SRCS
-		wheel_loader_controller.cpp
-		wheel_loader_controller_main.cpp
-		# DO NOT include wheel_loader_controller_params.c here
+		wheel_loader_robot.cpp
+		wheel_loader_robot_main.cpp
+		# DO NOT include wheel_loader_robot_params.c here
 	DEPENDS
 		mathlib
 		perf

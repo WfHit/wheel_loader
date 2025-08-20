@@ -1,8 +1,8 @@
-# Wheel Loader Controller Design Document
+# Wheel Loader Robot Design Document
 
 ## Overview
 
-This document describes the design and implementation of the PX4-based wheel loader controller module. The wheel loader controller serves as the central coordination point for the entire wheel loader system, managing subsystem commands, state arbitration, and safety oversight.
+This document describes the design and implementation of the PX4-based wheel loader robot module. The wheel loader robot serves as the central coordination point for the entire wheel loader system, managing subsystem commands, state arbitration, and safety oversight.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ The wheel loader consists of several independent subsystems:
 
 ### Controller Role
 
-The wheel loader controller acts as:
+The wheel loader robot acts as:
 1. **Command Arbitrator**: Resolves conflicts between manual, autonomous, and external commands
 2. **State Manager**: Maintains overall vehicle state and operational modes
 3. **Safety Supervisor**: Enforces safety limits and emergency procedures
@@ -28,7 +28,7 @@ The wheel loader controller acts as:
 ### Adherence to PX4 Standards
 
 The design follows PX4 coding style and architectural patterns:
-- Snake_case file naming (`wheel_loader_controller.hpp`, `wheel_loader_controller.cpp`)
+- Snake_case file naming (`wheel_loader_robot.hpp`, `wheel_loader_robot.cpp`)
 - CamelCase class names (`WheelLoaderController`)
 - Underscore prefix for private members (`_control_state`, `_safety_manager`)
 - Parameter naming with 16-character limit (`WLC_` prefix)
@@ -292,7 +292,7 @@ Each wheel controller provides:
 
 ### Parameter Naming Convention
 
-All parameters use `WLC_` prefix (Wheel Loader Controller):
+All parameters use `WLC_` prefix (Wheel Loader Robot):
 
 ```c
 // Control parameters
@@ -366,10 +366,10 @@ PARAM_DEFINE_INT32(WLC_DIAG_EN, 0);          // Diagnostic mode enable
 wheel_loader/
 ├── CMakeLists.txt                    # Build configuration
 ├── Kconfig                          # Module configuration
-├── wheel_loader_controller_main.cpp # Entry point
-├── wheel_loader_controller.hpp      # Class declaration
-├── wheel_loader_controller.cpp      # Class implementation
-└── wheel_loader_controller_params.c # Parameter definitions
+├── wheel_loader_robot_main.cpp # Entry point
+├── wheel_loader_robot.hpp      # Class declaration
+├── wheel_loader_robot.cpp      # Class implementation
+└── wheel_loader_robot_params.c # Parameter definitions
 ```
 
 ### Key Implementation Points

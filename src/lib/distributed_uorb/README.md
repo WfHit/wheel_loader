@@ -82,7 +82,7 @@ Enable the modules in your board configuration:
 ```cmake
 CONFIG_MODULES_UORB_UART_BRIDGE=y     # For X7+ board
 CONFIG_MODULES_UORB_UART_PROXY=y      # For NXT boards
-CONFIG_MODULES_WHEEL_LOADER=y         # Main wheel loader controller
+CONFIG_MODULES_WHEEL_LOADER=y         # Main wheel loader robot
 ```
 
 ## Usage

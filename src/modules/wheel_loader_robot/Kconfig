@@ -1,0 +1,15 @@
+menuconfig MODULES_WHEEL_LOADER_ROBOT
+	bool "wheel_loader_robot"
+	default n
+	---help---
+		Enable support for wheel loader robot module
+
+if MODULES_WHEEL_LOADER_ROBOT
+
+config MODULES_WHEEL_LOADER_ROBOT_DEBUG
+	bool "Enable debug output"
+	default n
+	---help---
+		Enable additional debug output for wheel loader robot
+
+endif # MODULES_WHEEL_LOADER_ROBOT

@@ -1,10 +1,10 @@
-module_name: wheel_loader_controller
+module_name: wheel_loader_robot
 parameters:
-    - group: Wheel Loader Controller
+    - group: Wheel Loader Robot
       definitions:
         WLC_MAX_SPEED:
           description:
-            short: Wheel loader controller maximum speed
+            short: Wheel loader robot maximum speed
             long: Maximum allowed vehicle speed for safety limiting.
           type: float
           default: 5.0
@@ -15,7 +15,7 @@ parameters:
 
         WLC_MAX_ACCEL:
           description:
-            short: Wheel loader controller maximum acceleration
+            short: Wheel loader robot maximum acceleration
             long: Maximum allowed acceleration for safety limiting.
           type: float
           default: 2.0
