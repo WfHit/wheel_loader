@@ -180,7 +180,7 @@ make tests
 Enable verbose logging:
 ```bash
 param set WL_RC_ENABLE 1
-param set WLC_DIAG_EN 1  # Enable wheel loader robot diagnostics
+param set WLR_DIAG_EN 1  # Enable wheel loader robot diagnostics
 ```
 
 ## Advanced Configuration

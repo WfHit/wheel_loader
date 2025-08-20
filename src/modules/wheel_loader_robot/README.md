@@ -11,7 +11,7 @@ The wheel loader robot module has been completely regenerated according to the p
    - Proper inheritance from ModuleBase, ModuleParams, ScheduledWorkItem
    - Two-wheel controller architecture with independent front/rear publications
    - Comprehensive state machine and safety management
-   - All parameters follow 16-character limit with WLC_ prefix
+   - All parameters follow 16-character limit with WLR_ prefix
 
 2. **`wheel_loader_robot.cpp`** - Implementation file
    - Complete state machine implementation
@@ -25,7 +25,7 @@ The wheel loader robot module has been completely regenerated according to the p
    - Standard PX4 module entry point pattern
 
 4. **`wheel_loader_robot_params.c`** - Parameter definitions
-   - All parameters ≤16 characters with WLC_ prefix
+   - All parameters ≤16 characters with WLR_ prefix
    - Proper units and documentation
    - NOT included in CMakeLists.txt as per style guide
 
@@ -45,8 +45,8 @@ The wheel loader robot module has been completely regenerated according to the p
 ### Architecture Compliance
 
 ✅ **File Naming**: All files use snake_case as required
-✅ **Class Naming**: CamelCase (WheelLoaderController)
-✅ **Parameter Naming**: ≤16 chars with WLC_ prefix
+✅ **Class Naming**: CamelCase (WheelLoaderRobot)
+✅ **Parameter Naming**: ≤16 chars with WLR_ prefix
 ✅ **uORB Topics**: Lowercase with underscores
 ✅ **Tab Indentation**: 4-space width tabs
 ✅ **Module Structure**: Standard PX4 module organization
@@ -88,11 +88,11 @@ The wheel loader robot module has been completely regenerated according to the p
 
 ### Parameter System
 
-✅ **Control Parameters**: WLC_CTRL_RATE, WLC_CMD_TIMEOUT
-✅ **Safety Parameters**: WLC_MAX_SPEED, WLC_MAX_ACCEL, WLC_ESTOP_EN
-✅ **Health Parameters**: WLC_HEALTH_TO
-✅ **Operation Parameters**: WLC_SAFE_SPEED, WLC_SAFE_ACCEL
-✅ **Debug Parameters**: WLC_DIAG_EN
+✅ **Control Parameters**: WLR_CTRL_RATE, WLR_CMD_TIMEOUT
+✅ **Safety Parameters**: WLR_MAX_SPEED, WLR_MAX_ACCEL, WLR_ESTOP_EN
+✅ **Health Parameters**: WLR_HEALTH_TO
+✅ **Operation Parameters**: WLR_SAFE_SPEED, WLR_SAFE_ACCEL
+✅ **Debug Parameters**: WLR_DIAG_EN
 
 ## Code Quality Features
 

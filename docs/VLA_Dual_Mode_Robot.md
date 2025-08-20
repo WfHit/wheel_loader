@@ -71,9 +71,9 @@ This implementation extends the existing wheel loader robot to support dual oper
 ## Parameters
 
 ### New Parameters
-- `WLC_MODE_TRANS_TO`: Mode transition timeout (default: 2.0s)
-- `WLC_AUTO_EN`: Enable autonomous mode (default: enabled)
-- `WLC_AI_TIMEOUT`: AI communication timeout (default: 1.0s)
+- `WLR_MODE_TO`: Mode transition timeout (default: 2.0s)
+- `WLR_AUTO_EN`: Enable autonomous mode (default: enabled)
+- `WLR_VLA_TIMEOUT`: VLA communication timeout (default: 1.0s)
 
 ### Enhanced Parameters
 All existing wheel loader robot parameters remain active and apply safety limits in both modes.
