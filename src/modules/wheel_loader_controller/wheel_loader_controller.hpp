@@ -42,7 +42,9 @@
 // Library includes
 #include <lib/perf/perf_counter.h>
 #include <lib/mathlib/mathlib.h>
+#include <lib/mathlib/math/Functions.hpp>
 #include <drivers/drv_hrt.h>
+#include <cstring>
 
 // uORB includes (use lowercase topic names)
 #include <uORB/Publication.hpp>
@@ -154,6 +156,12 @@ private:
 	void applyCommandLimits(wheel_loader_command_s &cmd);
 	void generateSubsystemCommands(const wheel_loader_command_s &cmd);
 	wheel_loader_command_s convertSmolVlaToCommand(const smol_vla_output_s &smol_output);
+
+	// Auto load/dump controller functions
+	void processAutoLoadSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output);
+	void processAutoDumpSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output);
+	bool isLoadSequenceComplete(const smol_vla_output_s &smol_output);
+	bool isDumpSequenceComplete(const smol_vla_output_s &smol_output);
 
 	// Mode management functions
 	bool requestModeTransition(OperationMode new_mode);

@@ -1076,10 +1076,14 @@ wheel_loader_command_s WheelLoaderController::convertSmolVlaToCommand(const smol
 	// Map vehicle heading to steering
 	cmd.steering_angle_cmd = math::constrain(smol_output.vehicle_heading, -0.5f, 0.5f);
 
-	// Set operation modes based on SmolVLA operation mode
+	// Set operation modes and handle auto sequences
 	switch (smol_output.operation_mode) {
 		case smol_vla_output_s::OPERATION_LOAD:
+			processAutoLoadSequence(cmd, smol_output);
+			cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_AUTO;
+			break;
 		case smol_vla_output_s::OPERATION_DUMP:
+			processAutoDumpSequence(cmd, smol_output);
 			cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_AUTO;
 			break;
 		default:
@@ -1214,6 +1218,99 @@ void WheelLoaderController::enforceManualOverride()
 	_mode_transition_requested = false;
 	
 	PX4_INFO("Manual override enforced");
+}
+
+void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output)
+{
+	// Auto load sequence implementation
+	switch (smol_output.sequence_step) {
+		case 0: // Approach material
+			// Lower bucket for digging
+			cmd.bucket_angle_cmd = -0.3f; // Slightly negative for digging
+			cmd.boom_lift_cmd = -0.2f;    // Lower boom
+			break;
+			
+		case 1: // Engage with material
+			// Start scooping motion
+			cmd.bucket_angle_cmd = 0.1f;  // Curl bucket
+			cmd.boom_lift_cmd = 0.0f;     // Maintain boom position
+			// Slow forward movement to gather material
+			cmd.front_left_wheel_speed = 0.5f;
+			cmd.front_right_wheel_speed = 0.5f;
+			cmd.rear_left_wheel_speed = 0.5f;
+			cmd.rear_right_wheel_speed = 0.5f;
+			break;
+			
+		case 2: // Complete load
+			// Lift loaded bucket
+			cmd.bucket_angle_cmd = 0.4f;  // Full curl to retain material
+			cmd.boom_lift_cmd = 0.5f;     // Lift boom
+			break;
+			
+		default:
+			// Maintain safe position
+			cmd.bucket_angle_cmd = 0.0f;
+			cmd.boom_lift_cmd = 0.0f;
+			break;
+	}
+	
+	if (_diagnostic_enable.get()) {
+		PX4_INFO("Auto load sequence step %d", smol_output.sequence_step);
+	}
+}
+
+void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd, const smol_vla_output_s &smol_output)
+{
+	// Auto dump sequence implementation
+	switch (smol_output.sequence_step) {
+		case 0: // Approach dump location
+			// Maintain loaded position
+			cmd.bucket_angle_cmd = 0.4f;  // Keep material contained
+			cmd.boom_lift_cmd = 0.5f;     // Keep boom elevated
+			break;
+			
+		case 1: // Position for dump
+			// Raise to dump height
+			cmd.boom_lift_cmd = 0.8f;     // Higher position for dumping
+			cmd.bucket_angle_cmd = 0.4f;  // Still contained
+			break;
+			
+		case 2: // Execute dump
+			// Tip bucket to dump material
+			cmd.bucket_angle_cmd = -0.2f; // Tip bucket forward
+			cmd.boom_lift_cmd = 0.8f;     // Maintain height
+			break;
+			
+		case 3: // Complete dump and retract
+			// Shake bucket to ensure complete dump
+			cmd.bucket_angle_cmd = -0.3f; // Full tip
+			cmd.boom_lift_cmd = 0.6f;     // Slightly lower
+			break;
+			
+		default:
+			// Return to neutral position
+			cmd.bucket_angle_cmd = 0.0f;
+			cmd.boom_lift_cmd = 0.0f;
+			break;
+	}
+	
+	if (_diagnostic_enable.get()) {
+		PX4_INFO("Auto dump sequence step %d", smol_output.sequence_step);
+	}
+}
+
+bool WheelLoaderController::isLoadSequenceComplete(const smol_vla_output_s &smol_output)
+{
+	// Check if load sequence is complete based on SmolVLA feedback
+	return smol_output.sequence_complete && 
+		   smol_output.operation_mode == smol_vla_output_s::OPERATION_LOAD;
+}
+
+bool WheelLoaderController::isDumpSequenceComplete(const smol_vla_output_s &smol_output)
+{
+	// Check if dump sequence is complete based on SmolVLA feedback
+	return smol_output.sequence_complete && 
+		   smol_output.operation_mode == smol_vla_output_s::OPERATION_DUMP;
 }
 
 int WheelLoaderController::print_usage(const char *reason)
