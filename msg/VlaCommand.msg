@@ -1,9 +1,9 @@
-# AI output message for wheel loader autonomous operation
-# Contains bucket position and pose commands from AI algorithm
+# VLA command message for wheel loader autonomous operation
+# Contains bucket position and pose commands from VLA algorithm
 
 uint64 timestamp                    # microseconds since boot
 
-# Bucket position and pose outputs from AI
+# Bucket position and pose outputs from VLA
 float32 bucket_position_x           # Desired bucket position X (m)
 float32 bucket_position_y           # Desired bucket position Y (m)  
 float32 bucket_position_z           # Desired bucket position Z (m)
@@ -12,9 +12,9 @@ float32 bucket_orientation_pitch    # Desired bucket pitch angle (rad)
 float32 bucket_orientation_yaw      # Desired bucket yaw angle (rad)
 
 # Control confidence and validation
-float32 confidence_score            # AI confidence in output (0-1)
+float32 confidence_score            # VLA confidence in output (0-1)
 bool valid_output                   # Whether output is valid for execution
-bool emergency_stop                 # Emergency stop command from AI
+bool emergency_stop                 # Emergency stop command from VLA
 
 # Sequence information
 uint32 sequence_id                  # Sequence identifier for tracking

@@ -96,7 +96,7 @@ void WheelLoaderController::Run()
 	processWheelLoaderCommand();
 	processTaskExecution();
 	processVehicleCommand();
-	processAiOutput();
+	processVlaCommand();
 	processOperationModeCommand();
 	processSlipEstimation();
 
@@ -248,54 +248,54 @@ void WheelLoaderController::processSlipEstimation()
 	}
 }
 
-void WheelLoaderController::processAiOutput()
+void WheelLoaderController::processVlaCommand()
 {
-	if (_ai_output_sub.updated()) {
-		ai_output_s ai_output;
+	if (_vla_command_sub.updated()) {
+		vla_command_s vla_command;
 
-		if (_ai_output_sub.copy(&ai_output)) {
-			_current_ai_output = ai_output;
-			_last_ai_output_time = hrt_absolute_time();
+		if (_vla_command_sub.copy(&vla_command)) {
+			_current_vla_command = vla_command;
+			_last_vla_command_time = hrt_absolute_time();
 
 			// Only process if in auto mode or transitioning to auto
 			if (_operation_mode == OperationMode::AUTO || 
 				(_operation_mode == OperationMode::TRANSITION && _requested_mode == OperationMode::AUTO)) {
 				
-				// Validate AI output
-				if (ai_output.valid_output && ai_output.confidence_score > 0.5f) {
-					// Convert AI output to wheel loader command
-					_ai_command = convertAiToCommand(ai_output);
-					_ai_command.timestamp = ai_output.timestamp;
+				// Validate VLA output
+				if (vla_command.valid_output && vla_command.confidence_score > 0.5f) {
+					// Convert VLA output to wheel loader command
+					_ai_command = convertVlaToCommand(vla_command);
+					_ai_command.timestamp = vla_command.timestamp;
 					_ai_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL; // Use existing source type
 					
 					if (_diagnostic_enable.get()) {
-						PX4_INFO("AI command: pos(%.2f,%.2f,%.2f) conf=%.2f", 
-							(double)ai_output.bucket_position_x,
-							(double)ai_output.bucket_position_y, 
-							(double)ai_output.bucket_position_z,
-							(double)ai_output.confidence_score);
+						PX4_INFO("VLA command: pos(%.2f,%.2f,%.2f) conf=%.2f", 
+							(double)vla_command.bucket_position_x,
+							(double)vla_command.bucket_position_y, 
+							(double)vla_command.bucket_position_z,
+							(double)vla_command.confidence_score);
 					}
 				} else {
 					if (_diagnostic_enable.get()) {
-						PX4_WARN("Invalid AI output: valid=%d conf=%.2f", 
-							ai_output.valid_output, (double)ai_output.confidence_score);
+						PX4_WARN("Invalid VLA output: valid=%d conf=%.2f", 
+							vla_command.valid_output, (double)vla_command.confidence_score);
 					}
 				}
 
-				// Handle emergency stop from AI
-				if (ai_output.emergency_stop) {
-					PX4_WARN("Emergency stop commanded by AI");
+				// Handle emergency stop from VLA
+				if (vla_command.emergency_stop) {
+					PX4_WARN("Emergency stop commanded by VLA");
 					_emergency_stop_active = true;
 				}
 			}
 		}
 	}
 
-	// Check for AI communication timeout
+	// Check for VLA communication timeout
 	if (_operation_mode == OperationMode::AUTO) {
 		hrt_abstime now = hrt_absolute_time();
-		if (now - _last_ai_output_time > _ai_timeout.get() * 1_s) {
-			PX4_WARN("AI communication timeout - switching to manual mode");
+		if (now - _last_vla_command_time > _ai_timeout.get() * 1_s) {
+			PX4_WARN("VLA communication timeout - switching to manual mode");
 			requestModeTransition(OperationMode::MANUAL);
 		}
 	}
@@ -1049,21 +1049,21 @@ int WheelLoaderController::task_spawn(int argc, char *argv[])
 	return PX4_ERROR;
 }
 
-wheel_loader_command_s WheelLoaderController::convertAiToCommand(const ai_output_s &ai_output)
+wheel_loader_command_s WheelLoaderController::convertVlaToCommand(const vla_command_s &vla_command)
 {
 	wheel_loader_command_s cmd{};
-	cmd.timestamp = ai_output.timestamp;
+	cmd.timestamp = vla_command.timestamp;
 	cmd.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
 
 	// Convert bucket position to boom and bucket commands
 	// This is a simplified conversion - in practice, inverse kinematics would be used
-	float bucket_height = ai_output.bucket_position_z;
-	float bucket_reach = sqrtf(ai_output.bucket_position_x * ai_output.bucket_position_x + 
-							   ai_output.bucket_position_y * ai_output.bucket_position_y);
+	float bucket_height = vla_command.bucket_position_z;
+	float bucket_reach = sqrtf(vla_command.bucket_position_x * vla_command.bucket_position_x + 
+							   vla_command.bucket_position_y * vla_command.bucket_position_y);
 	
 	// Map bucket position to boom lift and bucket angle
 	cmd.boom_lift_cmd = math::constrain(bucket_height / 3.0f, -0.5f, 1.5f); // Rough mapping
-	cmd.bucket_angle_cmd = ai_output.bucket_orientation_pitch;
+	cmd.bucket_angle_cmd = vla_command.bucket_orientation_pitch;
 	cmd.boom_extend_cmd = math::constrain(bucket_reach / 5.0f, 0.0f, 1.0f); // Rough mapping
 
 	// Set basic movement commands (vehicle control is handled separately)
@@ -1072,12 +1072,12 @@ wheel_loader_command_s WheelLoaderController::convertAiToCommand(const ai_output
 	cmd.rear_left_wheel_speed = 0.0f;
 	cmd.rear_right_wheel_speed = 0.0f;
 	
-	// Set to coordinated hydraulic mode for AI operation
+	// Set to coordinated hydraulic mode for VLA operation
 	cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_COORDINATED;
 	cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_VELOCITY;
-	cmd.emergency_stop = ai_output.emergency_stop;
-	cmd.enable_hydraulics = !ai_output.emergency_stop;
-	cmd.enable_drivetrain = !ai_output.emergency_stop;
+	cmd.emergency_stop = vla_command.emergency_stop;
+	cmd.enable_hydraulics = !vla_command.emergency_stop;
+	cmd.enable_drivetrain = !vla_command.emergency_stop;
 	cmd.max_vehicle_speed = _safe_speed.get();
 
 	return cmd;
@@ -1181,12 +1181,12 @@ bool WheelLoaderController::isSystemReadyForAutoMode()
 
 	// Check for recent AI communication
 	hrt_abstime now = hrt_absolute_time();
-	if (now - _last_ai_output_time > _ai_timeout.get() * 1_s) {
+	if (now - _last_vla_command_time > _ai_timeout.get() * 1_s) {
 		return false;
 	}
 
 	// Check that AI output is valid
-	if (!_current_ai_output.valid_output || _current_ai_output.confidence_score < 0.5f) {
+	if (!_current_vla_command.valid_output || _current_vla_command.confidence_score < 0.5f) {
 		return false;
 	}
 
@@ -1203,7 +1203,7 @@ void WheelLoaderController::enforceManualOverride()
 	PX4_INFO("Manual override enforced");
 }
 
-void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output)
+void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
 	// Basic auto load sequence based on AI bucket position commands
 	// The AI output already contains the desired bucket position, so we use it directly
@@ -1219,7 +1219,7 @@ void WheelLoaderController::processAutoLoadSequence(wheel_loader_command_s &cmd,
 	}
 }
 
-void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output)
+void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
 {
 	// Basic auto dump sequence based on AI bucket position commands
 	// The AI output already contains the desired bucket position, so we use it directly
@@ -1235,16 +1235,16 @@ void WheelLoaderController::processAutoDumpSequence(wheel_loader_command_s &cmd,
 	}
 }
 
-bool WheelLoaderController::isLoadSequenceComplete(const ai_output_s &ai_output)
+bool WheelLoaderController::isLoadSequenceComplete(const vla_command_s &vla_command)
 {
-	// Check if load sequence is complete based on AI feedback
-	return ai_output.sequence_complete;
+	// Check if load sequence is complete based on VLA feedback
+	return vla_command.sequence_complete;
 }
 
-bool WheelLoaderController::isDumpSequenceComplete(const ai_output_s &ai_output)
+bool WheelLoaderController::isDumpSequenceComplete(const vla_command_s &vla_command)
 {
-	// Check if dump sequence is complete based on AI feedback
-	return ai_output.sequence_complete;
+	// Check if dump sequence is complete based on VLA feedback
+	return vla_command.sequence_complete;
 }
 
 int WheelLoaderController::print_usage(const char *reason)

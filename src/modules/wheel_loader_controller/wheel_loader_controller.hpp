@@ -66,7 +66,7 @@
 #include <uORB/topics/wheel_loader_status.h>
 #include <uORB/topics/wheel_speeds_setpoint.h>
 #include <uORB/topics/wheel_status.h>
-#include <uORB/topics/ai_output.h>
+#include <uORB/topics/vla_command.h>
 #include <uORB/topics/operation_mode_command.h>
 #include <uORB/topics/operation_mode_status.h>
 
@@ -144,7 +144,7 @@ private:
 	void processWheelLoaderCommand();
 	void processTaskExecution();
 	void processVehicleCommand();
-	void processAiOutput();				// Process AI autonomous commands
+	void processVlaCommand();				// Process VLA autonomous commands
 	void processOperationModeCommand();	// Process mode switching commands
 	void processSlipEstimation();
 	void updateControlState();
@@ -156,13 +156,13 @@ private:
 	bool validateCommand(const wheel_loader_command_s &cmd);
 	void applyCommandLimits(wheel_loader_command_s &cmd);
 	void generateSubsystemCommands(const wheel_loader_command_s &cmd);
-	wheel_loader_command_s convertAiToCommand(const ai_output_s &ai_output);
+	wheel_loader_command_s convertVlaToCommand(const vla_command_s &vla_command);
 
 	// Auto load/dump controller functions
-	void processAutoLoadSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output);
-	void processAutoDumpSequence(wheel_loader_command_s &cmd, const ai_output_s &ai_output);
-	bool isLoadSequenceComplete(const ai_output_s &ai_output);
-	bool isDumpSequenceComplete(const ai_output_s &ai_output);
+	void processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command);
+	void processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command);
+	bool isLoadSequenceComplete(const vla_command_s &vla_command);
+	bool isDumpSequenceComplete(const vla_command_s &vla_command);
 
 	// Mode management functions
 	bool requestModeTransition(OperationMode new_mode);
@@ -192,7 +192,7 @@ private:
 	uORB::Subscription _task_execution_command_sub{ORB_ID(task_execution_command)};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _ai_output_sub{ORB_ID(ai_output)};
+	uORB::Subscription _vla_command_sub{ORB_ID(vla_command)};
 	uORB::Subscription _operation_mode_command_sub{ORB_ID(operation_mode_command)};
 
 	// Subsystem status subscriptions
@@ -232,8 +232,8 @@ private:
 	OperationMode _requested_mode{OperationMode::MANUAL};
 	bool _mode_transition_requested{false};
 	hrt_abstime _mode_transition_start_time{0};
-	hrt_abstime _last_ai_output_time{0};
-	ai_output_s _current_ai_output{};
+	hrt_abstime _last_vla_command_time{0};
+	vla_command_s _current_vla_command{};
 
 	// Safety state
 	bool _emergency_stop_active{false};
