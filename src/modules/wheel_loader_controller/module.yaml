@@ -1,0 +1,145 @@
+module_name: wheel_loader_controller
+parameters:
+    - group: Wheel Loader Controller
+      definitions:
+        WLC_MAX_SPEED:
+          description:
+            short: Wheel loader controller maximum speed
+            long: Maximum allowed vehicle speed for safety limiting.
+          type: float
+          default: 5.0
+          min: 0.1
+          max: 20.0
+          unit: m/s
+          decimal: 1
+
+        WLC_MAX_ACCEL:
+          description:
+            short: Wheel loader controller maximum acceleration
+            long: Maximum allowed acceleration for safety limiting.
+          type: float
+          default: 2.0
+          min: 0.1
+          max: 10.0
+          decimal: 1
+
+        WLC_CMD_TIMEOUT:
+          description:
+            short: Command timeout
+            long: Maximum time without receiving commands before entering safe mode.
+          type: float
+          default: 0.5
+          min: 0.1
+          max: 5.0
+          unit: s
+          decimal: 1
+
+        WLC_HEALTH_TO:
+          description:
+            short: Health monitoring timeout
+            long: Maximum time without receiving status from subsystems before marking as unhealthy.
+          type: float
+          default: 1.0
+          min: 0.1
+          max: 5.0
+          unit: s
+          decimal: 1
+
+        WLC_ESTOP_EN:
+          description:
+            short: Emergency stop enable
+            long: Enable emergency stop functionality.
+          type: int32
+          default: 1
+          min: 0
+          max: 1
+
+        WLC_DIAG_EN:
+          description:
+            short: Diagnostic mode enable
+            long: Enable diagnostic output and verbose logging.
+          type: int32
+          default: 0
+          min: 0
+          max: 1
+
+        WLC_CTRL_RATE:
+          description:
+            short: Control loop rate
+            long: Main control loop execution rate.
+          type: float
+          default: 50.0
+          min: 10.0
+          max: 200.0
+          unit: Hz
+          decimal: 1
+
+        WLC_SAFE_ACCEL:
+          description:
+            short: Safe acceleration limit
+            long: Conservative acceleration limit used during autonomous operation.
+          type: float
+          default: 1.0
+          min: 0.1
+          max: 5.0
+          decimal: 1
+
+        WLC_SAFE_SPEED:
+          description:
+            short: Safe speed limit
+            long: Conservative speed limit used during autonomous operation.
+          type: float
+          default: 2.0
+          min: 0.1
+          max: 10.0
+          unit: m/s
+          decimal: 1
+
+        WLC_FRONT_WHEEL:
+          description:
+            short: Front wheel status instance
+            long: Instance ID for the front wheel status subscription.
+          type: int32
+          default: 0
+          min: 0
+          max: 15
+
+        WLC_REAR_WHEEL:
+          description:
+            short: Rear wheel status instance
+            long: Instance ID for the rear wheel status subscription.
+          type: int32
+          default: 1
+          min: 0
+          max: 15
+
+        WLC_MODE_TRANS_TO:
+          description:
+            short: Mode transition timeout
+            long: Maximum time allowed for transitioning between operation modes.
+          type: float
+          default: 2.0
+          min: 0.5
+          max: 10.0
+          unit: s
+          decimal: 1
+
+        WLC_AUTO_EN:
+          description:
+            short: Autonomous mode enable
+            long: Enable autonomous AI operation mode.
+          type: int32
+          default: 1
+          min: 0
+          max: 1
+
+        WLC_AI_TIMEOUT:
+          description:
+            short: AI communication timeout
+            long: Maximum time without receiving AI output before reverting to manual mode.
+          type: float
+          default: 1.0
+          min: 0.1
+          max: 5.0
+          unit: s
+          decimal: 1

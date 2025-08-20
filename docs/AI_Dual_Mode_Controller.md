@@ -1,26 +1,27 @@
-# SmolVLA Dual-Mode Wheel Loader Controller
+# AI Dual-Mode Wheel Loader Controller
 
 ## Overview
 
 This implementation extends the existing wheel loader controller to support dual operation modes:
 
 1. **MANUAL MODE**: Traditional RC/joystick control
-2. **AUTO MODE**: Autonomous operation driven by SmolVLA algorithm
+2. **AUTO MODE**: Autonomous operation driven by AI algorithm
 
 ## Architecture
 
 ### New Components
 
 #### Message Definitions
-- `SmolVlaOutput.msg`: Interface for SmolVLA bucket position and pose outputs
+- `AiOutput.msg`: Interface for AI bucket position and pose outputs
 - `OperationModeCommand.msg`: Mode switching control between manual and auto
+- `OperationModeStatus.msg`: Status feedback for operation mode
 
 #### Extended State Machine
-- `AUTO_OPERATION`: SmolVLA autonomous control state
+- `AUTO_OPERATION`: AI autonomous control state
 - `MODE_TRANSITION`: Safe mode switching state
 
 #### Command Sources
-- `SMOL_VLA`: New command source for autonomous operations
+- `AI`: New command source for autonomous operations
 
 ### Integration Points
 
@@ -32,7 +33,7 @@ This implementation extends the existing wheel loader controller to support dual
 #### Command Priority (Highest to Lowest)
 1. Emergency Stop
 2. Manual Control (always overrides autonomous)
-3. SmolVLA (when in AUTO mode)
+3. AI (when in AUTO mode)
 4. Task Execution
 5. External Commands
 
@@ -47,12 +48,12 @@ This implementation extends the existing wheel loader controller to support dual
 - Validation of mode transitions
 - Timeout protection during transitions
 - System health checks before enabling auto mode
-- SmolVLA communication monitoring
+- AI communication monitoring
 
 ### Autonomous Operation Safety
-- SmolVLA confidence score validation (>0.5 required)
+- AI confidence score validation (>0.5 required)
 - Communication timeout detection (automatic fallback to manual)
-- Emergency stop capability from SmolVLA
+- Emergency stop capability from AI
 - Conservative speed and acceleration limits in auto mode
 
 ## Auto Load/Dump Sequences
@@ -73,7 +74,7 @@ This implementation extends the existing wheel loader controller to support dual
 ### New Parameters
 - `WLC_MODE_TRANS_TO`: Mode transition timeout (default: 2.0s)
 - `WLC_AUTO_EN`: Enable autonomous mode (default: enabled)
-- `WLC_SMOL_TIMEOUT`: SmolVLA communication timeout (default: 1.0s)
+- `WLC_AI_TIMEOUT`: AI communication timeout (default: 1.0s)
 
 ### Enhanced Parameters
 All existing wheel loader controller parameters remain active and apply safety limits in both modes.
@@ -85,11 +86,9 @@ Send `OperationModeCommand` message with:
 - `mode_switch_request = true`
 - `operation_mode = MODE_AUTO` or `MODE_MANUAL`
 
-### SmolVLA Integration
-Publish `SmolVlaOutput` messages containing:
+### AI Integration
+Publish `AiOutput` messages containing:
 - Bucket position and pose commands
-- Vehicle position and heading
-- Operation mode (IDLE, LOAD, DUMP, etc.)
 - Confidence score and validation flags
 
 ### Manual Override
@@ -102,14 +101,14 @@ Publish `SmolVlaOutput` messages containing:
 ### Basic Functionality
 1. Verify mode switching between manual and auto
 2. Test manual override during autonomous operation
-3. Validate timeout behavior when SmolVLA communication is lost
-4. Check emergency stop functionality from both RC and SmolVLA
+3. Validate timeout behavior when AI communication is lost
+4. Check emergency stop functionality from both RC and AI
 
 ### Safety Validation
 1. Confirm manual control always overrides autonomous
 2. Test mode transition timeout and recovery
 3. Verify emergency stop behavior in all modes
-4. Validate SmolVLA confidence score filtering
+4. Validate AI confidence score filtering
 
 ### Auto Sequences
 1. Test auto load sequence with varying approach angles
@@ -124,10 +123,10 @@ Publish `SmolVlaOutput` messages containing:
 - Uses existing uORB message infrastructure where possible
 - Follows PX4 coding standards and patterns
 
-### Integration with SmolVLA
-- Designed for loose coupling with SmolVLA algorithm
+### Integration with AI
+- Designed for loose coupling with AI algorithm
 - Confidence-based command filtering
-- Graceful degradation when SmolVLA is unavailable
-- Clear separation between perception (SmolVLA) and control (wheel loader)
+- Graceful degradation when AI is unavailable
+- Clear separation between perception (AI) and control (wheel loader)
 
 This implementation provides a solid foundation for dual-mode operation while maintaining the safety and reliability of the existing wheel loader controller.
