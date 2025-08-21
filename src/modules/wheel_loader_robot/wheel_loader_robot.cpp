@@ -33,41 +33,31 @@
 
 #include "wheel_loader_robot.hpp"
 
-#include <px4_platform_common/getopt.h>
-#include <px4_platform_common/log.h>
-#include <lib/mathlib/mathlib.h>
-#include <cstring>
-
 WheelLoaderRobot::WheelLoaderRobot() :
 	ModuleParams(nullptr),
-	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::nav_and_controllers)
 {
+	_loop_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": cycle");
+	_power_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": power");
 }
 
 WheelLoaderRobot::~WheelLoaderRobot()
 {
-	perf_free(_cycle_perf);
-	perf_free(_emergency_stop_perf);
+	perf_free(_loop_perf);
+	perf_free(_power_perf);
 }
 
 bool WheelLoaderRobot::init()
 {
-	// Initialize performance counters
-	_cycle_perf = perf_alloc(PC_ELAPSED, MODULE_NAME ": cycle");
-	_emergency_stop_perf = perf_alloc(PC_COUNT, MODULE_NAME ": emergency_stops");
+	update_parameters();
 
-	// Set initial state
-	_control_state = ControlState::INITIALIZING;
-	_state_entered_time = hrt_absolute_time();
+	// Initialize power state
+	_power_state.power_budget_w = _param_max_power.get();
+	_power_state.mode = PowerMode::NORMAL;
 
-	// Update parameters
-	updateParams();
+	_state = SystemState::STANDBY;
 
-	// Initialize subsystem health states
-	_boom_health = HealthState::UNKNOWN;
-	_bucket_health = HealthState::UNKNOWN;
-
-	ScheduleOnInterval(CONTROL_INTERVAL_US);
+	ScheduleOnInterval(CONTROL_PERIOD_US);
 
 	return true;
 }
@@ -76,748 +66,509 @@ void WheelLoaderRobot::Run()
 {
 	if (should_exit()) {
 		ScheduleClear();
-		exit_and_cleanup();
 		return;
 	}
 
-	perf_begin(_cycle_perf);
+	perf_begin(_loop_perf);
 
-	// Check for parameter updates
+	// Update parameters if needed
 	if (_parameter_update_sub.updated()) {
-		parameter_update_s param_update;
-		_parameter_update_sub.copy(&param_update);
-		updateParams();
+		update_parameters();
 	}
 
-	// Process incoming commands and update state
-	processVehicleCommand();
-	processVlaCommand();
-	processOperationModeCommand();
+	// Update inputs
+	update_inputs();
 
-	// Update subsystem health monitoring
-	updateSubsystemHealth();
+	// Update power state
+	if (hrt_elapsed_time(&_last_power_update) >= POWER_UPDATE_PERIOD_US) {
+		perf_begin(_power_perf);
+		update_power_state();
+		perf_end(_power_perf);
+		_last_power_update = hrt_absolute_time();
+	}
 
-	// Perform safety checks
-	performSafetyChecks();
+	// Update system state
+	update_system_state();
 
-	// Update control state
-	updateControlState();
-
-	// Generate and publish commands to subsystems
-	publishCommands();
+	// Execute commands if operating
+	if (_state == SystemState::OPERATING || _state == SystemState::POWER_LIMITED) {
+		execute_commands();
+	}
 
 	// Publish status
-	publishStatus();
+	publish_status();
 
-	perf_end(_cycle_perf);
+	perf_end(_loop_perf);
 }
 
-void WheelLoaderRobot::processVehicleCommand()
+void WheelLoaderRobot::update_inputs()
 {
-	if (!_manual_control_setpoint_sub.updated()) {
-		return;
-	}
-
+	// Process manual control input
 	manual_control_setpoint_s manual;
+	if (_manual_control_sub.update(&manual)) {
+		_manual_input = process_manual_input(manual);
+	}
 
-	if (!_manual_control_setpoint_sub.copy(&manual)) {
+	// Process VLA input if in autonomous mode
+	if (_mode == OperationMode::AUTONOMOUS) {
+		vla_command_s vla;
+		if (_vla_command_sub.update(&vla)) {
+			_vla_input = process_vla_input(vla);
+		}
+	}
+}
+
+void WheelLoaderRobot::update_power_state()
+{
+	// Update battery status
+	battery_status_s battery;
+	if (_battery_status_sub.update(&battery)) {
+		_power_state.battery_voltage_v = battery.voltage_v;
+		_power_state.battery_current_a = battery.current_a;
+		_power_state.battery_remaining_pct = battery.remaining * 100.0f;
+		_power_state.is_charging = battery.current_a < -0.1f;
+	}
+
+	// Update power consumption
+	power_monitor_s power;
+	if (_power_monitor_sub.update(&power)) {
+		_power_state.power_consumption_w = power.voltage_v * power.current_a;
+	}
+
+	// Determine power mode
+	_power_state.mode = determine_power_mode();
+
+	// Calculate power budget
+	calculate_power_budget();
+
+	// Calculate efficiency factor
+	_power_state.efficiency_factor = calculate_efficiency_factor();
+}
+
+WheelLoaderRobot::PowerMode WheelLoaderRobot::determine_power_mode()
+{
+	if (_power_state.is_critical()) {
+		return PowerMode::CRITICAL;
+	} else if (_power_state.is_low()) {
+		return PowerMode::ECO;
+	} else if (_power_state.battery_remaining_pct > 80.0f && !_power_state.is_charging) {
+		return PowerMode::BOOST;
+	} else {
+		return PowerMode::NORMAL;
+	}
+}
+
+void WheelLoaderRobot::calculate_power_budget()
+{
+	switch (_power_state.mode) {
+	case PowerMode::CRITICAL:
+		_power_state.power_budget_w = _param_max_power.get() * 0.3f;
+		break;
+	case PowerMode::ECO:
+		_power_state.power_budget_w = _param_eco_power.get();
+		break;
+	case PowerMode::BOOST:
+		_power_state.power_budget_w = _param_max_power.get() * 1.2f;
+		break;
+	default:
+		_power_state.power_budget_w = _param_max_power.get();
+		break;
+	}
+}
+
+float WheelLoaderRobot::calculate_efficiency_factor()
+{
+	// Simple efficiency model based on battery voltage
+	float nominal_voltage = 48.0f;  // Nominal 48V system
+	float voltage_factor = _power_state.battery_voltage_v / nominal_voltage;
+
+	// Efficiency decreases with low voltage
+	return math::constrain(voltage_factor, 0.7f, 1.1f);
+}
+
+void WheelLoaderRobot::update_system_state()
+{
+	SystemState new_state = _state;
+
+	// Update subsystem health
+	update_subsystem_health();
+
+	switch (_state) {
+	case SystemState::INIT:
+		if (_health.is_healthy()) {
+			new_state = SystemState::STANDBY;
+		}
+		break;
+
+	case SystemState::STANDBY:
+		if (_manual_input.valid || (_vla_input.valid && _mode == OperationMode::AUTONOMOUS)) {
+			if (_power_state.is_critical()) {
+				new_state = SystemState::POWER_LIMITED;
+			} else {
+				new_state = SystemState::OPERATING;
+			}
+		} else if (check_emergency_conditions()) {
+			new_state = SystemState::EMERGENCY;
+		} else if (!_health.is_healthy()) {
+			new_state = SystemState::FAULT;
+		}
+		break;
+
+	case SystemState::OPERATING:
+		if (check_emergency_conditions()) {
+			new_state = SystemState::EMERGENCY;
+		} else if (!_health.is_healthy()) {
+			new_state = SystemState::FAULT;
+		} else if (_power_state.is_critical()) {
+			new_state = SystemState::POWER_LIMITED;
+		} else if (!_manual_input.valid && !(_vla_input.valid && _mode == OperationMode::AUTONOMOUS)) {
+			new_state = SystemState::STANDBY;
+		}
+		break;
+
+	case SystemState::POWER_LIMITED:
+		if (check_emergency_conditions()) {
+			new_state = SystemState::EMERGENCY;
+		} else if (!_health.is_healthy()) {
+			new_state = SystemState::FAULT;
+		} else if (!_power_state.is_critical() && (_manual_input.valid ||
+			   (_vla_input.valid && _mode == OperationMode::AUTONOMOUS))) {
+			new_state = SystemState::OPERATING;
+		} else if (!_manual_input.valid && !(_vla_input.valid && _mode == OperationMode::AUTONOMOUS)) {
+			new_state = SystemState::STANDBY;
+		}
+		break;
+
+	case SystemState::EMERGENCY:
+		// Requires manual reset
+		if (!check_emergency_conditions() && _health.is_healthy()) {
+			new_state = SystemState::STANDBY;
+		}
+		break;
+
+	case SystemState::FAULT:
+		if (_health.is_healthy()) {
+			new_state = SystemState::STANDBY;
+		}
+		break;
+	}
+
+	if (new_state != _state && can_transition_to(new_state)) {
+		transition_to(new_state);
+	}
+}
+
+void WheelLoaderRobot::execute_commands()
+{
+	// Arbitrate between command sources
+	_active_command = arbitrate_commands();
+
+	// Validate command
+	if (!validate_command(_active_command)) {
+		PX4_WARN("Command validation failed");
 		return;
 	}
 
-	// Convert manual control to wheel loader command
+	// Apply power limits
+	apply_power_limits(_active_command);
+
+	// Apply general command limits
+	apply_command_limits(_active_command);
+
+	// Send commands to subsystems
+	send_chassis_command(_active_command);
+	send_boom_command(_active_command);
+	send_bucket_command(_active_command);
+}
+
+wheel_loader_command_s WheelLoaderRobot::arbitrate_commands()
+{
 	wheel_loader_command_s cmd{};
-	cmd.timestamp = manual.timestamp;
-	cmd.command_source = wheel_loader_command_s::SOURCE_MANUAL_CONTROL;
 
-	// Map manual control inputs to wheel loader commands
-	// Scale manual inputs (-1 to 1) to appropriate ranges
-	const float max_speed = _max_speed.get();
-	cmd.front_left_wheel_speed = manual.pitch * max_speed;
-	cmd.front_right_wheel_speed = manual.pitch * max_speed;
-	cmd.rear_left_wheel_speed = manual.pitch * max_speed;
-	cmd.rear_right_wheel_speed = manual.pitch * max_speed;
+	// Priority: Manual > Autonomous
+	if (_manual_input.valid) {
+		cmd = _manual_input.command;
+	} else if (_vla_input.valid && _mode == OperationMode::AUTONOMOUS) {
+		cmd = _vla_input.command;
+	}
 
-	cmd.steering_angle_cmd = manual.roll * 0.5f;  // Max ±0.5 rad
-	cmd.boom_lift_cmd = manual.throttle * 0.1f;   // Manual boom control
-	cmd.bucket_angle_cmd = manual.yaw * 0.2f;     // Manual bucket control
-
-	cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_MANUAL;
-	cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_MANUAL;
-	cmd.emergency_stop = (manual.buttons & (1 << 0)) != 0; // Use button 0 for emergency stop
-
-	_manual_command = cmd;
-	_last_command_time = hrt_absolute_time();
+	return cmd;
 }
 
-void WheelLoaderRobot::processVlaCommand()
+void WheelLoaderRobot::apply_power_limits(wheel_loader_command_s &cmd)
 {
-	// Process incoming VLA commands
-	if (_vla_command_sub.updated()) {
-		vla_command_s vla_command;
+	// Estimate power requirements
+	_chassis_power_w = fabsf(cmd.linear_velocity) * _param_max_power.get() * 0.4f;
+	_boom_power_w = fabsf(cmd.boom_velocity) * _param_max_power.get() * 0.3f;
+	_bucket_power_w = fabsf(cmd.bucket_velocity) * _param_max_power.get() * 0.3f;
 
-		if (_vla_command_sub.copy(&vla_command)) {
-			_current_vla_command = vla_command;
-			_last_vla_command_time = hrt_absolute_time();
+	_total_power_request_w = _chassis_power_w + _boom_power_w + _bucket_power_w;
 
-			// Only process if in auto mode or transitioning to auto
-			if (_operation_mode == OperationMode::AUTO ||
-			    (_operation_mode == OperationMode::TRANSITION && _requested_mode == OperationMode::AUTO)) {
+	// Apply power budget limit
+	if (_total_power_request_w > _power_state.power_budget_w) {
+		float scale_factor = _power_state.power_budget_w / _total_power_request_w;
 
-				// Validate VLA output
-				if (vla_command.valid_output && vla_command.confidence_score > 0.5f) {
-					// Convert VLA output to wheel loader command
-					_vla_command = convertVlaToCommand(vla_command);
-					_vla_command.timestamp = vla_command.timestamp;
-					_vla_command.command_source = wheel_loader_command_s::SOURCE_EXTERNAL; // Use existing source type
-
-					if (_diagnostic_enable.get()) {
-						PX4_INFO("VLA command: pos(%.2f,%.2f,%.2f) conf=%.2f",
-							 (double)vla_command.bucket_position_x,
-							 (double)vla_command.bucket_position_y,
-							 (double)vla_command.bucket_position_z,
-							 (double)vla_command.confidence_score);
-					}
-
-				} else {
-					if (_diagnostic_enable.get()) {
-						PX4_WARN("Invalid VLA output: valid=%d conf=%.2f",
-							 vla_command.valid_output, (double)vla_command.confidence_score);
-					}
-				}
-
-				// Handle emergency stop from VLA
-				if (vla_command.emergency_stop) {
-					PX4_WARN("Emergency stop commanded by VLA");
-					_emergency_stop_active = true;
-				}
-			}
+		// Prioritize chassis movement
+		if (scale_factor < 0.7f) {
+			cmd.boom_velocity *= 0.5f;
+			cmd.bucket_velocity *= 0.5f;
 		}
-	}
 
-	// Check for VLA communication timeout
-	if (_operation_mode == OperationMode::AUTO) {
-		hrt_abstime now = hrt_absolute_time();
-		const hrt_abstime timeout_us = static_cast<hrt_abstime>(_vla_timeout.get() * 1_s);
-
-		if (now - _last_vla_command_time > timeout_us) {
-			PX4_WARN("VLA communication timeout - switching to manual mode");
-			requestModeTransition(OperationMode::MANUAL);
-		}
+		cmd.linear_velocity *= scale_factor;
+		cmd.angular_velocity *= scale_factor;
 	}
 }
 
-void WheelLoaderRobot::processOperationModeCommand()
+void WheelLoaderRobot::send_chassis_command(const wheel_loader_command_s &cmd)
 {
-	if (_operation_mode_command_sub.updated()) {
-		operation_mode_command_s mode_cmd;
+	chassis_command_s chassis_cmd{};
+	chassis_cmd.timestamp = hrt_absolute_time();
+	chassis_cmd.linear_velocity = cmd.linear_velocity;
+	chassis_cmd.angular_velocity = cmd.angular_velocity;
+	chassis_cmd.mode = chassis_command_s::MODE_VELOCITY;
+	chassis_cmd.emergency_stop = (_state == SystemState::EMERGENCY);
 
-		if (_operation_mode_command_sub.copy(&mode_cmd)) {
-			if (mode_cmd.mode_switch_request) {
-				OperationMode requested_mode = static_cast<OperationMode>(mode_cmd.operation_mode);
-
-				if (_diagnostic_enable.get()) {
-					PX4_INFO("Mode switch requested: %d -> %d",
-						static_cast<int>(_operation_mode), static_cast<int>(requested_mode));
-				}
-
-				// Validate and request mode transition
-				if (isValidModeTransition(_operation_mode, requested_mode)) {
-					if (requestModeTransition(requested_mode)) {
-						PX4_INFO("Mode transition initiated");
-					} else {
-						PX4_WARN("Mode transition request denied by safety system");
-					}
-				} else {
-					PX4_WARN("Invalid mode transition requested");
-				}
-			}
-
-			// Handle manual override activation
-			if (mode_cmd.manual_override_active && _operation_mode == OperationMode::AUTO) {
-				PX4_INFO("Manual override activated");
-				enforceManualOverride();
-			}
-
-			// Handle emergency mode switch
-			if (mode_cmd.emergency_mode_switch) {
-				PX4_WARN("Emergency mode switch to manual");
-				_operation_mode = OperationMode::MANUAL;
-				_requested_mode = OperationMode::MANUAL;
-				_mode_transition_requested = false;
-			}
-		}
-	}
+	_chassis_cmd_pub.publish(chassis_cmd);
 }
 
-WheelLoaderRobot::CommandSource WheelLoaderRobot::selectActiveCommandSource()
+void WheelLoaderRobot::send_boom_command(const wheel_loader_command_s &cmd)
 {
-	hrt_abstime now = hrt_absolute_time();
-	const hrt_abstime timeout_us = static_cast<hrt_abstime>(_cmd_timeout.get() * 1_s);
+	boom_command_s boom_cmd{};
+	boom_cmd.timestamp = hrt_absolute_time();
+	boom_cmd.velocity = cmd.boom_velocity;
+	boom_cmd.emergency_stop = (_state == SystemState::EMERGENCY);
 
-	// Emergency stop has highest priority
-	if (_emergency_stop_active) {
-		return CommandSource::NONE;
-	}
-
-	// Manual control has priority over autonomous
-	if ((now - _manual_command.timestamp) < timeout_us) {
-		return CommandSource::MANUAL;
-	}
-
-	// VLA autonomous control (only when in AUTO mode)
-	if (_operation_mode == OperationMode::AUTO && (now - _vla_command.timestamp) < timeout_us) {
-		return CommandSource::VLA;
-	}
-
-	// No valid command source
-	return CommandSource::NONE;
-}
+	_boom_cmd_pub.publish(boom_cmd);
 }
 
-bool WheelLoaderRobot::validateCommand(const wheel_loader_command_s &cmd)
+void WheelLoaderRobot::send_bucket_command(const wheel_loader_command_s &cmd)
 {
-	// Check timestamp validity
-	hrt_abstime now = hrt_absolute_time();
+	bucket_command_s bucket_cmd{};
+	bucket_cmd.timestamp = hrt_absolute_time();
+	bucket_cmd.velocity = cmd.bucket_velocity;
+	bucket_cmd.emergency_stop = (_state == SystemState::EMERGENCY);
 
-	if (cmd.timestamp == 0 || (now - cmd.timestamp) > (1_s)) {
-		PX4_WARN("Command timestamp invalid or too old");
+	_bucket_cmd_pub.publish(bucket_cmd);
+}
+
+void WheelLoaderRobot::publish_status()
+{
+	wheel_loader_status_s status{};
+	status.timestamp = hrt_absolute_time();
+
+	// System state
+	status.state = static_cast<uint8_t>(_state);
+	status.mode = static_cast<uint8_t>(_mode);
+
+	// Power information
+	status.battery_voltage = _power_state.battery_voltage_v;
+	status.battery_current = _power_state.battery_current_a;
+	status.battery_remaining = _power_state.battery_remaining_pct;
+	status.power_consumption = _power_state.power_consumption_w;
+	status.power_budget = _power_state.power_budget_w;
+	status.power_mode = static_cast<uint8_t>(_power_state.mode);
+
+	// Health status
+	status.chassis_ok = _health.chassis_ok;
+	status.boom_ok = _health.boom_ok;
+	status.bucket_ok = _health.bucket_ok;
+	status.battery_ok = _health.battery_ok;
+
+	// Active command
+	status.active_linear_velocity = _active_command.linear_velocity;
+	status.active_angular_velocity = _active_command.angular_velocity;
+	status.active_boom_velocity = _active_command.boom_velocity;
+	status.active_bucket_velocity = _active_command.bucket_velocity;
+
+	_status_pub.publish(status);
+}
+
+WheelLoaderRobot::CommandInput WheelLoaderRobot::process_manual_input(const manual_control_setpoint_s &manual)
+{
+	CommandInput input{};
+	input.timestamp = hrt_absolute_time();
+	input.valid = manual.valid;
+
+	if (manual.valid) {
+		// Map manual control to wheel loader commands
+		input.command.linear_velocity = manual.x * _param_max_speed.get();
+		input.command.angular_velocity = manual.r * M_PI_F;
+		input.command.boom_velocity = manual.y * 0.5f;
+		input.command.bucket_velocity = manual.z * 0.5f;
+	}
+
+	return input;
+}
+
+WheelLoaderRobot::CommandInput WheelLoaderRobot::process_vla_input(const vla_command_s &vla)
+{
+	CommandInput input{};
+	input.timestamp = hrt_absolute_time();
+	input.valid = vla.valid_output && !vla.emergency_stop;
+
+	if (input.valid) {
+		// Convert VLA bucket end effector setpoints to wheel loader commands
+		// This requires inverse kinematics to determine vehicle position and boom/bucket angles
+
+		// Simplified inverse kinematics for wheel loader
+		// In a real implementation, this would use proper kinematic chains
+
+		static float prev_bucket_x = 0.0f, prev_bucket_y = 0.0f, prev_bucket_z = 0.0f;
+		static float prev_bucket_pitch = 0.0f;
+
+		// Compute bucket position deltas
+		float dx = vla.bucket_position_x - prev_bucket_x;
+		float dy = vla.bucket_position_y - prev_bucket_y;
+		float dz = vla.bucket_position_z - prev_bucket_z;
+		float dpitch = vla.bucket_orientation_pitch - prev_bucket_pitch;
+
+		// Convert bucket end effector motion to vehicle and joint motion
+		float dt = 0.02f;  // 20ms control period
+
+		// Vehicle motion: move base to position bucket appropriately
+		// Simplified: assume bucket motion in X-Y requires vehicle movement
+		float vehicle_distance = sqrtf(dx*dx + dy*dy);
+		input.command.linear_velocity = vehicle_distance / dt;
+
+		// Vehicle turning: align with bucket yaw target
+		input.command.angular_velocity = (vla.bucket_orientation_yaw - atan2f(dy, dx)) / dt;
+
+		// Boom motion: height changes primarily affect boom angle
+		// Simplified mapping: vertical motion maps to boom velocity
+		input.command.boom_velocity = dz / dt;
+
+		// Bucket motion: pitch changes affect bucket angle
+		// Bucket pitch controls digging/dumping action
+		input.command.bucket_velocity = dpitch / dt;
+
+		// Apply velocity limits for safety
+		input.command.linear_velocity = math::constrain(input.command.linear_velocity, -2.0f, 2.0f);
+		input.command.angular_velocity = math::constrain(input.command.angular_velocity, -M_PI_F/2, M_PI_F/2);
+		input.command.boom_velocity = math::constrain(input.command.boom_velocity, -0.5f, 0.5f);
+		input.command.bucket_velocity = math::constrain(input.command.bucket_velocity, -1.0f, 1.0f);
+
+		// Update previous values for next iteration
+		prev_bucket_x = vla.bucket_position_x;
+		prev_bucket_y = vla.bucket_position_y;
+		prev_bucket_z = vla.bucket_position_z;
+		prev_bucket_pitch = vla.bucket_orientation_pitch;
+
+		PX4_DEBUG("VLA bucket target: (%.2f, %.2f, %.2f) pitch=%.2f -> vel:(%.2f, %.2f, %.2f, %.2f)",
+			  (double)vla.bucket_position_x, (double)vla.bucket_position_y, (double)vla.bucket_position_z,
+			  (double)vla.bucket_orientation_pitch, (double)input.command.linear_velocity,
+			  (double)input.command.angular_velocity, (double)input.command.boom_velocity,
+			  (double)input.command.bucket_velocity);
+	}
+
+	return input;
+}
+
+bool WheelLoaderRobot::validate_command(const wheel_loader_command_s &cmd)
+{
+	// Check for NaN values
+	if (!PX4_ISFINITE(cmd.linear_velocity) || !PX4_ISFINITE(cmd.angular_velocity) ||
+	    !PX4_ISFINITE(cmd.boom_velocity) || !PX4_ISFINITE(cmd.bucket_velocity)) {
 		return false;
 	}
 
-	// Validate speed commands
-	float max_speed = _max_speed.get();
-
-	if (fabsf(cmd.front_left_wheel_speed) > max_speed ||
-		fabsf(cmd.front_right_wheel_speed) > max_speed ||
-		fabsf(cmd.rear_left_wheel_speed) > max_speed ||
-		fabsf(cmd.rear_right_wheel_speed) > max_speed) {
-		PX4_WARN("Wheel speed command exceeds limits");
-		return false;
-	}
-
-	// Validate electric motor commands
-	if (fabsf(cmd.boom_lift_cmd) > M_PI_2_F ||
-		fabsf(cmd.boom_extend_cmd) > 1.0f ||
-		fabsf(cmd.bucket_angle_cmd) > M_PI_F) {
-		PX4_WARN("Electric motor command exceeds limits");
-		return false;
-	}
-
-	// Validate steering commands
-	if (fabsf(cmd.steering_angle_cmd) > M_PI_4_F ||
-		fabsf(cmd.articulation_angle_cmd) > M_PI_4_F) {
-		PX4_WARN("Steering command exceeds limits");
+	// Check velocity limits
+	if (fabsf(cmd.linear_velocity) > _param_max_speed.get() ||
+	    fabsf(cmd.angular_velocity) > M_PI_F) {
 		return false;
 	}
 
 	return true;
 }
 
-void WheelLoaderRobot::applyCommandLimits(wheel_loader_command_s &cmd)
+void WheelLoaderRobot::apply_command_limits(wheel_loader_command_s &cmd)
 {
-	float max_speed = _max_speed.get();
-	float max_accel = _max_accel.get();
-
-	// Limit wheel speeds
-	cmd.front_left_wheel_speed = math::constrain(cmd.front_left_wheel_speed, -max_speed, max_speed);
-	cmd.front_right_wheel_speed = math::constrain(cmd.front_right_wheel_speed, -max_speed, max_speed);
-	cmd.rear_left_wheel_speed = math::constrain(cmd.rear_left_wheel_speed, -max_speed, max_speed);
-	cmd.rear_right_wheel_speed = math::constrain(cmd.rear_right_wheel_speed, -max_speed, max_speed);
-
-	// Limit electric motor commands
-	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -M_PI_2_F, M_PI_2_F);
-	cmd.boom_extend_cmd = math::constrain(cmd.boom_extend_cmd, 0.0f, 1.0f);
-	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -M_PI_F, M_PI_F);
-
-	// Limit steering commands
-	cmd.steering_angle_cmd = math::constrain(cmd.steering_angle_cmd, -M_PI_4_F, M_PI_4_F);
-	cmd.articulation_angle_cmd = math::constrain(cmd.articulation_angle_cmd, -M_PI_4_F, M_PI_4_F);
-
-	// Apply acceleration limits (simplified rate limiting)
-	static hrt_abstime last_limit_time = 0;
-	hrt_abstime now = hrt_absolute_time();
-	float dt = (now - last_limit_time) / 1e6f;
-
-	if (dt > 0.001f && dt < 0.1f) { // Reasonable delta time
-		// Rate limit implementation would go here
-		// For now, we just enforce the max acceleration parameter exists
-		(void)max_accel; // Suppress unused variable warning
-	}
-
-	last_limit_time = now;
+	// Apply velocity limits
+	cmd.linear_velocity = math::constrain(cmd.linear_velocity,
+					      -_param_max_speed.get(),
+					      _param_max_speed.get());
+	cmd.angular_velocity = math::constrain(cmd.angular_velocity, -M_PI_F, M_PI_F);
+	cmd.boom_velocity = math::constrain(cmd.boom_velocity, -1.0f, 1.0f);
+	cmd.bucket_velocity = math::constrain(cmd.bucket_velocity, -1.0f, 1.0f);
 }
 
-void WheelLoaderRobot::generateSubsystemCommands(const wheel_loader_command_s &cmd)
+bool WheelLoaderRobot::check_emergency_conditions()
 {
-	hrt_abstime now = hrt_absolute_time();
-
-	// Traction control is handled by chassis control module
-	float front_left_speed = cmd.front_left_wheel_speed;
-	float front_right_speed = cmd.front_right_wheel_speed;
-	float rear_left_speed = cmd.rear_left_wheel_speed;
-	float rear_right_speed = cmd.rear_right_wheel_speed;
-
-	// Generate front wheel controller command
-	wheel_speeds_setpoint_s front_wheel_cmd{};
-	front_wheel_cmd.timestamp = now;
-	const float wheel_radius_m = 0.25f; // TODO: Should be parameterized
-	front_wheel_cmd.front_wheel_speed_rad_s = (front_left_speed + front_right_speed) * 0.5f / wheel_radius_m;
-	front_wheel_cmd.max_acceleration = _max_accel.get();
-
-	// Generate rear wheel controller command
-	wheel_speeds_setpoint_s rear_wheel_cmd{};
-	rear_wheel_cmd.timestamp = now;
-	rear_wheel_cmd.rear_wheel_speed_rad_s = (rear_left_speed + rear_right_speed) * 0.5f / wheel_radius_m;
-	rear_wheel_cmd.max_acceleration = _max_accel.get();
-	rear_wheel_cmd.synchronized = true;
-	rear_wheel_cmd.differential_enable = false;
-
-	// Generate boom command
-	boom_command_s boom_cmd{};
-	boom_cmd.timestamp = now;
-	boom_cmd.lift_angle_cmd = cmd.boom_lift_cmd;
-	boom_cmd.extend_position_cmd = cmd.boom_extend_cmd;
-	boom_cmd.control_mode = (cmd.hydraulic_mode == wheel_loader_command_s::HYDRAULIC_MODE_MANUAL) ?
-							boom_command_s::MODE_VELOCITY : boom_command_s::MODE_POSITION;
-	boom_cmd.emergency_stop = cmd.emergency_stop || _emergency_stop_active;
-	boom_cmd.command_priority = boom_command_s::PRIORITY_NORMAL;
-
-	// Generate bucket command
-	bucket_command_s bucket_cmd{};
-	bucket_cmd.timestamp = now;
-	bucket_cmd.target_angle = cmd.bucket_angle_cmd;
-	bucket_cmd.command_mode = (cmd.hydraulic_mode == wheel_loader_command_s::HYDRAULIC_MODE_MANUAL) ?
-							  bucket_command_s::MODE_MANUAL : bucket_command_s::MODE_AUTO_LEVEL;
-	bucket_cmd.control_mode = bucket_cmd.command_mode;
-
-	// Generate steering command
-	steering_command_s steering_cmd{};
-	steering_cmd.timestamp = now;
-	steering_cmd.front_steering_angle_cmd = cmd.steering_angle_cmd;
-	steering_cmd.articulation_angle_cmd = cmd.articulation_angle_cmd;
-	steering_cmd.steering_mode = steering_command_s::MODE_FRONT_ONLY;
-	steering_cmd.control_type = steering_command_s::CONTROL_POSITION;
-	steering_cmd.command_priority = steering_command_s::PRIORITY_NORMAL;
-
-	// Apply emergency stop overrides
-	if (cmd.emergency_stop || _emergency_stop_active) {
-		front_wheel_cmd.front_wheel_speed_rad_s = 0.0f;
-		rear_wheel_cmd.rear_wheel_speed_rad_s = 0.0f;
-	}
-
-	// Publish commands
-	_front_wheel_setpoint_pub.publish(front_wheel_cmd);
-	_rear_wheel_setpoint_pub.publish(rear_wheel_cmd);
-	_boom_command_pub.publish(boom_cmd);
-	_bucket_command_pub.publish(bucket_cmd);
-	_steering_command_pub.publish(steering_cmd);
-}
-
-void WheelLoaderRobot::updateControlState()
-{
-	ControlState new_state = _control_state;
-	CommandSource active_source = selectActiveCommandSource();
-
-	// Handle mode transitions first
-	handleModeTransition();
-
-	switch (_control_state) {
-	case ControlState::INITIALIZING:
-		if (isSystemHealthy()) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-
-	case ControlState::IDLE:
-		if (_emergency_stop_active) {
-			new_state = ControlState::EMERGENCY_STOP;
-
-		} else if (active_source == CommandSource::MANUAL) {
-			new_state = ControlState::MANUAL_CONTROL;
-
-		} else if (active_source == CommandSource::VLA) {
-			new_state = ControlState::AUTO_OPERATION;
-		}
-
-		break;
-
-	case ControlState::MANUAL_CONTROL:
-		if (_emergency_stop_active) {
-			new_state = ControlState::EMERGENCY_STOP;
-
-		} else if (active_source == CommandSource::VLA && _operation_mode == OperationMode::AUTO) {
-			new_state = ControlState::AUTO_OPERATION;
-
-		} else if (active_source != CommandSource::MANUAL) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-
-	case ControlState::AUTO_OPERATION:
-		if (_emergency_stop_active) {
-			new_state = ControlState::EMERGENCY_STOP;
-
-		} else if (active_source == CommandSource::MANUAL || _operation_mode == OperationMode::MANUAL) {
-			new_state = ControlState::MANUAL_CONTROL;
-
-		} else if (active_source != CommandSource::VLA) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-
-	case ControlState::MODE_TRANSITION:
-		if (_emergency_stop_active) {
-			new_state = ControlState::EMERGENCY_STOP;
-
-		} else if (!_mode_transition_requested) {
-			// Transition complete, go to appropriate state based on final mode
-			if (_operation_mode == OperationMode::MANUAL) {
-				new_state = (active_source == CommandSource::MANUAL) ? ControlState::MANUAL_CONTROL : ControlState::IDLE;
-			} else if (_operation_mode == OperationMode::AUTO) {
-				new_state = (active_source == CommandSource::VLA) ? ControlState::AUTO_OPERATION : ControlState::IDLE;
-			} else {
-				new_state = ControlState::IDLE;
-			}
-		}
-
-		break;
-
-		break;
-
-	case ControlState::EMERGENCY_STOP:
-		if (!_emergency_stop_active && isSystemHealthy()) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-
-	case ControlState::ERROR:
-		if (isSystemHealthy()) {
-			new_state = ControlState::IDLE;
-		}
-
-		break;
-	}
-
-	// Check for critical system faults
-	if (!isSystemHealthy() && new_state != ControlState::EMERGENCY_STOP) {
-		new_state = ControlState::ERROR;
-	}
-
-	if (new_state != _control_state) {
-		transitionToState(new_state);
-	}
-
-	_active_command_source = active_source;
-}
-
-void WheelLoaderRobot::transitionToState(ControlState new_state)
-{
-	if (!isValidStateTransition(_control_state, new_state)) {
-		PX4_WARN("Invalid state transition from %d to %d", (int)_control_state, (int)new_state);
-		return;
-	}
-
-	PX4_INFO("State transition: %d -> %d", (int)_control_state, (int)new_state);
-
-	_previous_state = _control_state;
-	_control_state = new_state;
-	_state_entered_time = hrt_absolute_time();
-
-	// Perform state entry actions
-	switch (new_state) {
-	case ControlState::EMERGENCY_STOP:
-		handleEmergencyStop();
-		break;
-
-	case ControlState::IDLE:
-		resetControlState();
-		break;
-
-	default:
-		break;
-	}
-}
-
-bool WheelLoaderRobot::isValidStateTransition(ControlState from, ControlState to)
-{
-	// Emergency stop and error states can be entered from any state
-	if (to == ControlState::EMERGENCY_STOP || to == ControlState::ERROR) {
+	// Check for emergency stop parameter
+	if (_param_estop_enable.get() && _power_state.battery_voltage_v < 20.0f) {
 		return true;
 	}
 
-	// All states can transition to idle
-	if (to == ControlState::IDLE) {
+	// Check for critical system failures
+	if (!_health.battery_ok && _power_state.battery_remaining_pct < 5.0f) {
 		return true;
 	}
 
-	// Mode transition can be entered from any operational state
-	if (to == ControlState::MODE_TRANSITION) {
-		return from != ControlState::INITIALIZING && from != ControlState::EMERGENCY_STOP && from != ControlState::ERROR;
-	}
-
-	// Other transitions depend on current state
-	switch (from) {
-	case ControlState::INITIALIZING:
-		return to == ControlState::IDLE;
-
-	case ControlState::IDLE:
-		return to == ControlState::MANUAL_CONTROL || to == ControlState::AUTO_OPERATION;
-
-	case ControlState::MANUAL_CONTROL:
-		return to == ControlState::AUTO_OPERATION || to == ControlState::MODE_TRANSITION;
-
-	case ControlState::AUTO_OPERATION:
-		return to == ControlState::MANUAL_CONTROL || to == ControlState::MODE_TRANSITION;
-
-	case ControlState::MODE_TRANSITION:
-		return to == ControlState::MANUAL_CONTROL || to == ControlState::AUTO_OPERATION;
-
-	default:
-		return false;
-	}
+	return false;
 }
 
-void WheelLoaderRobot::resetControlState()
-{
-	// Clear active commands
-	memset(&_current_command, 0, sizeof(_current_command));
-	memset(&_manual_command, 0, sizeof(_manual_command));
-	memset(&_vla_command, 0, sizeof(_vla_command));
-
-	_active_command_source = CommandSource::NONE;
-	_safety_override_active = false;
-}
-
-void WheelLoaderRobot::publishCommands()
-{
-	// Select active command based on current state and source priority
-	wheel_loader_command_s active_cmd{};
-	bool has_valid_command = false;
-
-	switch (_active_command_source) {
-	case CommandSource::MANUAL:
-		if (_control_state == ControlState::MANUAL_CONTROL) {
-			active_cmd = _manual_command;
-			has_valid_command = true;
-		}
-
-		break;
-
-	case CommandSource::VLA:
-		if (_control_state == ControlState::AUTO_OPERATION) {
-			active_cmd = _vla_command;
-			has_valid_command = true;
-		}
-
-		break;
-
-	default:
-		break;
-	}
-
-	if (has_valid_command && _control_state != ControlState::EMERGENCY_STOP) {
-		// Apply safety limits
-		applyCommandLimits(active_cmd);
-
-		// Store as current command
-		_current_command = active_cmd;
-
-		// Generate and publish subsystem commands
-		generateSubsystemCommands(active_cmd);
-
-	} else {
-		// Publish safe/idle commands
-		wheel_loader_command_s safe_cmd{};
-		safe_cmd.timestamp = hrt_absolute_time();
-		safe_cmd.emergency_stop = _emergency_stop_active;
-
-		generateSubsystemCommands(safe_cmd);
-	}
-}
-
-void WheelLoaderRobot::publishStatus()
-{
-	wheel_loader_status_s status{};
-	status.timestamp = hrt_absolute_time();
-
-	// Wheel speeds will be provided by chassis control module
-	status.front_wheel_speed = 0.0f; // Placeholder - to be provided by chassis control
-	status.front_motor_current = 0.0f; // Placeholder - to be provided by chassis control
-	status.rear_wheel_speed = 0.0f; // Placeholder - to be provided by chassis control
-	status.rear_motor_current = 0.0f; // Placeholder - to be provided by chassis control
-
-	// System health
-	status.system_health = static_cast<uint8_t>(evaluateOverallHealth());
-	status.motor_fault = false; // Placeholder - to be provided by chassis control
-	status.communication_fault = false; // Placeholder - to be provided by chassis control
-
-	// Temperature monitoring - to be provided by chassis control
-	status.motor_temperature = 25.0f; // Placeholder
-	status.controller_temperature = 25.0f; // Placeholder
-
-	// Power status (placeholder values - would come from power monitoring)
-	status.supply_voltage = 24.0f; // Placeholder
-	status.power_consumption = 1000.0f; // Placeholder
-
-	// Operational counters (placeholder values - would be persistent)
-	status.operating_hours = 0; // Placeholder
-	status.cycle_count = 0; // Placeholder
-
-	_wheel_loader_status_pub.publish(status);
-}
-
-void WheelLoaderRobot::performSafetyChecks()
-{
-	// Check for emergency stop conditions
-	bool emergency_triggered = false;
-
-	// Check if emergency stop is enabled and commanded
-	if (_estop_enable.get() && _current_command.emergency_stop) {
-		emergency_triggered = true;
-	}
-
-	// Check for subsystem faults
-	if (evaluateOverallHealth() == HealthState::CRITICAL) {
-		emergency_triggered = true;
-	}
-
-	// Check for command timeout in critical situations
-	hrt_abstime now = hrt_absolute_time();
-
-	if (_control_state == ControlState::MANUAL_CONTROL || _control_state == ControlState::AUTO_OPERATION) {
-		if ((now - _last_command_time) > (_cmd_timeout.get() * 2_s)) { // Extended timeout for safety
-			emergency_triggered = true;
-			PX4_WARN("Command timeout triggered emergency stop");
-		}
-	}
-
-	if (emergency_triggered && !_emergency_stop_active) {
-		_emergency_stop_active = true;
-		_emergency_stop_time = now;
-		perf_count(_emergency_stop_perf);
-		PX4_WARN("Emergency stop activated");
-	}
-
-	// Check for emergency stop reset conditions
-	if (_emergency_stop_active && !_current_command.emergency_stop) {
-		if ((now - _emergency_stop_time) > (MAX_EMERGENCY_STOP_TIME_S * 1_s)) {
-			// Manual reset required - check for explicit reset command
-			// This would typically require a specific reset sequence
-			if (isSystemHealthy()) {
-				_emergency_stop_active = false;
-				PX4_INFO("Emergency stop cleared");
-			}
-		}
-	}
-}
-
-void WheelLoaderRobot::updateSubsystemHealth()
+void WheelLoaderRobot::update_subsystem_health()
 {
 	hrt_abstime now = hrt_absolute_time();
-	float health_timeout_us = _health_timeout.get() * 1_s;
+
+	// Update chassis health
+	chassis_status_s chassis_status;
+	if (_chassis_status_sub.update(&chassis_status)) {
+		_health.chassis_ok = (chassis_status.health == chassis_status_s::HEALTH_OK);
+		_health.last_update = now;
+	}
 
 	// Update boom health
-	if (_boom_status_sub.updated()) {
-		boom_status_s boom_status;
-
-		if (_boom_status_sub.copy(&boom_status)) {
-			_last_boom_status_time = now;
-
-			// Determine boom health based on status fields
-			if (boom_status.motor_fault || boom_status.encoder_fault) {
-				_boom_health = HealthState::ERROR;
-			} else if (boom_status.state == 4) {  // Error state
-				_boom_health = HealthState::ERROR;
-			} else if (boom_status.state == 2 || boom_status.state == 3) {  // Ready or Moving
-				_boom_health = HealthState::HEALTHY;
-			} else {
-				_boom_health = HealthState::WARNING;  // Uninitialized or zeroing
-			}
-		}
-
-	} else if ((now - _last_boom_status_time) > health_timeout_us) {
-		_boom_health = HealthState::ERROR;
+	boom_status_s boom_status;
+	if (_boom_status_sub.update(&boom_status)) {
+		_health.boom_ok = boom_status.healthy;
 	}
 
 	// Update bucket health
-	if (_bucket_status_sub.updated()) {
-		bucket_status_s bucket_status;
-
-		if (_bucket_status_sub.copy(&bucket_status)) {
-			_last_bucket_status_time = now;
-			// Map bucket state to health state
-			switch (bucket_status.state) {
-			case 2: // ready
-			case 3: // moving
-				_bucket_health = HealthState::HEALTHY;
-				break;
-			case 1: // zeroing
-				_bucket_health = HealthState::WARNING;
-				break;
-			case 4: // error
-			default:
-				_bucket_health = HealthState::ERROR;
-				break;
-			}
-		}
-
-	} else if ((now - _last_bucket_status_time) > health_timeout_us) {
-		_bucket_health = HealthState::ERROR;
-	}
-}
-
-void WheelLoaderRobot::handleEmergencyStop()
-{
-	// Send emergency stop to all subsystems
-	wheel_loader_command_s emergency_cmd{};
-	emergency_cmd.timestamp = hrt_absolute_time();
-	emergency_cmd.emergency_stop = true;
-
-	generateSubsystemCommands(emergency_cmd);
-
-	PX4_WARN("Emergency stop procedure executed");
-}
-
-bool WheelLoaderRobot::isSystemHealthy()
-{
-	HealthState overall_health = evaluateOverallHealth();
-	return overall_health == HealthState::HEALTHY || overall_health == HealthState::WARNING;
-}
-
-WheelLoaderRobot::HealthState WheelLoaderRobot::evaluateOverallHealth()
-{
-	HealthState worst_health = HealthState::HEALTHY;
-
-	// Find the worst health state among all subsystems
-	HealthState subsystem_health[] = {
-		_boom_health,
-		_bucket_health
-	};
-
-	for (HealthState health : subsystem_health) {
-		if (health > worst_health) {
-			worst_health = health;
-		}
+	bucket_status_s bucket_status;
+	if (_bucket_status_sub.update(&bucket_status)) {
+		_health.bucket_ok = bucket_status.healthy;
 	}
 
-	return worst_health;
+	// Update battery health
+	_health.battery_ok = (_power_state.battery_voltage_v > _param_critical_battery.get());
 }
 
-void WheelLoaderRobot::updateParams()
+void WheelLoaderRobot::transition_to(SystemState new_state)
+{
+	PX4_INFO("State transition: %d -> %d", static_cast<int>(_state), static_cast<int>(new_state));
+	_state = new_state;
+	_state_entry_time = hrt_absolute_time();
+}
+
+bool WheelLoaderRobot::can_transition_to(SystemState new_state) const
+{
+	// Define valid state transitions
+	switch (_state) {
+	case SystemState::INIT:
+		return (new_state == SystemState::STANDBY || new_state == SystemState::FAULT);
+
+	case SystemState::STANDBY:
+		return true;  // Can transition to any state from standby
+
+	case SystemState::OPERATING:
+		return (new_state != SystemState::INIT);
+
+	case SystemState::POWER_LIMITED:
+		return (new_state != SystemState::INIT);
+
+	case SystemState::EMERGENCY:
+		return (new_state == SystemState::STANDBY || new_state == SystemState::FAULT);
+
+	case SystemState::FAULT:
+		return (new_state == SystemState::STANDBY || new_state == SystemState::EMERGENCY);
+	}
+
+	return false;
+}
+
+void WheelLoaderRobot::update_parameters()
 {
 	updateParams();
-
-	// Update control rate if parameter changed
-	float new_rate = _control_rate.get();
-
-	if (fabsf(new_rate - CONTROL_RATE_HZ) > 0.1f && new_rate > 0.1f && new_rate <= 200.0f) {
-		ScheduleClear();
-		ScheduleOnInterval(static_cast<uint64_t>(1_s / new_rate));
-	}
 }
 
 int WheelLoaderRobot::task_spawn(int argc, char *argv[])
@@ -830,9 +581,6 @@ int WheelLoaderRobot::task_spawn(int argc, char *argv[])
 
 		if (instance->init()) {
 			return PX4_OK;
-
-		} else {
-			PX4_ERR("Failed to initialize wheel loader robot");
 		}
 
 	} else {
@@ -846,202 +594,9 @@ int WheelLoaderRobot::task_spawn(int argc, char *argv[])
 	return PX4_ERROR;
 }
 
-wheel_loader_command_s WheelLoaderRobot::convertVlaToCommand(const vla_command_s &vla_command)
+int WheelLoaderRobot::custom_command(int argc, char *argv[])
 {
-	wheel_loader_command_s cmd{};
-	cmd.timestamp = vla_command.timestamp;
-	cmd.command_source = wheel_loader_command_s::SOURCE_EXTERNAL;
-
-	// Convert bucket position to boom and bucket commands
-	// This is a simplified conversion - in practice, inverse kinematics would be used
-	float bucket_height = vla_command.bucket_position_z;
-	float bucket_reach = sqrtf(vla_command.bucket_position_x * vla_command.bucket_position_x +
-							   vla_command.bucket_position_y * vla_command.bucket_position_y);
-
-	// Map bucket position to boom lift and bucket angle
-	cmd.boom_lift_cmd = math::constrain(bucket_height / 3.0f, -0.5f, 1.5f); // Rough mapping
-	cmd.bucket_angle_cmd = vla_command.bucket_orientation_pitch;
-	cmd.boom_extend_cmd = math::constrain(bucket_reach / 5.0f, 0.0f, 1.0f); // Rough mapping
-
-	// Set basic movement commands (vehicle control is handled separately)
-	cmd.front_left_wheel_speed = 0.0f;
-	cmd.front_right_wheel_speed = 0.0f;
-	cmd.rear_left_wheel_speed = 0.0f;
-	cmd.rear_right_wheel_speed = 0.0f;
-
-	// Set to coordinated hydraulic mode for VLA operation
-	cmd.hydraulic_mode = wheel_loader_command_s::HYDRAULIC_MODE_COORDINATED;
-	cmd.drive_mode = wheel_loader_command_s::DRIVE_MODE_VELOCITY;
-	cmd.emergency_stop = vla_command.emergency_stop;
-	cmd.enable_hydraulics = !vla_command.emergency_stop;
-	cmd.enable_drivetrain = !vla_command.emergency_stop;
-	cmd.max_vehicle_speed = _safe_speed.get();
-
-	return cmd;
-}
-
-bool WheelLoaderRobot::requestModeTransition(OperationMode new_mode)
-{
-	if (!isValidModeTransition(_operation_mode, new_mode)) {
-		return false;
-	}
-
-	// Safety checks for auto mode
-	if (new_mode == OperationMode::AUTO) {
-		if (!_auto_mode_enable.get()) {
-			PX4_WARN("Autonomous mode disabled by parameter");
-			return false;
-		}
-
-		if (!isSystemReadyForAutoMode()) {
-			PX4_WARN("System not ready for autonomous mode");
-			return false;
-		}
-	}
-
-	_requested_mode = new_mode;
-	_mode_transition_requested = true;
-	_mode_transition_start_time = hrt_absolute_time();
-	_operation_mode = OperationMode::TRANSITION;
-
-	return true;
-}
-
-bool WheelLoaderRobot::isValidModeTransition(OperationMode from, OperationMode to)
-{
-	// Can always transition to manual for safety
-	if (to == OperationMode::MANUAL) {
-		return true;
-	}
-
-	// Can only transition to auto from manual or idle states
-	if (to == OperationMode::AUTO) {
-		return from == OperationMode::MANUAL || from == OperationMode::TRANSITION;
-	}
-
-	// Transition state can be entered from any mode
-	if (to == OperationMode::TRANSITION) {
-		return true;
-	}
-
-	return false;
-}
-
-void WheelLoaderRobot::handleModeTransition()
-{
-	if (!_mode_transition_requested) {
-		return;
-	}
-
-	hrt_abstime now = hrt_absolute_time();
-	float transition_time = (now - _mode_transition_start_time) / 1e6f;
-
-	// Check for transition timeout
-	if (transition_time > _mode_transition_timeout.get()) {
-		PX4_WARN("Mode transition timeout - reverting to manual");
-		_operation_mode = OperationMode::MANUAL;
-		_requested_mode = OperationMode::MANUAL;
-		_mode_transition_requested = false;
-		return;
-	}
-
-	// Complete transition based on target mode
-	switch (_requested_mode) {
-		case OperationMode::MANUAL:
-			_operation_mode = OperationMode::MANUAL;
-			_mode_transition_requested = false;
-			PX4_INFO("Transition to manual mode complete");
-			break;
-
-		case OperationMode::AUTO:
-			if (isSystemReadyForAutoMode()) {
-				_operation_mode = OperationMode::AUTO;
-				_mode_transition_requested = false;
-				PX4_INFO("Transition to auto mode complete");
-			}
-			break;
-
-		default:
-			// Invalid target mode
-			_operation_mode = OperationMode::MANUAL;
-			_mode_transition_requested = false;
-			break;
-	}
-}
-
-bool WheelLoaderRobot::isSystemReadyForAutoMode()
-{
-	// Check system health
-	if (!isSystemHealthy()) {
-		return false;
-	}
-
-	// Check for recent VLA communication
-	hrt_abstime now = hrt_absolute_time();
-	if (now - _last_vla_command_time > _vla_timeout.get() * 1_s) {
-		return false;
-	}
-
-	// Check that VLA output is valid
-	if (!_current_vla_command.valid_output || _current_vla_command.confidence_score < 0.5f) {
-		return false;
-	}
-
-	return true;
-}
-
-void WheelLoaderRobot::enforceManualOverride()
-{
-	// Force switch to manual mode
-	_operation_mode = OperationMode::MANUAL;
-	_requested_mode = OperationMode::MANUAL;
-	_mode_transition_requested = false;
-
-	PX4_INFO("Manual override enforced");
-}
-
-void WheelLoaderRobot::processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
-{
-	// Basic auto load sequence based on VLA bucket position commands
-	// The VLA output already contains the desired bucket position, so we use it directly
-	// Additional load-specific safety limits can be applied here
-
-	// Apply conservative limits for loading operations
-	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -0.5f, 0.5f);
-	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, -0.3f, 0.8f);
-
-	if (_diagnostic_enable.get()) {
-		PX4_INFO("Auto load sequence: bucket_angle=%.2f boom_lift=%.2f",
-			(double)cmd.bucket_angle_cmd, (double)cmd.boom_lift_cmd);
-	}
-}
-
-void WheelLoaderRobot::processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command)
-{
-	// Basic auto dump sequence based on VLA bucket position commands
-	// The VLA output already contains the desired bucket position, so we use it directly
-	// Additional dump-specific safety limits can be applied here
-
-	// Apply conservative limits for dumping operations
-	cmd.bucket_angle_cmd = math::constrain(cmd.bucket_angle_cmd, -0.4f, 0.6f);
-	cmd.boom_lift_cmd = math::constrain(cmd.boom_lift_cmd, 0.0f, 1.0f);
-
-	if (_diagnostic_enable.get()) {
-		PX4_INFO("Auto dump sequence: bucket_angle=%.2f boom_lift=%.2f",
-			(double)cmd.bucket_angle_cmd, (double)cmd.boom_lift_cmd);
-	}
-}
-
-bool WheelLoaderRobot::isLoadSequenceComplete(const vla_command_s &vla_command)
-{
-	// Check if load sequence is complete based on VLA feedback
-	return vla_command.sequence_complete;
-}
-
-bool WheelLoaderRobot::isDumpSequenceComplete(const vla_command_s &vla_command)
-{
-	// Check if dump sequence is complete based on VLA feedback
-	return vla_command.sequence_complete;
+	return print_usage("unknown command");
 }
 
 int WheelLoaderRobot::print_usage(const char *reason)
@@ -1053,34 +608,22 @@ int WheelLoaderRobot::print_usage(const char *reason)
 	PRINT_MODULE_DESCRIPTION(
 		R"DESCR_STR(
 ### Description
-Wheel loader controller module for coordinating subsystem operation, command arbitration,
-state management, and safety oversight.
+Wheel loader robot central coordinator with integrated power management.
 
-The module manages:
-- Command arbitration between manual, autonomous, and external sources
-- State machine for operational modes
-- Safety monitoring and emergency procedures
-- Coordination of boom, bucket, steering, and wheel subsystems
+This module manages:
+- Command arbitration between manual and autonomous control
+- Battery-aware power management and optimization
+- Subsystem coordination (chassis, boom, bucket)
+- Safety monitoring and emergency response
+
+The module prioritizes safety and power efficiency while providing
+seamless operation across different power states.
 
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("wheel_loader_robot", "controller");
+	PRINT_MODULE_USAGE_NAME("wheel_loader_robot", "system");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
-}
-
-int WheelLoaderRobot::custom_command(int argc, char *argv[])
-{
-	if (!is_running()) {
-		print_usage("not running");
-		return 1;
-	}
-
-	if (!strcmp(argv[0], "status")) {
-		return get_instance()->print_status();
-	}
-
-	return print_usage("unknown command");
 }

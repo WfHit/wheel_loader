@@ -33,61 +33,52 @@
 
 #pragma once
 
-// System includes first
 #include <px4_platform_common/defines.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
-// Library includes
 #include <lib/perf/perf_counter.h>
 #include <lib/mathlib/mathlib.h>
-#include <lib/mathlib/math/Functions.hpp>
 #include <drivers/drv_hrt.h>
-#include <cstring>
 
-// uORB includes (use lowercase topic names)
+// uORB includes - lowercase topic names
 #include <uORB/Publication.hpp>
-#include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
-#include <uORB/SubscriptionMultiArray.hpp>
+#include <uORB/topics/battery_status.h>
 #include <uORB/topics/boom_command.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/bucket_command.h>
 #include <uORB/topics/bucket_status.h>
+#include <uORB/topics/chassis_command.h>
+#include <uORB/topics/chassis_status.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>
-#include <uORB/topics/steering_command.h>
+#include <uORB/topics/power_monitor.h>
 #include <uORB/topics/vehicle_status.h>
+#include <uORB/topics/vla_command.h>
 #include <uORB/topics/wheel_loader_command.h>
 #include <uORB/topics/wheel_loader_status.h>
-#include <uORB/topics/wheel_speeds_setpoint.h>
-#include <uORB/topics/vla_command.h>
-#include <uORB/topics/operation_mode_command.h>
 
 using namespace time_literals;
 
 /**
- * @brief Wheel Loader Robot Module
+ * @brief Wheel Loader Robot Module - Central coordinator with power management
  *
- * Central coordination and control module for wheel loader operations.
- * Manages command arbitration, subsystem coordination, state management,
- * and safety oversight for the complete wheel loader system.
- *
- * This module acts as the high-level coordinator and sends commands to:
- * - Chassis control module (for wheel/steering control)
- * - Boom control module
- * - Bucket control module
+ * Manages:
+ * - Command arbitration between manual and autonomous sources
+ * - Battery power management and optimization
+ * - Subsystem coordination (chassis, boom, bucket)
+ * - Safety monitoring and emergency response
  */
 class WheelLoaderRobot : public ModuleBase<WheelLoaderRobot>,
-						 public ModuleParams,
-						 public px4::ScheduledWorkItem
+			 public ModuleParams,
+			 public px4::ScheduledWorkItem
 {
 public:
 	WheelLoaderRobot();
 	~WheelLoaderRobot() override;
 
-	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
 	static int custom_command(int argc, char *argv[]);
 	static int print_usage(const char *reason = nullptr);
@@ -96,160 +87,152 @@ public:
 	bool init();
 
 private:
-	// Control states
-	enum class ControlState : uint8_t {
-		INITIALIZING = 0,
-		IDLE = 1,
-		MANUAL_CONTROL = 2,
-		AUTO_OPERATION = 3,		// VLA autonomous control
-		MODE_TRANSITION = 4,	// Transitioning between operation modes
-		EMERGENCY_STOP = 5,
-		ERROR = 6
+	// System states
+	enum class SystemState : uint8_t {
+		INIT = 0,
+		STANDBY = 1,
+		OPERATING = 2,
+		POWER_LIMITED = 3,	// Low battery, reduced performance
+		EMERGENCY = 4,
+		FAULT = 5
 	};
 
-	// Command source identification
-	enum class CommandSource : uint8_t {
-		NONE = 0,
-		MANUAL = 1,
-		VLA = 2,				// VLA autonomous commands
-		EXTERNAL = 3
-	};
-
-	// System health states
-	enum class HealthState : uint8_t {
-		UNKNOWN = 0,
-		HEALTHY = 1,
-		WARNING = 2,
-		ERROR = 3,
-		CRITICAL = 4
-	};
-
-	// Operation modes for dual-mode control
 	enum class OperationMode : uint8_t {
-		MANUAL = 0,				// Manual RC/joystick control
-		AUTO = 1,				// Autonomous VLA control
-		TRANSITION = 2			// Transitioning between modes
+		MANUAL = 0,
+		AUTONOMOUS = 1
 	};
 
-	// Constants
-	static constexpr float CONTROL_RATE_HZ = 50.0f;
-	static constexpr uint64_t CONTROL_INTERVAL_US = 1_s / CONTROL_RATE_HZ;
-	static constexpr float COMMAND_TIMEOUT_S = 0.5f;
-	static constexpr float HEALTH_TIMEOUT_S = 1.0f;
-	static constexpr float MAX_EMERGENCY_STOP_TIME_S = 0.1f;
+	enum class PowerMode : uint8_t {
+		NORMAL = 0,
+		ECO = 1,		// Economy mode - reduced power consumption
+		BOOST = 2,		// High performance - max power allowed
+		CRITICAL = 3		// Battery critical - minimum operation only
+	};
 
-	// Core processing functions
-	void processVehicleCommand();
-	void processVlaCommand();				// Process VLA autonomous commands
-	void processOperationModeCommand();	// Process mode switching commands
-	void updateControlState();
-	void publishCommands();
-	void publishStatus();
+	// Power management data
+	struct PowerState {
+		float battery_voltage_v{0.0f};
+		float battery_current_a{0.0f};
+		float battery_remaining_pct{0.0f};
+		float power_consumption_w{0.0f};
+		float power_budget_w{0.0f};
+		float efficiency_factor{1.0f};
+		PowerMode mode{PowerMode::NORMAL};
+		bool is_charging{false};
 
-	// Command processing and arbitration
-	CommandSource selectActiveCommandSource();
-	bool validateCommand(const wheel_loader_command_s &cmd);
-	void applyCommandLimits(wheel_loader_command_s &cmd);
-	void generateSubsystemCommands(const wheel_loader_command_s &cmd);
-	wheel_loader_command_s convertVlaToCommand(const vla_command_s &vla_command);
+		bool is_critical() const { return battery_remaining_pct < 10.0f; }
+		bool is_low() const { return battery_remaining_pct < 25.0f; }
+	};
 
-	// Auto load/dump controller functions
-	void processAutoLoadSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command);
-	void processAutoDumpSequence(wheel_loader_command_s &cmd, const vla_command_s &vla_command);
-	bool isLoadSequenceComplete(const vla_command_s &vla_command);
-	bool isDumpSequenceComplete(const vla_command_s &vla_command);
+	// Command input structure
+	struct CommandInput {
+		wheel_loader_command_s command{};
+		hrt_abstime timestamp{0};
+		bool valid{false};
+	};
 
-	// Mode management functions
-	bool requestModeTransition(OperationMode new_mode);
-	bool isValidModeTransition(OperationMode from, OperationMode to);
-	void handleModeTransition();
-	bool isSystemReadyForAutoMode();
-	void enforceManualOverride();
+	// Subsystem health
+	struct SubsystemHealth {
+		bool chassis_ok{false};
+		bool boom_ok{false};
+		bool bucket_ok{false};
+		bool battery_ok{false};
+		hrt_abstime last_update{0};
 
-	// Safety and health monitoring
-	void performSafetyChecks();
-	void updateSubsystemHealth();
-	void handleEmergencyStop();
-	bool isSystemHealthy();
-	HealthState evaluateOverallHealth();
+		bool is_healthy() const {
+			return chassis_ok && boom_ok && bucket_ok && battery_ok;
+		}
+	};
+
+	// Core processing methods
+	void update_inputs();
+	void update_power_state();
+	void update_system_state();
+	void execute_commands();
+	void publish_status();
+	void update_parameters();
+
+	// Power management
+	void calculate_power_budget();
+	void apply_power_limits(wheel_loader_command_s &cmd);
+	void optimize_power_distribution();
+	PowerMode determine_power_mode();
+	float calculate_efficiency_factor();
+
+	// Command processing
+	CommandInput process_manual_input(const manual_control_setpoint_s &manual);
+	CommandInput process_vla_input(const vla_command_s &vla);
+	wheel_loader_command_s arbitrate_commands();
+	void apply_command_limits(wheel_loader_command_s &cmd);
+
+	// Subsystem commands
+	void send_chassis_command(const wheel_loader_command_s &cmd);
+	void send_boom_command(const wheel_loader_command_s &cmd);
+	void send_bucket_command(const wheel_loader_command_s &cmd);
 
 	// State management
-	void transitionToState(ControlState new_state);
-	bool isValidStateTransition(ControlState from, ControlState to);
-	void resetControlState();
+	void transition_to(SystemState new_state);
+	bool can_transition_to(SystemState new_state) const;
 
-	// Parameter updates
-	void updateParams();
+	// Health monitoring
+	void update_subsystem_health();
+	bool check_emergency_conditions();
+	bool validate_command(const wheel_loader_command_s &cmd);
+
+	// State variables
+	SystemState _state{SystemState::INIT};
+	OperationMode _mode{OperationMode::MANUAL};
+	PowerState _power_state{};
+	SubsystemHealth _health{};
+
+	// Command inputs
+	CommandInput _manual_input{};
+	CommandInput _vla_input{};
+	wheel_loader_command_s _active_command{};
+
+	// Power tracking
+	float _chassis_power_w{0.0f};
+	float _boom_power_w{0.0f};
+	float _bucket_power_w{0.0f};
+	float _total_power_request_w{0.0f};
+
+	// Timing
+	hrt_abstime _state_entry_time{0};
+	hrt_abstime _last_health_update{0};
+	hrt_abstime _last_power_update{0};
+	static constexpr uint32_t CONTROL_PERIOD_US = 20_ms;
+	static constexpr uint32_t POWER_UPDATE_PERIOD_US = 100_ms;
 
 	// uORB subscriptions
-	uORB::Subscription _manual_control_setpoint_sub{ORB_ID(manual_control_setpoint)};
-	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
-	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
+	uORB::Subscription _manual_control_sub{ORB_ID(manual_control_setpoint)};
 	uORB::Subscription _vla_command_sub{ORB_ID(vla_command)};
-	uORB::Subscription _operation_mode_command_sub{ORB_ID(operation_mode_command)};
-
-	// Subsystem status subscriptions
+	uORB::Subscription _battery_status_sub{ORB_ID(battery_status)};
+	uORB::Subscription _power_monitor_sub{ORB_ID(power_monitor)};
+	uORB::Subscription _chassis_status_sub{ORB_ID(chassis_status)};
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
+	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	// uORB publications
-	uORB::Publication<wheel_loader_status_s> _wheel_loader_status_pub{ORB_ID(wheel_loader_status)};
+	uORB::Publication<wheel_loader_status_s> _status_pub{ORB_ID(wheel_loader_status)};
+	uORB::Publication<chassis_command_s> _chassis_cmd_pub{ORB_ID(chassis_command)};
+	uORB::Publication<boom_command_s> _boom_cmd_pub{ORB_ID(boom_command)};
+	uORB::Publication<bucket_command_s> _bucket_cmd_pub{ORB_ID(bucket_command)};
 
-	// Subsystem command publications
-	uORB::PublicationMulti<wheel_speeds_setpoint_s> _front_wheel_setpoint_pub{ORB_ID(wheel_speeds_setpoint)};
-	uORB::PublicationMulti<wheel_speeds_setpoint_s> _rear_wheel_setpoint_pub{ORB_ID(wheel_speeds_setpoint)};
-	uORB::Publication<boom_command_s> _boom_command_pub{ORB_ID(boom_command)};
-	uORB::Publication<bucket_command_s> _bucket_command_pub{ORB_ID(bucket_command)};
-	uORB::Publication<steering_command_s> _steering_command_pub{ORB_ID(steering_command)};
-
-	// Control state
-	ControlState _control_state{ControlState::INITIALIZING};
-	ControlState _previous_state{ControlState::INITIALIZING};
-	CommandSource _active_command_source{CommandSource::NONE};
-	hrt_abstime _state_entered_time{0};
-	hrt_abstime _last_command_time{0};
-
-	// Current active command
-	wheel_loader_command_s _current_command{};
-	wheel_loader_command_s _manual_command{};
-	wheel_loader_command_s _vla_command{};
-
-	// Operation mode management
-	OperationMode _operation_mode{OperationMode::MANUAL};
-	OperationMode _requested_mode{OperationMode::MANUAL};
-	bool _mode_transition_requested{false};
-	hrt_abstime _mode_transition_start_time{0};
-	hrt_abstime _last_vla_command_time{0};
-	vla_command_s _current_vla_command{};
-
-	// Safety state
-	bool _emergency_stop_active{false};
-	bool _safety_override_active{false};
-	hrt_abstime _emergency_stop_time{0};
-
-	// Subsystem health tracking
-	HealthState _boom_health{HealthState::UNKNOWN};
-	HealthState _bucket_health{HealthState::UNKNOWN};
-	hrt_abstime _last_boom_status_time{0};
-	hrt_abstime _last_bucket_status_time{0};
-
-	// Performance counters
-	perf_counter_t _cycle_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")};
-	perf_counter_t _emergency_stop_perf{perf_alloc(PC_COUNT, MODULE_NAME": emergency_stops")};
+	// Performance monitoring
+	perf_counter_t _loop_perf{nullptr};
+	perf_counter_t _power_perf{nullptr};
 
 	// Parameters
 	DEFINE_PARAMETERS(
-		(ParamFloat<px4::params::WLR_MAX_SPEED>) _max_speed,
-		(ParamFloat<px4::params::WLR_MAX_ACCEL>) _max_accel,
-		(ParamFloat<px4::params::WLR_CMD_TIMEOUT>) _cmd_timeout,
-		(ParamFloat<px4::params::WLR_HEALTH_TO>) _health_timeout,
-		(ParamInt<px4::params::WLR_ESTOP_EN>) _estop_enable,
-		(ParamInt<px4::params::WLR_DIAG_EN>) _diagnostic_enable,
-		(ParamFloat<px4::params::WLR_CTRL_RATE>) _control_rate,
-		(ParamFloat<px4::params::WLR_SAFE_ACCEL>) _safe_accel,
-		(ParamFloat<px4::params::WLR_SAFE_SPEED>) _safe_speed,
-		(ParamFloat<px4::params::WLR_MODE_TO>) _mode_transition_timeout,
-		(ParamInt<px4::params::WLR_AUTO_EN>) _auto_mode_enable,
-		(ParamFloat<px4::params::WLR_VLA_TIMEOUT>) _vla_timeout
+		(ParamFloat<px4::params::WLR_MAX_PWR>) _param_max_power,
+		(ParamFloat<px4::params::WLR_ECO_PWR>) _param_eco_power,
+		(ParamFloat<px4::params::WLR_CRIT_BAT>) _param_critical_battery,
+		(ParamFloat<px4::params::WLR_LOW_BAT>) _param_low_battery,
+		(ParamInt<px4::params::WLR_PWR_OPT>) _param_power_optimize,
+		(ParamFloat<px4::params::WLR_MAX_SPD>) _param_max_speed,
+		(ParamFloat<px4::params::WLR_MAX_ACC>) _param_max_accel,
+		(ParamFloat<px4::params::WLR_CMD_TO>) _param_cmd_timeout,
+		(ParamInt<px4::params::WLR_ESTOP_EN>) _param_estop_enable
 	)
 };
