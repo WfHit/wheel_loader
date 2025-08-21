@@ -1,5 +1,0 @@
-menuconfig MODULES_CHASSIS_CONTROL
-	bool "chassis_control"
-	default n
-	---help---
-		Enable support for chassis_control
