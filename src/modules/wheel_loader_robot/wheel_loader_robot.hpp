@@ -70,6 +70,22 @@ using namespace time_literals;
  * - Battery power management and optimization
  * - Subsystem coordination (chassis, boom, bucket)
  * - Safety monitoring and emergency response
+ *
+ * RC Channel Mapping (Manual Mode):
+ * - Channel X (Roll/Aileron): Linear velocity (forward/backward)
+ * - Channel Y (Pitch/Elevator): Turning angle (left/right steering)
+ * - Channel Z (Yaw/Rudder): Bucket angle (curl/dump)
+ * - Channel R (Throttle): Boom lift speed (raise/lower)
+ * - AUX5: Mode switch (>0.5 = VLA/Autonomous, <0.5 = Manual)
+ *
+ * VLA Mode:
+ * - Receives both pose targets AND velocity commands simultaneously
+ * - Pose data provides target positions/orientations for bucket end effector
+ * - Velocity data provides desired approach/execution speeds
+ * - Combines position-based and velocity-based control for optimal performance
+ * - Converts combined pose/velocity to vehicle motion via inverse kinematics
+ * - Provides autonomous bucket positioning and coordinated vehicle navigation
+ * - Includes confidence scoring and emergency stop capabilities
  */
 class WheelLoaderRobot : public ModuleBase<WheelLoaderRobot>,
 			 public ModuleParams,

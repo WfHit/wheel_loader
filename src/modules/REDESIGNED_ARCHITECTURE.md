@@ -67,10 +67,17 @@ The new architecture separates concerns into two main modules:
 
 ## VLA Integration
 
-The VLA (Vision-Language-Action) system provides bucket end effector control:
+The VLA (Vision-Language-Action) system provides comprehensive bucket end effector control:
 - **Input**: Natural language commands and visual perception
-- **Output**: Target bucket pose and position in world coordinates via `vla_command.msg`
-- **Processing**: Inverse kinematics converts bucket targets to vehicle motion and joint commands
+- **Output**: Combined target bucket pose AND velocity commands via `vla_command.msg`
+- **Data Format**:
+  - Position targets: bucket tip position (x,y,z) and orientation (roll,pitch,yaw)
+  - Velocity commands: bucket tip velocities and angular rates
+  - Vehicle motion: optional direct vehicle velocity commands
+- **Processing**:
+  - Priority: Direct velocity commands > Derived from kinematics > Trajectory following
+  - Combines target positions with desired approach velocities for optimal control
+  - Supports coordinated vehicle motion and bucket positioning
 - **Safety**: Includes confidence scoring and emergency stop capabilities
 
 ## Usage

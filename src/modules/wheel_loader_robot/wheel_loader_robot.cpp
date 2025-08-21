@@ -55,7 +55,9 @@ bool WheelLoaderRobot::init()
 	_power_state.power_budget_w = _param_max_power.get();
 	_power_state.mode = PowerMode::NORMAL;
 
+	// Initialize system state
 	_state = SystemState::STANDBY;
+	_mode = OperationMode::MANUAL;  // Start in manual mode by default
 
 	ScheduleOnInterval(CONTROL_PERIOD_US);
 
@@ -103,9 +105,18 @@ void WheelLoaderRobot::Run()
 
 void WheelLoaderRobot::update_inputs()
 {
-	// Process manual control input
+	// Process manual control input and check mode switch
 	manual_control_setpoint_s manual;
 	if (_manual_control_sub.update(&manual)) {
+		// Check RC switch for mode selection (using aux channel 5)
+		// Switch up (>0.5) = VLA mode, Switch down (<0.5) = Manual mode
+		if (manual.aux5 > 0.5f) {
+			_mode = OperationMode::AUTONOMOUS;
+		} else {
+			_mode = OperationMode::MANUAL;
+		}
+
+		// Always process manual input (used in manual mode)
 		_manual_input = process_manual_input(manual);
 	}
 
@@ -285,11 +296,22 @@ wheel_loader_command_s WheelLoaderRobot::arbitrate_commands()
 {
 	wheel_loader_command_s cmd{};
 
-	// Priority: Manual > Autonomous
-	if (_manual_input.valid) {
+	// Mode-based command arbitration controlled by RC switch
+	if (_mode == OperationMode::MANUAL && _manual_input.valid) {
+		// Manual mode: use direct RC inputs
 		cmd = _manual_input.command;
-	} else if (_vla_input.valid && _mode == OperationMode::AUTONOMOUS) {
+		PX4_DEBUG("Using manual command");
+	} else if (_mode == OperationMode::AUTONOMOUS && _vla_input.valid) {
+		// VLA autonomous mode: use pose sequence from VLA
 		cmd = _vla_input.command;
+		PX4_DEBUG("Using VLA command");
+	} else {
+		// No valid command or mode transition - use safe idle command
+		cmd.linear_velocity = 0.0f;
+		cmd.angular_velocity = 0.0f;
+		cmd.boom_velocity = 0.0f;
+		cmd.bucket_velocity = 0.0f;
+		PX4_DEBUG("Using idle command (no valid input)");
 	}
 
 	return cmd;
@@ -374,11 +396,15 @@ void WheelLoaderRobot::publish_status()
 	status.bucket_ok = _health.bucket_ok;
 	status.battery_ok = _health.battery_ok;
 
-	// Active command
+	// Active command - shows what's actually being executed
 	status.active_linear_velocity = _active_command.linear_velocity;
 	status.active_angular_velocity = _active_command.angular_velocity;
 	status.active_boom_velocity = _active_command.boom_velocity;
 	status.active_bucket_velocity = _active_command.bucket_velocity;
+
+	// Command source validity
+	status.manual_input_valid = _manual_input.valid;
+	status.vla_input_valid = _vla_input.valid;
 
 	_status_pub.publish(status);
 }
@@ -387,14 +413,24 @@ WheelLoaderRobot::CommandInput WheelLoaderRobot::process_manual_input(const manu
 {
 	CommandInput input{};
 	input.timestamp = hrt_absolute_time();
-	input.valid = manual.valid;
+	input.valid = manual.valid && (_mode == OperationMode::MANUAL);
 
-	if (manual.valid) {
-		// Map manual control to wheel loader commands
+	if (manual.valid && _mode == OperationMode::MANUAL) {
+		// Map RC channels to wheel loader commands:
+		// manual.x (roll/aileron) -> linear velocity (forward/backward)
+		// manual.y (pitch/elevator) -> turning angle (left/right steering)
+		// manual.z (yaw/rudder) -> bucket angle (curl/dump)
+		// manual.r (throttle) -> boom lift speed (raise/lower)
+
 		input.command.linear_velocity = manual.x * _param_max_speed.get();
-		input.command.angular_velocity = manual.r * M_PI_F;
-		input.command.boom_velocity = manual.y * 0.5f;
-		input.command.bucket_velocity = manual.z * 0.5f;
+		input.command.angular_velocity = manual.y * M_PI_F * 0.5f;  // Max ±90 deg/s turning
+		input.command.bucket_velocity = manual.z * 0.5f;  // Bucket curl/dump speed
+		input.command.boom_velocity = manual.r * 0.3f;    // Boom raise/lower speed
+
+		PX4_DEBUG("Manual input: vel=%.2f ang=%.2f bucket=%.2f boom=%.2f mode_switch=%.2f",
+			  (double)input.command.linear_velocity, (double)input.command.angular_velocity,
+			  (double)input.command.bucket_velocity, (double)input.command.boom_velocity,
+			  (double)manual.aux5);
 	}
 
 	return input;
@@ -404,60 +440,100 @@ WheelLoaderRobot::CommandInput WheelLoaderRobot::process_vla_input(const vla_com
 {
 	CommandInput input{};
 	input.timestamp = hrt_absolute_time();
-	input.valid = vla.valid_output && !vla.emergency_stop;
+	input.valid = vla.valid_output && !vla.emergency_stop && (_mode == OperationMode::AUTONOMOUS);
 
 	if (input.valid) {
-		// Convert VLA bucket end effector setpoints to wheel loader commands
-		// This requires inverse kinematics to determine vehicle position and boom/bucket angles
+		// VLA provides both pose targets AND velocity commands simultaneously
+		// This allows for sophisticated control with target positions and desired approach velocities
 
-		// Simplified inverse kinematics for wheel loader
-		// In a real implementation, this would use proper kinematic chains
+		// Primary control: Use velocity commands when available for responsive control
+		bool has_velocity_commands = (fabsf(vla.bucket_velocity_x) > 0.01f ||
+					      fabsf(vla.bucket_velocity_y) > 0.01f ||
+					      fabsf(vla.bucket_velocity_z) > 0.01f ||
+					      fabsf(vla.bucket_angular_velocity_pitch) > 0.01f);
 
-		static float prev_bucket_x = 0.0f, prev_bucket_y = 0.0f, prev_bucket_z = 0.0f;
-		static float prev_bucket_pitch = 0.0f;
+		bool has_vehicle_velocity = (fabsf(vla.vehicle_linear_velocity) > 0.01f ||
+					     fabsf(vla.vehicle_angular_velocity) > 0.01f);
 
-		// Compute bucket position deltas
-		float dx = vla.bucket_position_x - prev_bucket_x;
-		float dy = vla.bucket_position_y - prev_bucket_y;
-		float dz = vla.bucket_position_z - prev_bucket_z;
-		float dpitch = vla.bucket_orientation_pitch - prev_bucket_pitch;
+		if (has_vehicle_velocity) {
+			// Use direct vehicle velocity commands from VLA
+			input.command.linear_velocity = vla.vehicle_linear_velocity;
+			input.command.angular_velocity = vla.vehicle_angular_velocity;
+		} else if (has_velocity_commands) {
+			// Derive vehicle motion from bucket velocities (kinematic mapping)
+			input.command.linear_velocity = vla.bucket_velocity_x;
+			input.command.angular_velocity = vla.bucket_velocity_y * 0.5f;  // Scale factor for turning
+		} else {
+			// Fallback: derive velocities from pose changes for trajectory following
+			static float prev_bucket_x = 0.0f, prev_bucket_y = 0.0f, prev_bucket_z = 0.0f;
+			static float prev_bucket_pitch = 0.0f;
+			static bool first_run = true;
 
-		// Convert bucket end effector motion to vehicle and joint motion
-		float dt = 0.02f;  // 20ms control period
+			// Initialize previous values on first run
+			if (first_run) {
+				prev_bucket_x = vla.bucket_position_x;
+				prev_bucket_y = vla.bucket_position_y;
+				prev_bucket_z = vla.bucket_position_z;
+				prev_bucket_pitch = vla.bucket_orientation_pitch;
+				first_run = false;
+			}
 
-		// Vehicle motion: move base to position bucket appropriately
-		// Simplified: assume bucket motion in X-Y requires vehicle movement
-		float vehicle_distance = sqrtf(dx*dx + dy*dy);
-		input.command.linear_velocity = vehicle_distance / dt;
+			// Compute pose deltas and derive velocities
+			float dx = vla.bucket_position_x - prev_bucket_x;
+			float dy = vla.bucket_position_y - prev_bucket_y;
+			float dt = 0.02f;  // 50Hz update rate
 
-		// Vehicle turning: align with bucket yaw target
-		input.command.angular_velocity = (vla.bucket_orientation_yaw - atan2f(dy, dx)) / dt;
+			float vehicle_distance = sqrtf(dx*dx + dy*dy);
+			if (vehicle_distance > 0.01f) {
+				input.command.linear_velocity = dx / dt;
+				float desired_heading = atan2f(dy, dx);
+				input.command.angular_velocity = desired_heading / dt;
+			} else {
+				input.command.linear_velocity = 0.0f;
+				input.command.angular_velocity = 0.0f;
+			}
 
-		// Boom motion: height changes primarily affect boom angle
-		// Simplified mapping: vertical motion maps to boom velocity
-		input.command.boom_velocity = dz / dt;
+			// Update previous values
+			prev_bucket_x = vla.bucket_position_x;
+			prev_bucket_y = vla.bucket_position_y;
+		}
 
-		// Bucket motion: pitch changes affect bucket angle
-		// Bucket pitch controls digging/dumping action
-		input.command.bucket_velocity = dpitch / dt;
+		// Boom motion: Use velocity command if available, otherwise derive from pose
+		if (fabsf(vla.bucket_velocity_z) > 0.01f) {
+			input.command.boom_velocity = vla.bucket_velocity_z;
+		} else {
+			// Derive from height changes
+			static float prev_bucket_z = vla.bucket_position_z;
+			float dz = vla.bucket_position_z - prev_bucket_z;
+			float dt = 0.02f;
+			input.command.boom_velocity = dz / dt;
+			prev_bucket_z = vla.bucket_position_z;
+		}
 
-		// Apply velocity limits for safety
-		input.command.linear_velocity = math::constrain(input.command.linear_velocity, -2.0f, 2.0f);
-		input.command.angular_velocity = math::constrain(input.command.angular_velocity, -M_PI_F/2, M_PI_F/2);
-		input.command.boom_velocity = math::constrain(input.command.boom_velocity, -0.5f, 0.5f);
-		input.command.bucket_velocity = math::constrain(input.command.bucket_velocity, -1.0f, 1.0f);
+		// Bucket motion: Use angular velocity if available, otherwise derive from orientation
+		if (fabsf(vla.bucket_angular_velocity_pitch) > 0.01f) {
+			input.command.bucket_velocity = vla.bucket_angular_velocity_pitch;
+		} else {
+			// Derive from pitch changes
+			static float prev_bucket_pitch = vla.bucket_orientation_pitch;
+			float dpitch = vla.bucket_orientation_pitch - prev_bucket_pitch;
+			float dt = 0.02f;
+			input.command.bucket_velocity = dpitch / dt;
+			prev_bucket_pitch = vla.bucket_orientation_pitch;
+		}
 
-		// Update previous values for next iteration
-		prev_bucket_x = vla.bucket_position_x;
-		prev_bucket_y = vla.bucket_position_y;
-		prev_bucket_z = vla.bucket_position_z;
-		prev_bucket_pitch = vla.bucket_orientation_pitch;
+		// Apply safety limits for autonomous mode
+		input.command.linear_velocity = math::constrain(input.command.linear_velocity, -1.5f, 1.5f);
+		input.command.angular_velocity = math::constrain(input.command.angular_velocity, -M_PI_F/3, M_PI_F/3);
+		input.command.boom_velocity = math::constrain(input.command.boom_velocity, -0.3f, 0.3f);
+		input.command.bucket_velocity = math::constrain(input.command.bucket_velocity, -0.5f, 0.5f);
 
-		PX4_DEBUG("VLA bucket target: (%.2f, %.2f, %.2f) pitch=%.2f -> vel:(%.2f, %.2f, %.2f, %.2f)",
+		PX4_DEBUG("VLA combined: pos(%.2f,%.2f,%.2f) vel(%.2f,%.2f,%.2f) -> cmd:(%.2f,%.2f,%.2f,%.2f) conf=%.2f",
 			  (double)vla.bucket_position_x, (double)vla.bucket_position_y, (double)vla.bucket_position_z,
-			  (double)vla.bucket_orientation_pitch, (double)input.command.linear_velocity,
-			  (double)input.command.angular_velocity, (double)input.command.boom_velocity,
-			  (double)input.command.bucket_velocity);
+			  (double)vla.bucket_velocity_x, (double)vla.bucket_velocity_y, (double)vla.bucket_velocity_z,
+			  (double)input.command.linear_velocity, (double)input.command.angular_velocity,
+			  (double)input.command.boom_velocity, (double)input.command.bucket_velocity,
+			  (double)vla.confidence_score);
 	}
 
 	return input;
