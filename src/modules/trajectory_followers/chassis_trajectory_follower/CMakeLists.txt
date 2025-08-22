@@ -32,20 +32,18 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__operation_mode_manager
-	MAIN operation_mode_manager
+	MODULE modules__trajectory_followers__chassis_trajectory_follower
+	MAIN chassis_trajectory_follower
 	STACK_MAIN 4096
 	COMPILE_FLAGS
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
-		operation_mode_manager.cpp
-		modes/manual_mode/manual_mode.cpp
-		modes/vla_mode/vla_mode.cpp
-		modes/vla_mode/vla_trajectory_decomposer.cpp
+		chassis_trajectory_follower_main.cpp
+		chassis_trajectory_follower.cpp
+		chassis_mpc_controller.cpp
 	DEPENDS
 		lib_mathlib
 		lib_matrix
-		lib_pid
 		lib_perf
 		lib_hysteresis
 		lib_conversion

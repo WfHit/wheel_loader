@@ -4,6 +4,7 @@
 #include <px4_platform_common/px4_config.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/chassis_trajectory_setpoint.h>
 #include <drivers/drv_hrt.h>
 #include <mathlib/mathlib.h>
 
@@ -125,11 +126,17 @@ void LoadAwareTorqueDistribution::Run()
 	// Update load state from sensors
 	update_load_state();
 
+	// Process chassis trajectory for predictive adjustments
+	process_chassis_trajectory();
+
 	// Calculate base torque distribution
 	calculate_base_torque_distribution();
 
 	// Apply dynamic adjustments
 	apply_dynamic_adjustments();
+
+	// Apply trajectory-based adjustments
+	apply_trajectory_based_distribution();
 
 	// Apply stability corrections
 	apply_stability_corrections();
@@ -414,4 +421,111 @@ void LoadAwareTorqueDistribution::publish_torque_commands()
 	// Update module status
 	_status.timestamp = hrt_absolute_time();
 	_module_status_pub.publish(_status);
+}
+
+void LoadAwareTorqueDistribution::process_chassis_trajectory()
+{
+	// Check for new chassis trajectory setpoint
+	if (_chassis_trajectory_sub.updated()) {
+		chassis_trajectory_setpoint_s trajectory;
+		_chassis_trajectory_sub.copy(&trajectory);
+
+		if (trajectory.valid) {
+			// Update trajectory state
+			_trajectory_state.target_x_velocity = trajectory.x_velocity;
+			_trajectory_state.target_y_velocity = trajectory.y_velocity;
+			_trajectory_state.target_yaw_rate = trajectory.yaw_rate;
+			_trajectory_state.trajectory_valid = true;
+			_trajectory_state.last_trajectory_time = hrt_absolute_time();
+
+			// Predict future accelerations based on velocity changes
+			predict_load_transfer_from_trajectory();
+
+			// Calculate trajectory curvature for stability assessment
+			if (fabsf(trajectory.x_velocity) > 0.1f) {
+				_trajectory_state.trajectory_curvature = trajectory.yaw_rate / trajectory.x_velocity;
+			} else {
+				_trajectory_state.trajectory_curvature = 0.0f;
+			}
+
+			// Calculate stability demand based on trajectory aggressiveness
+			float velocity_magnitude = sqrtf(trajectory.x_velocity * trajectory.x_velocity +
+											trajectory.y_velocity * trajectory.y_velocity);
+			float lateral_acceleration_demand = fabsf(_trajectory_state.trajectory_curvature *
+													velocity_magnitude * velocity_magnitude);
+
+			_trajectory_state.stability_demand = math::constrain(lateral_acceleration_demand / 5.0f, 0.0f, 1.0f);
+		}
+	}
+
+	// Check trajectory timeout
+	if (hrt_elapsed_time(&_trajectory_state.last_trajectory_time) > 500000) { // 0.5 seconds
+		_trajectory_state.trajectory_valid = false;
+		_trajectory_state.stability_demand = 0.0f;
+		_trajectory_state.load_transfer_prediction = 0.0f;
+	}
+}
+
+void LoadAwareTorqueDistribution::predict_load_transfer_from_trajectory()
+{
+	if (!_trajectory_state.trajectory_valid) {
+		_trajectory_state.load_transfer_prediction = 0.0f;
+		return;
+	}
+
+	// Calculate predicted longitudinal acceleration
+	float dt = 0.1f; // Prediction horizon in seconds
+	_trajectory_state.predicted_accel_x = (_trajectory_state.target_x_velocity - _dynamics_state.vehicle_speed_ms) / dt;
+
+	// Calculate predicted lateral acceleration from yaw rate and velocity
+	float velocity_magnitude = sqrtf(_trajectory_state.target_x_velocity * _trajectory_state.target_x_velocity +
+									_trajectory_state.target_y_velocity * _trajectory_state.target_y_velocity);
+	_trajectory_state.predicted_accel_y = _trajectory_state.target_yaw_rate * velocity_magnitude;
+
+	// Calculate predicted load transfer based on accelerations and vehicle geometry
+	float load_transfer_long = (_trajectory_state.predicted_accel_x * _load_state.total_mass_kg * _load_state.cog_z_m) /
+							  (9.81f * WHEELBASE_M);
+
+	float load_transfer_lat = fabsf(_trajectory_state.predicted_accel_y * _load_state.total_mass_kg * _load_state.cog_z_m) /
+							 (9.81f * WHEELBASE_M);
+
+	// Combine longitudinal and lateral load transfer
+	_trajectory_state.load_transfer_prediction = sqrtf(load_transfer_long * load_transfer_long +
+													  load_transfer_lat * load_transfer_lat);
+
+	// Limit to reasonable values
+	_trajectory_state.load_transfer_prediction = math::constrain(_trajectory_state.load_transfer_prediction,
+																-MAX_WEIGHT_TRANSFER_RATIO,
+																MAX_WEIGHT_TRANSFER_RATIO);
+}
+
+void LoadAwareTorqueDistribution::apply_trajectory_based_distribution()
+{
+	if (!_trajectory_state.trajectory_valid) {
+		return;
+	}
+
+	// Adjust distribution based on predicted load transfer
+	float trajectory_adjustment = 0.0f;
+
+	// For forward acceleration, shift torque to rear (negative adjustment)
+	// For braking, shift torque to front (positive adjustment)
+	if (fabsf(_trajectory_state.predicted_accel_x) > 0.5f) {
+		trajectory_adjustment = -_trajectory_state.predicted_accel_x * 0.1f; // Scale factor
+	}
+
+	// For high yaw rates (turning), adjust for stability
+	if (fabsf(_trajectory_state.target_yaw_rate) > 0.2f) {
+		// Slight bias toward rear for better stability during turns
+		trajectory_adjustment -= fabsf(_trajectory_state.target_yaw_rate) * 0.05f;
+	}
+
+	// Apply trajectory-based adjustment with gains
+	float trajectory_gain = 0.3f; // Parameter for trajectory influence
+	_torque_distribution.final_distribution += trajectory_adjustment * trajectory_gain;
+
+	// Ensure we stay within limits
+	_torque_distribution.final_distribution = math::constrain(_torque_distribution.final_distribution,
+															 MIN_FRONT_TORQUE_RATIO,
+															 MAX_FRONT_TORQUE_RATIO);
 }

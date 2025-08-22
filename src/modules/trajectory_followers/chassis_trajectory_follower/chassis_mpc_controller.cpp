@@ -61,15 +61,20 @@ void ChassisMPCController::set_weights(const Vector<float, STATE_DIM> &state_wei
 
 Vector<float, ChassisMPCController::CONTROL_DIM> ChassisMPCController::solve(
     const Vector<float, STATE_DIM> &current_state,
-    const ChassisTrajectorySetpoint &reference_point,
+    const chassis_trajectory_setpoint_s &reference_point,
     float dt)
 {
     // Convert reference to state vector
     Vector<float, STATE_DIM> reference_state;
-    reference_state(0) = reference_point.position(0);  // x
-    reference_state(1) = reference_point.position(1);  // y
+    reference_state(0) = reference_point.x_position;   // x
+    reference_state(1) = reference_point.y_position;   // y
     reference_state(2) = reference_point.yaw;          // theta
-    reference_state(3) = reference_point.velocity.norm(); // v
+
+    // Calculate velocity magnitude from x,y,z components
+    float velocity_magnitude = sqrtf(reference_point.x_velocity * reference_point.x_velocity +
+                                    reference_point.y_velocity * reference_point.y_velocity +
+                                    reference_point.z_velocity * reference_point.z_velocity);
+    reference_state(3) = velocity_magnitude;           // v
 
     // Solve MPC problem
     Vector<float, CONTROL_DIM> optimal_control = solve_mpc_problem(current_state, reference_state);

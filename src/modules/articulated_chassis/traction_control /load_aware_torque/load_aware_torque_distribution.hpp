@@ -18,6 +18,7 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/boom_status.h>
 #include <uORB/topics/bucket_status.h>
+#include <uORB/topics/chassis_trajectory_setpoint.h>
 
 using namespace time_literals;
 using namespace matrix;
@@ -90,6 +91,13 @@ private:
 	void apply_dynamic_adjustments();
 	void apply_stability_corrections();
 	void apply_terrain_adaptations();
+	void process_chassis_trajectory();
+
+	/**
+	 * Trajectory-based adjustments
+	 */
+	void apply_trajectory_based_distribution();
+	void predict_load_transfer_from_trajectory();
 
 	/**
 	 * Safety and validation
@@ -119,6 +127,7 @@ private:
 	uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
 	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
 	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
+	uORB::Subscription _chassis_trajectory_sub{ORB_ID(chassis_trajectory_setpoint)};
 
 	// uORB publications
 	uORB::Publication<load_aware_torque_s> _load_aware_torque_pub{ORB_ID(load_aware_torque)};
@@ -162,6 +171,20 @@ private:
 		bool traction_control_active{false};
 		float traction_limit_factor{1.0f};
 	} _traction_state;
+
+	// Chassis trajectory state
+	struct TrajectoryState {
+		float target_x_velocity{0.0f};      // Target X velocity [m/s]
+		float target_y_velocity{0.0f};      // Target Y velocity [m/s]
+		float target_yaw_rate{0.0f};        // Target yaw rate [rad/s]
+		float predicted_accel_x{0.0f};      // Predicted longitudinal acceleration [m/s²]
+		float predicted_accel_y{0.0f};      // Predicted lateral acceleration [m/s²]
+		float trajectory_curvature{0.0f};   // Path curvature [1/m]
+		bool trajectory_valid{false};       // Trajectory data validity
+		uint64_t last_trajectory_time{0};   // Last trajectory update time
+		float load_transfer_prediction{0.0f}; // Predicted load transfer due to trajectory
+		float stability_demand{0.0f};       // Stability demand based on trajectory
+	} _trajectory_state;
 
 	// Torque distribution output
 	struct TorqueDistribution {

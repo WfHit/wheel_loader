@@ -32,16 +32,14 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__operation_mode_manager
-	MAIN operation_mode_manager
+	MODULE modules__trajectory_followers__bucket_trajectory_follower
+	MAIN bucket_trajectory_follower
 	STACK_MAIN 4096
 	COMPILE_FLAGS
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
-		operation_mode_manager.cpp
-		modes/manual_mode/manual_mode.cpp
-		modes/vla_mode/vla_mode.cpp
-		modes/vla_mode/vla_trajectory_decomposer.cpp
+		bucket_trajectory_follower_main.cpp
+		bucket_trajectory_follower.cpp
 	DEPENDS
 		lib_mathlib
 		lib_matrix

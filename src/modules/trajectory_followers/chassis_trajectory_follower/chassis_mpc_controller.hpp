@@ -35,7 +35,8 @@
 
 #include <matrix/matrix/math.hpp>
 #include <lib/mathlib/mathlib.h>
-#include "../common/trajectory_types.hpp"
+#include <uORB/topics/chassis_trajectory_setpoint.h>
+#include "trajectory_types.hpp"
 
 namespace wheel_loader
 {
@@ -81,7 +82,7 @@ public:
      */
     matrix::Vector<float, CONTROL_DIM> solve(
         const matrix::Vector<float, STATE_DIM> &current_state,
-        const ChassisTrajectorySetpoint &reference_point,
+        const chassis_trajectory_setpoint_s &reference_point,
         float dt);
 
     /**

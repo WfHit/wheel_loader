@@ -40,9 +40,12 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/chassis_trajectory_setpoint.h>
+#include <uORB/topics/bucket_trajectory_setpoint.h>
+#include <uORB/topics/chassis_control_command.h>
 #include <lib/perf/perf_counter.h>
 
-#include "../common/trajectory_types.hpp"
+#include "trajectory_types.hpp"
 #include "chassis_mpc_controller.hpp"
 
 namespace wheel_loader
@@ -63,6 +66,7 @@ public:
 	static int task_spawn(int argc, char *argv[]);
 	static int custom_command(int argc, char *argv[]);
 	static int print_usage(const char *reason = nullptr);
+	static ChassisTrajectoryFollower *instantiate(int argc, char *argv[]);
 	int print_status() override;
 
 	bool init();
@@ -131,14 +135,14 @@ private:
 	uORB::Subscription bucket_trajectory_setpoint_sub{ORB_ID(bucket_trajectory_setpoint)}; // For coordination
 
 	// Publications
-	uORB::Publication<ChassisControlCommand> chassis_control_pub{ORB_ID(chassis_control_command)};
+	uORB::Publication<chassis_control_command_s> chassis_control_pub{ORB_ID(chassis_control_command)};
 
 	// MPC Controller
 	ChassisMPCController mpc_controller;
 
 	// State
-	ChassisTrajectorySetpoint current_setpoint{};
-	BucketTrajectorySetpoint bucket_setpoint{};  // For coordination
+	chassis_trajectory_setpoint_s current_setpoint{};
+	bucket_trajectory_setpoint_s bucket_setpoint{};  // For coordination
 	vehicle_local_position_s current_position{};
 
 	// Vehicle state vector for MPC [x, y, theta, v]

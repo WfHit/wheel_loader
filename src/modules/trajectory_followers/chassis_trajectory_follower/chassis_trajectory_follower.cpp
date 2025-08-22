@@ -173,7 +173,7 @@ void ChassisTrajectoryFollower::apply_coordination()
 	}
 
 	// Calculate bucket influence on chassis motion
-	Vector3f bucket_pos = bucket_setpoint.position;
+	Vector3f bucket_pos(bucket_setpoint.x_position, bucket_setpoint.y_position, bucket_setpoint.z_position);
 	Vector2f chassis_pos(current_position.x, current_position.y);
 
 	// If bucket is reaching far, chassis should help by moving closer
@@ -193,8 +193,8 @@ void ChassisTrajectoryFollower::apply_coordination()
 		                            coordination_factor * param_coordination_gain.get();
 
 		// Adjust chassis target position
-		current_setpoint.position(0) += assistance_vector(0);
-		current_setpoint.position(1) += assistance_vector(1);
+		current_setpoint.x_position += assistance_vector(0);
+		current_setpoint.y_position += assistance_vector(1);
 
 		// Adjust chassis target heading to face bucket
 		float bucket_heading = atan2f(bucket_direction(1), bucket_direction(0));
@@ -269,7 +269,7 @@ void ChassisTrajectoryFollower::apply_safety_constraints()
 
 void ChassisTrajectoryFollower::publish_control_commands()
 {
-	ChassisControlCommand cmd{};
+	chassis_control_command_s cmd{};
 	cmd.velocity = velocity_command;
 	cmd.steering_angle = steering_command;
 	cmd.timestamp = hrt_absolute_time();

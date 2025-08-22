@@ -39,12 +39,17 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <uORB/topics/vehicle_local_position.h>
+#include <uORB/topics/bucket_trajectory_setpoint.h>
+#include <uORB/topics/bucket_control_command.h>
+#include <uORB/topics/boom_position.h>
+#include <uORB/topics/bucket_position.h>
+#include <uORB/topics/load_sensor.h>
 #include <lib/matrix/matrix/math.hpp>
 #include <lib/perf/perf_counter.h>
 #include <lib/pid/pid.h>
 #include <lib/hysteresis/hysteresis.h>
 
-#include "../common/trajectory_types.hpp"
+#include "trajectory_types.hpp"
 
 namespace wheel_loader
 {
@@ -151,7 +156,7 @@ private:
 	uORB::Publication<bucket_control_command_s> bucket_control_pub{ORB_ID(bucket_control_command)};
 
 	// Current state
-	BucketTrajectorySetpoint current_setpoint{};
+	bucket_trajectory_setpoint_s current_setpoint{};
 	boom_position_s current_boom_position{};
 	bucket_position_s current_bucket_position{};
 	load_sensor_s current_load{};
