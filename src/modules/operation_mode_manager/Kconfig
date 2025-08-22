@@ -1,0 +1,58 @@
+menuconfig MODULES_OPERATION_MODE_MANAGER
+	bool "operation_mode_manager"
+	default n
+	---help---
+		Enable support for Operation Mode Manager module.
+
+		This module manages operation modes for wheel loader robots:
+		- Manual mode: Direct RC control of chassis and bucket
+		- VLA mode: Vision-Language-Action autonomous trajectory following
+
+		The module handles mode switching, trajectory decomposition,
+		safety monitoring, and coordinated motion control.
+
+if MODULES_OPERATION_MODE_MANAGER
+
+config MODULES_OPERATION_MODE_MANAGER_MANUAL_MODE
+	bool "Enable Manual Mode"
+	default y
+	---help---
+		Enable manual operation mode with RC input processing
+		and trajectory generation for chassis and bucket control.
+
+config MODULES_OPERATION_MODE_MANAGER_VLA_MODE
+	bool "Enable VLA Mode"
+	default y
+	---help---
+		Enable Vision-Language-Action autonomous mode with
+		trajectory decomposition and coordinated motion control.
+
+config MODULES_OPERATION_MODE_MANAGER_CHASSIS_MPC
+	bool "Enable Chassis MPC Controller"
+	default y
+	---help---
+		Enable Model Predictive Control for chassis trajectory
+		following with TinyMPC implementation.
+
+config MODULES_OPERATION_MODE_MANAGER_BUCKET_PID
+	bool "Enable Bucket PID Controller"
+	default y
+	---help---
+		Enable 6-DOF PID control for bucket trajectory following
+		with gravity and load compensation.
+
+config MODULES_OPERATION_MODE_MANAGER_SAFETY
+	bool "Enable Safety Features"
+	default y
+	---help---
+		Enable safety monitoring, emergency stop functionality,
+		and mode switching safety checks.
+
+config MODULES_OPERATION_MODE_MANAGER_COORDINATION
+	bool "Enable Chassis-Bucket Coordination"
+	default y
+	---help---
+		Enable coordination between chassis and bucket motion
+		for improved reach and stability.
+
+endif # MODULES_OPERATION_MODE_MANAGER

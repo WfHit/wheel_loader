@@ -13,10 +13,10 @@
   - **Note**: Parameter files are NOT included in CMakeLists.txt SRCS
 - **All lowercase with underscores** (snake_case)
 
-### Build Files
 - `CMakeLists.txt` - Standard CMake naming
 - `Kconfig` - Module configuration for menuconfig
 - **DO NOT** create `xxx_param.c`
+- All name is files use **lowercase with underscores** (snake_case)
 
 ## uORB Message Guidelines
 

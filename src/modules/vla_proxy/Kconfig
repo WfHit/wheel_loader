@@ -1,0 +1,15 @@
+menuconfig MODULES_VLA_PROXY
+	bool "vla_proxy"
+	default n
+	---help---
+		Enable support for VLA (Vision-Language-Action) proxy module.
+		This module acts as a bridge between PX4 and VLA models,
+		enabling autonomous control through natural language commands
+		and visual understanding.
+
+menuconfig USER_VLA_PROXY
+	bool "vla_proxy running as userspace module"
+	default y
+	depends on BOARD_PROTECTED && MODULES_VLA_PROXY
+	---help---
+		Put vla_proxy in userspace memory
