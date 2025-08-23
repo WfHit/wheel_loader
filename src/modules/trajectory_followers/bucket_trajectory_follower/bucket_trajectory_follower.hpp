@@ -90,7 +90,6 @@ public:
 	static int print_usage(const char *reason = nullptr);
 
 private:
-	static constexpr const char *MODULE_NAME = "bucket_trajectory_follower";
 	static constexpr int RUN_INTERVAL = 20000; // 50Hz in microseconds
 	static constexpr hrt_abstime SETPOINT_TIMEOUT = 500000; // 0.5 seconds
 
