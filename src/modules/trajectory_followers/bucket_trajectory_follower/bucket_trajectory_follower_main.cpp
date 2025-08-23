@@ -37,82 +37,11 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/module.h>
 
-using namespace wheel_loader;
-
 extern "C" __EXPORT int bucket_trajectory_follower_main(int argc, char *argv[]);
 
 /**
- * Bucket Trajectory Follower implementation
+ * Bucket Trajectory Follower implementation - moved to main .cpp file
  */
-int BucketTrajectoryFollower::task_spawn(int argc, char *argv[])
-{
-	BucketTrajectoryFollower *instance = new BucketTrajectoryFollower();
-
-	if (instance) {
-		_object.store(instance);
-		_task_id = task_id_is_work_queue;
-
-		if (instance->init()) {
-			return PX4_OK;
-		}
-
-	} else {
-		PX4_ERR("alloc failed");
-	}
-
-	delete instance;
-	_object.store(nullptr);
-	_task_id = -1;
-
-	return PX4_ERROR;
-}
-
-BucketTrajectoryFollower *BucketTrajectoryFollower::instantiate(int argc, char *argv[])
-{
-	return new BucketTrajectoryFollower();
-}
-
-int BucketTrajectoryFollower::custom_command(int argc, char *argv[])
-{
-	return print_usage("unknown command");
-}
-
-int BucketTrajectoryFollower::print_usage(const char *reason)
-{
-	if (reason) {
-		PX4_ERR("%s\n", reason);
-	}
-
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-Bucket trajectory follower with 6-DOF PID control.
-Runs at 50Hz for precise bucket positioning and load handling.
-
-### Implementation
-Uses 6-DOF PID controllers for bucket trajectory following:
-- Position control (X, Y, Z)
-- Orientation control (Roll, Pitch, Yaw)
-- Gravity compensation and load handling
-- Safety constraints and joint limits
-
-### Examples
-Start the bucket trajectory follower:
-$ bucket_trajectory_follower start
-
-Stop the bucket trajectory follower:
-$ bucket_trajectory_follower stop
-
-Check status:
-$ bucket_trajectory_follower status
-)DESCR_STR");
-
-	PRINT_MODULE_USAGE_NAME("bucket_trajectory_follower", "controller");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-	return 0;
-}
 
 /**
  * Main bucket trajectory follower module entry point

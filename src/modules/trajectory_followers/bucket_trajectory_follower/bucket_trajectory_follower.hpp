@@ -36,224 +36,101 @@
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
+#include <lib/hysteresis/hysteresis.h>
 #include <uORB/Subscription.hpp>
 #include <uORB/Publication.hpp>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/bucket_trajectory_setpoint.h>
-#include <uORB/topics/bucket_control_command.h>
-#include <uORB/topics/boom_position.h>
-#include <uORB/topics/bucket_position.h>
-#include <uORB/topics/load_sensor.h>
-#include <lib/matrix/matrix/math.hpp>
+#include <uORB/topics/boom_status.h>
+#include <uORB/topics/bucket_status.h>
+#include <uORB/topics/boom_command.h>
+#include <uORB/topics/bucket_command.h>
 #include <lib/perf/perf_counter.h>
-#include <lib/pid/pid.h>
-#include <lib/hysteresis/hysteresis.h>
-
-#include "trajectory_types.hpp"
+#include <matrix/matrix.hpp>
+#include <mathlib/mathlib.h>
 
 namespace wheel_loader
 {
 
 /**
- * @class BucketTrajectoryFollower
- * @brief Trajectory follower for bucket (boom + bucket) motion using 6-DOF PID control
+ * @brief Bucket trajectory follower for wheel loader
  *
- * This class implements trajectory following for the bucket assembly (boom and bucket)
- * using separate PID controllers for each degree of freedom. The controller takes
- * BucketTrajectorySetpoint in world coordinates and outputs bucket actuator commands.
+ * This module converts bucket tip trajectory setpoints into separate boom and bucket
+ * joint commands using inverse kinematics. It uses the existing BoomKinematics and
+ * BucketKinematics classes to maintain proper coordinate system separation:
  *
- * Features:
- * - 6-DOF PID control (boom x,y,z + bucket roll,pitch,yaw)
- * - Safety constraints and joint limits
- * - Gravity compensation
- * - Load handling considerations
- * - Emergency stop capability
+ * - Boom: Angle relative to ground/horizontal (BoomCommand)
+ * - Bucket: Angle relative to boom (BucketCommand with coordinate_frame=1)
+ *
+ * Key coordinate system understanding:
+ * - Bucket can ONLY rotate relative to boom physically
+ * - "Ground reference" in BucketCommand is a control mode, not physical capability
+ * - This module ALWAYS publishes bucket commands in boom reference frame
  */
-class BucketTrajectoryFollower : public ModuleBase<BucketTrajectoryFollower>,
-                                public ModuleParams,
-                                public px4::ScheduledWorkItem
+class BucketTrajectoryFollower : public ModuleBase<BucketTrajectoryFollower>, public ModuleParams,
+				  public px4::ScheduledWorkItem
 {
 public:
 	BucketTrajectoryFollower();
 	~BucketTrajectoryFollower() override;
 
-	bool init() override;
+	/** @see ModuleBase */
+	static int task_spawn(int argc, char *argv[]);
+	static int custom_command(int argc, char *argv[]);
+	static int print_usage(const char *reason = nullptr);
+
+	bool init();
 
 	int print_status() override;
 
-	static int task_spawn(int argc, char *argv[]);
-
-	static BucketTrajectoryFollower *instantiate(int argc, char *argv[]);
-
-	static int custom_command(int argc, char *argv[]);
-
-	static int print_usage(const char *reason = nullptr);
-
 private:
-	static constexpr int RUN_INTERVAL = 20000; // 50Hz in microseconds
-	static constexpr hrt_abstime SETPOINT_TIMEOUT = 500000; // 0.5 seconds
-
 	void Run() override;
 
-	/**
-	 * Update bucket state from sensors
-	 */
-	void update_bucket_state();
+	// Update subscriptions and process trajectory setpoint
+	void update_subscriptions();
+	void update_trajectory_following();
 
-	/**
-	 * Process incoming trajectory setpoint
-	 */
-	void process_trajectory_setpoint();
+	// Inverse kinematics: bucket tip position → boom angle (to ground) + bucket angle (to boom)
+	bool compute_joint_angles(const matrix::Vector3f &bucket_tip_position,
+				  float &boom_angle_ground,
+				  float &bucket_angle_boom);
 
-	/**
-	 * Run 6-DOF PID controllers
-	 */
-	void run_pid_controllers(float dt);
-
-	/**
-	 * Apply safety constraints and joint limits
-	 */
-	void apply_safety_constraints();
-
-	/**
-	 * Apply gravity compensation
-	 */
-	void apply_gravity_compensation();
-
-	/**
-	 * Apply load handling compensation
-	 */
-	void apply_load_compensation();
-
-	/**
-	 * Convert PID outputs to actuator commands
-	 */
-	void convert_pid_to_commands();
-
-	/**
-	 * Publish bucket control commands
-	 */
-	void publish_control_commands();
-
-	/**
-	 * Reset all controllers
-	 */
-	void reset_controllers();
-
-	/**
-	 * Check joint limits
-	 */
-	bool check_joint_limits(const matrix::Vector3f &position, const matrix::Vector3f &orientation);
+	// Forward kinematics: joint angles → bucket tip position (for validation)
+	matrix::Vector3f compute_bucket_tip_position(float boom_angle_ground, float bucket_angle_boom);
 
 	// uORB subscriptions
-	uORB::Subscription bucket_trajectory_setpoint_sub{ORB_ID(bucket_trajectory_setpoint)};
-	uORB::Subscription boom_position_sub{ORB_ID(boom_position)};
-	uORB::Subscription bucket_position_sub{ORB_ID(bucket_position)};
-	uORB::Subscription load_sensor_sub{ORB_ID(load_sensor)};
+	uORB::Subscription _bucket_trajectory_setpoint_sub{ORB_ID(bucket_trajectory_setpoint)};
+	uORB::Subscription _boom_status_sub{ORB_ID(boom_status)};
+	uORB::Subscription _bucket_status_sub{ORB_ID(bucket_status)};
+	uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
 
-	// uORB publications
-	uORB::Publication<bucket_control_command_s> bucket_control_pub{ORB_ID(bucket_control_command)};
-
-	// Current state
-	bucket_trajectory_setpoint_s current_setpoint{};
-	boom_position_s current_boom_position{};
-	bucket_position_s current_bucket_position{};
-	load_sensor_s current_load{};
-
-	// Current bucket state in world coordinates
-	matrix::Vector3f current_position{};    // World position of bucket tip
-	matrix::Vector3f current_orientation{}; // Roll, pitch, yaw
-	matrix::Vector3f current_velocity{};    // Linear velocity
-	matrix::Vector3f current_angular_velocity{}; // Angular velocity
-
-	// PID controllers for 6-DOF control
-	PID_t pid_x{};      // X position controller
-	PID_t pid_y{};      // Y position controller
-	PID_t pid_z{};      // Z position controller
-	PID_t pid_roll{};   // Roll controller
-	PID_t pid_pitch{};  // Pitch controller
-	PID_t pid_yaw{};    // Yaw controller
-
-	// Control outputs
-	matrix::Vector3f position_output{}; // Position control output (forces)
-	matrix::Vector3f orientation_output{}; // Orientation control output (torques)
-
-	// Bucket actuator commands
-	float boom_extension_cmd{0.0f};
-	float boom_lift_cmd{0.0f};
-	float bucket_tilt_cmd{0.0f};
-	float bucket_roll_cmd{0.0f};
-	float bucket_pitch_cmd{0.0f};
-	float bucket_yaw_cmd{0.0f};
-
-	// Safety and status
-	bool emergency_stop{false};
-	bool joint_limits_violated{false};
-	systemlib::Hysteresis setpoint_timeout_hysteresis{false};
-	hrt_abstime last_setpoint{0};
-	hrt_abstime last_update{0};
-
-	// Load handling
-	float current_load_weight{0.0f};
-	matrix::Vector3f load_center_of_mass{};
-
-	// Performance counters
-	perf_counter_t loop_perf{nullptr};
-	perf_counter_t pid_perf{nullptr};
-	perf_counter_t kinematics_perf{nullptr};
+	// uORB publications - separate commands for boom and bucket
+	uORB::Publication<boom_command_s> _boom_command_pub{ORB_ID(boom_command)};
+	uORB::Publication<bucket_command_s> _bucket_command_pub{ORB_ID(bucket_command)};
 
 	// Parameters
 	DEFINE_PARAMETERS(
-		// Position PID gains
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PX_P>) param_pid_p_x_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PX_I>) param_pid_p_x_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PX_D>) param_pid_p_x_d,
-
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PY_P>) param_pid_p_y_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PY_I>) param_pid_p_y_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PY_D>) param_pid_p_y_d,
-
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PZ_P>) param_pid_p_z_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PZ_I>) param_pid_p_z_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_PZ_D>) param_pid_p_z_d,
-
-		// Orientation PID gains
-		(ParamFloat<px4::params::OMM_BUCKET_PID_R_P>) param_pid_roll_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_R_I>) param_pid_roll_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_R_D>) param_pid_roll_d,
-
-		(ParamFloat<px4::params::OMM_BUCKET_PID_P_P>) param_pid_pitch_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_P_I>) param_pid_pitch_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_P_D>) param_pid_pitch_d,
-
-		(ParamFloat<px4::params::OMM_BUCKET_PID_Y_P>) param_pid_yaw_p,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_Y_I>) param_pid_yaw_i,
-		(ParamFloat<px4::params::OMM_BUCKET_PID_Y_D>) param_pid_yaw_d,
-
-		// Safety constraints
-		(ParamFloat<px4::params::OMM_BUCKET_MAX_VEL>) param_max_velocity,
-		(ParamFloat<px4::params::OMM_BUCKET_MAX_ACCEL>) param_max_acceleration,
-		(ParamFloat<px4::params::OMM_BUCKET_MAX_FORCE>) param_max_force,
-
-		// Joint limits
-		(ParamFloat<px4::params::OMM_BOOM_EXT_MIN>) param_boom_ext_min,
-		(ParamFloat<px4::params::OMM_BOOM_EXT_MAX>) param_boom_ext_max,
-		(ParamFloat<px4::params::OMM_BOOM_LIFT_MIN>) param_boom_lift_min,
-		(ParamFloat<px4::params::OMM_BOOM_LIFT_MAX>) param_boom_lift_max,
-		(ParamFloat<px4::params::OMM_BUCKET_TILT_MIN>) param_bucket_tilt_min,
-		(ParamFloat<px4::params::OMM_BUCKET_TILT_MAX>) param_bucket_tilt_max,
-
-		// Gravity compensation
-		(ParamFloat<px4::params::OMM_BUCKET_GRAVITY_COMP>) param_gravity_comp_gain,
-		(ParamFloat<px4::params::OMM_LOAD_COMP_GAIN>) param_load_comp_gain,
-
-		// Bucket kinematics
-		(ParamFloat<px4::params::OMM_BOOM_LENGTH>) param_boom_length,
-		(ParamFloat<px4::params::OMM_BUCKET_LENGTH>) param_bucket_length,
-		(ParamFloat<px4::params::OMM_BOOM_OFFSET_X>) param_boom_offset_x,
-		(ParamFloat<px4::params::OMM_BOOM_OFFSET_Y>) param_boom_offset_y,
-		(ParamFloat<px4::params::OMM_BOOM_OFFSET_Z>) param_boom_offset_z
+		(ParamFloat<px4::params::BT_FOLLOW_RATE>) _param_follow_rate,
+		(ParamFloat<px4::params::BT_POSITION_TOL>) _param_position_tolerance,
+		(ParamFloat<px4::params::BT_MAX_BOOM_VEL>) _param_max_boom_velocity,
+		(ParamFloat<px4::params::BT_MAX_BUCKET_VEL>) _param_max_bucket_velocity,
+		(ParamFloat<px4::params::BT_SMOOTHING_FACTOR>) _param_smoothing_factor
 	)
+
+	// Performance counters
+	perf_counter_t _loop_perf;
+	perf_counter_t _kinematics_perf;
+
+	// Control state
+	bool _trajectory_active{false};
+	matrix::Vector3f _last_setpoint_position{};
+	hrt_abstime _last_update_time{0};
+
+	// Safety limits and validation
+	static constexpr float MIN_BOOM_ANGLE = -20.0f * M_PI_F / 180.0f; // -20 degrees
+	static constexpr float MAX_BOOM_ANGLE = 60.0f * M_PI_F / 180.0f;  // 60 degrees
+	static constexpr float MIN_BUCKET_ANGLE = -90.0f * M_PI_F / 180.0f; // -90 degrees (relative to boom)
+	static constexpr float MAX_BUCKET_ANGLE = 90.0f * M_PI_F / 180.0f;  // 90 degrees (relative to boom)
 };
 
 } // namespace wheel_loader

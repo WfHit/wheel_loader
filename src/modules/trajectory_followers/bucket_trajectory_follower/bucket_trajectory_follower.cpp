@@ -32,362 +32,275 @@
  ****************************************************************************/
 
 #include "bucket_trajectory_follower.hpp"
-#include <px4_platform_common/getopt.h>
-#include <lib/mathlib/mathlib.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/defines.h>
+#include <px4_platform_common/posix.h>
+#include <px4_platform_common/px4_work_queue/ScheduleNow.hpp>
 
-using namespace wheel_loader;
 using namespace matrix;
 
 BucketTrajectoryFollower::BucketTrajectoryFollower() :
 	ModuleParams(nullptr),
-	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
+	_loop_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": cycle")),
+	_kinematics_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": kinematics"))
 {
-	// Initialize hysteresis for setpoint timeout
-	setpoint_timeout_hysteresis.set_hysteresis_time_from(false, SETPOINT_TIMEOUT);
 }
 
 BucketTrajectoryFollower::~BucketTrajectoryFollower()
 {
-	perf_free(loop_perf);
-	perf_free(pid_perf);
-	perf_free(kinematics_perf);
+	perf_free(_loop_perf);
+	perf_free(_kinematics_perf);
+}
+
+int BucketTrajectoryFollower::task_spawn(int argc, char *argv[])
+{
+	BucketTrajectoryFollower *instance = new BucketTrajectoryFollower();
+
+	if (instance) {
+		_object.store(instance);
+		_task_id = task_id_is_work_queue;
+
+		if (instance->init()) {
+			return PX4_OK;
+		}
+
+	} else {
+		PX4_ERR("alloc failed");
+	}
+
+	delete instance;
+	_object.store(nullptr);
+	_task_id = -1;
+
+	return PX4_ERROR;
 }
 
 bool BucketTrajectoryFollower::init()
 {
-	// Schedule at 50Hz
-	ScheduleOnInterval(RUN_INTERVAL);
-
-	// Initialize performance counters
-	loop_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": cycle");
-	pid_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": pid");
-	kinematics_perf = perf_alloc(PC_ELAPSED, MODULE_NAME": kinematics");
-
-	// Initialize PID controllers
-
-	// Position controllers (X, Y, Z)
-	pid_init(&pid_x, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_x,
-		param_pid_p_x_p.get(), param_pid_p_x_i.get(), param_pid_p_x_d.get(),
-		param_max_force.get(), -param_max_force.get());
-
-	pid_init(&pid_y, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_y,
-		param_pid_p_y_p.get(), param_pid_p_y_i.get(), param_pid_p_y_d.get(),
-		param_max_force.get(), -param_max_force.get());
-
-	pid_init(&pid_z, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_z,
-		param_pid_p_z_p.get(), param_pid_p_z_i.get(), param_pid_p_z_d.get(),
-		param_max_force.get(), -param_max_force.get());
-
-	// Orientation controllers (Roll, Pitch, Yaw)
-	pid_init(&pid_roll, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_roll,
-		param_pid_roll_p.get(), param_pid_roll_i.get(), param_pid_roll_d.get(),
-		1.0f, -1.0f);  // Normalized torque output
-
-	pid_init(&pid_pitch, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_pitch,
-		param_pid_pitch_p.get(), param_pid_pitch_i.get(), param_pid_pitch_d.get(),
-		1.0f, -1.0f);
-
-	pid_init(&pid_yaw, PID_MODE_DERIVATIV_CALC, 0.02f);
-	pid_set_parameters(&pid_yaw,
-		param_pid_yaw_p.get(), param_pid_yaw_i.get(), param_pid_yaw_d.get(),
-		1.0f, -1.0f);
-
+	ScheduleOnInterval(50_ms); // 20Hz control loop for smooth trajectory following
 	return true;
 }
 
 void BucketTrajectoryFollower::Run()
 {
-	perf_begin(loop_perf);
-
-	// Update bucket state
-	update_bucket_state();
-
-	// Process trajectory setpoint
-	process_trajectory_setpoint();
-
-	// Check for setpoint timeout
-	const hrt_abstime now = hrt_absolute_time();
-	setpoint_timeout_hysteresis.set_state_and_update(
-		(now - last_setpoint) > SETPOINT_TIMEOUT, now);
-
-	if (setpoint_timeout_hysteresis.get_state()) {
-		// No valid setpoint - emergency stop
-		emergency_stop = true;
-		reset_controllers();
-	} else {
-		emergency_stop = false;
-
-		// Calculate time delta
-		const float dt = math::constrain((now - last_update) * 1e-6f, 0.001f, 0.1f);
-		last_update = now;
-
-		// Run PID controllers
-		perf_begin(pid_perf);
-		run_pid_controllers(dt);
-		perf_end(pid_perf);
-
-		// Apply gravity compensation
-		apply_gravity_compensation();
-
-		// Apply load compensation
-		apply_load_compensation();
-
-		// Convert PID outputs to actuator commands
-		perf_begin(kinematics_perf);
-		convert_pid_to_commands();
-		perf_end(kinematics_perf);
-
-		// Apply safety constraints
-		apply_safety_constraints();
-	}
-
-	// Publish control commands
-	publish_control_commands();
-
-	perf_end(loop_perf);
-}
-
-void BucketTrajectoryFollower::update_bucket_state()
-{
-	// Update boom position
-	if (boom_position_sub.updated()) {
-		boom_position_sub.copy(&current_boom_position);
-	}
-
-	// Update bucket position
-	if (bucket_position_sub.updated()) {
-		bucket_position_sub.copy(&current_bucket_position);
-	}
-
-	// Update load sensor
-	if (load_sensor_sub.updated()) {
-		load_sensor_sub.copy(&current_load);
-		current_load_weight = current_load.weight;
-		load_center_of_mass = Vector3f(current_load.center_of_mass);
-	}
-
-	// Calculate current bucket position and orientation in world coordinates
-	// This requires forward kinematics calculation
-
-	// Boom parameters
-	float boom_extension = current_boom_position.extension;
-	float boom_lift_angle = current_boom_position.lift_angle;
-	Vector3f boom_offset(param_boom_offset_x.get(),
-	                    param_boom_offset_y.get(),
-	                    param_boom_offset_z.get());
-
-	// Bucket parameters
-	float bucket_tilt = current_bucket_position.tilt_angle;
-	float bucket_roll = current_bucket_position.roll_angle;
-	float bucket_pitch = current_bucket_position.pitch_angle;
-
-	// Forward kinematics calculation
-	// Boom tip position (simplified - assumes boom extends horizontally then lifts)
-	Vector3f boom_tip;
-	boom_tip(0) = boom_offset(0) + boom_extension * cosf(boom_lift_angle);
-	boom_tip(1) = boom_offset(1);
-	boom_tip(2) = boom_offset(2) + boom_extension * sinf(boom_lift_angle);
-
-	// Bucket tip position (bucket extends from boom tip)
-	float bucket_length = param_bucket_length.get();
-	Vector3f bucket_direction;
-	bucket_direction(0) = cosf(boom_lift_angle + bucket_tilt);
-	bucket_direction(1) = 0.0f;  // Simplified - no lateral bucket motion
-	bucket_direction(2) = sinf(boom_lift_angle + bucket_tilt);
-
-	current_position = boom_tip + bucket_direction * bucket_length;
-
-	// Bucket orientation
-	current_orientation(0) = bucket_roll;
-	current_orientation(1) = bucket_pitch;
-	current_orientation(2) = boom_lift_angle + bucket_tilt;  // Effective yaw
-}
-
-void BucketTrajectoryFollower::process_trajectory_setpoint()
-{
-	// Update trajectory setpoint
-	if (bucket_trajectory_setpoint_sub.updated()) {
-		bucket_trajectory_setpoint_sub.copy(&current_setpoint);
-		last_setpoint = hrt_absolute_time();
-	}
-}
-
-void BucketTrajectoryFollower::run_pid_controllers(float dt)
-{
-	if (!current_setpoint.valid) {
-		position_output.setZero();
-		orientation_output.setZero();
+	if (should_exit()) {
+		ScheduleClear();
+		exit_and_cleanup();
 		return;
 	}
 
-	// Calculate position errors
-	Vector3f position_error = current_setpoint.position - current_position;
-	Vector3f orientation_error = current_setpoint.orientation - current_orientation;
+	perf_begin(_loop_perf);
 
-	// Wrap yaw error to [-π, π]
-	orientation_error(2) = wrap_pi(orientation_error(2));
+	// Update all subscriptions
+	update_subscriptions();
 
-	// Run position PID controllers
-	position_output(0) = pid_calculate(&pid_x, position_error(0), 0.0f, dt);
-	position_output(1) = pid_calculate(&pid_y, position_error(1), 0.0f, dt);
-	position_output(2) = pid_calculate(&pid_z, position_error(2), 0.0f, dt);
+	// Process trajectory following
+	update_trajectory_following();
 
-	// Run orientation PID controllers
-	orientation_output(0) = pid_calculate(&pid_roll, orientation_error(0), 0.0f, dt);
-	orientation_output(1) = pid_calculate(&pid_pitch, orientation_error(1), 0.0f, dt);
-	orientation_output(2) = pid_calculate(&pid_yaw, orientation_error(2), 0.0f, dt);
+	perf_end(_loop_perf);
 }
 
-void BucketTrajectoryFollower::apply_gravity_compensation()
+void BucketTrajectoryFollower::update_subscriptions()
 {
-	// Apply gravity compensation to Z axis
-	const float gravity_compensation = param_gravity_comp_gain.get() * 9.81f;
-	position_output(2) += gravity_compensation;
+	// Update trajectory setpoint
+	bucket_trajectory_setpoint_s trajectory_setpoint;
+	if (_bucket_trajectory_setpoint_sub.update(&trajectory_setpoint)) {
+		// New trajectory received - reset any smoothing
+		_trajectory_active = true;
+		_last_setpoint_position = Vector3f(trajectory_setpoint.x, trajectory_setpoint.y, trajectory_setpoint.z);
+		_last_update_time = hrt_absolute_time();
+	}
+
+	// Update status subscriptions for current state feedback
+	boom_status_s boom_status;
+	_boom_status_sub.update(&boom_status);
+
+	bucket_status_s bucket_status;
+	_bucket_status_sub.update(&bucket_status);
+
+	vehicle_local_position_s vehicle_pos;
+	_vehicle_local_position_sub.update(&vehicle_pos);
 }
 
-void BucketTrajectoryFollower::apply_load_compensation()
+void BucketTrajectoryFollower::update_trajectory_following()
 {
-	if (current_load_weight > 0.1f) {  // Minimum detectable load
-		// Compensate for load weight
-		float load_compensation = current_load_weight * param_load_comp_gain.get();
-		position_output(2) += load_compensation;
-
-		// Adjust for center of mass offset
-		Vector3f com_offset = load_center_of_mass;
-		position_output += com_offset * (load_compensation * 0.1f);  // Small adjustment
+	if (!_trajectory_active) {
+		return;
 	}
+
+	perf_begin(_kinematics_perf);
+
+	// Target bucket tip position (from trajectory setpoint)
+	Vector3f target_position = _last_setpoint_position;
+
+	// Compute inverse kinematics: bucket tip position → joint angles
+	float boom_angle_ground, bucket_angle_boom;
+	bool solution_valid = compute_joint_angles(target_position, boom_angle_ground, bucket_angle_boom);
+
+	if (solution_valid) {
+		// Validate joint limits
+		boom_angle_ground = math::constrain(boom_angle_ground, MIN_BOOM_ANGLE, MAX_BOOM_ANGLE);
+		bucket_angle_boom = math::constrain(bucket_angle_boom, MIN_BUCKET_ANGLE, MAX_BUCKET_ANGLE);
+
+		// Publish boom command (angle relative to ground)
+		boom_command_s boom_cmd{};
+		boom_cmd.timestamp = hrt_absolute_time();
+		boom_cmd.lift_angle_cmd = boom_angle_ground;
+		boom_cmd.lift_velocity_cmd = 0.0f; // Simple position control for now
+		boom_cmd.control_mode = boom_command_s::CONTROL_MODE_POSITION;
+		_boom_command_pub.publish(boom_cmd);
+
+		// Publish bucket command (angle relative to boom - coordinate_frame=1)
+		bucket_command_s bucket_cmd{};
+		bucket_cmd.timestamp = hrt_absolute_time();
+		bucket_cmd.target_angle = bucket_angle_boom;
+		bucket_cmd.coordinate_frame = 1; // CRITICAL: Always boom reference frame!
+		bucket_cmd.max_velocity = _param_max_bucket_velocity.get();
+		bucket_cmd.control_mode = bucket_command_s::CONTROL_MODE_POSITION;
+		_bucket_command_pub.publish(bucket_cmd);
+
+	} else {
+		// Invalid kinematic solution - stop trajectory following
+		PX4_WARN("Invalid kinematic solution - stopping trajectory");
+		_trajectory_active = false;
+	}
+
+	perf_end(_kinematics_perf);
 }
 
-void BucketTrajectoryFollower::convert_pid_to_commands()
+bool BucketTrajectoryFollower::compute_joint_angles(const Vector3f &bucket_tip_position,
+						    float &boom_angle_ground,
+						    float &bucket_angle_boom)
 {
-	// This is a simplified inverse kinematics solution
-	// In practice, this would require a more sophisticated kinematic solver
-
-	// Extract forces and torques
-	Vector3f forces = position_output;
-	Vector3f torques = orientation_output;
-
-	// Convert forces to joint commands using simplified Jacobian
-	// Boom extension command (X direction primarily)
-	boom_extension_cmd = forces(0) * 0.01f;  // Simple scaling
-
-	// Boom lift command (Z direction primarily)
-	boom_lift_cmd = forces(2) * 0.01f;
-
-	// Bucket tilt command (affects Z position and pitch)
-	bucket_tilt_cmd = (forces(2) * 0.005f) + (torques(1) * 0.1f);
-
-	// Bucket orientation commands
-	bucket_roll_cmd = torques(0) * 0.1f;
-	bucket_pitch_cmd = torques(1) * 0.1f;
-	bucket_yaw_cmd = torques(2) * 0.1f;
-}
-
-void BucketTrajectoryFollower::apply_safety_constraints()
-{
-	// Check joint limits
-	Vector3f test_position = current_position;
-	Vector3f test_orientation = current_orientation;
-	joint_limits_violated = !check_joint_limits(test_position, test_orientation);
-
-	// Apply joint limit constraints
-	boom_extension_cmd = math::constrain(boom_extension_cmd, -1.0f, 1.0f);
-	boom_lift_cmd = math::constrain(boom_lift_cmd, -1.0f, 1.0f);
-	bucket_tilt_cmd = math::constrain(bucket_tilt_cmd, -1.0f, 1.0f);
-	bucket_roll_cmd = math::constrain(bucket_roll_cmd, -1.0f, 1.0f);
-	bucket_pitch_cmd = math::constrain(bucket_pitch_cmd, -1.0f, 1.0f);
-	bucket_yaw_cmd = math::constrain(bucket_yaw_cmd, -1.0f, 1.0f);
-
-	// Emergency stop override
-	if (emergency_stop || joint_limits_violated) {
-		boom_extension_cmd = 0.0f;
-		boom_lift_cmd = 0.0f;
-		bucket_tilt_cmd = 0.0f;
-		bucket_roll_cmd = 0.0f;
-		bucket_pitch_cmd = 0.0f;
-		bucket_yaw_cmd = 0.0f;
+	// This is where we implement the inverse kinematics using the existing
+	// BoomKinematics and BucketKinematics classes
+	
+	// Step 1: Extract boom and bucket parameters from kinematics classes
+	// (This would need to access the kinematic parameters from the existing classes)
+	
+	// For now, implement a simplified 2D inverse kinematics
+	// Assuming boom pivot at origin, bucket attached to boom end
+	
+	// Boom length (would come from BoomKinematics)
+	const float boom_length = 3.0f; // meters - should come from kinematics
+	
+	// Bucket length (would come from BucketKinematics)  
+	const float bucket_length = 1.5f; // meters - should come from kinematics
+	
+	// 2D inverse kinematics in vertical plane (x=forward, z=up)
+	float target_x = bucket_tip_position(0);
+	float target_z = bucket_tip_position(2);
+	
+	// Distance from boom pivot to target
+	float target_distance = sqrtf(target_x * target_x + target_z * target_z);
+	
+	// Check if target is reachable
+	float max_reach = boom_length + bucket_length;
+	float min_reach = fabsf(boom_length - bucket_length);
+	
+	if (target_distance > max_reach || target_distance < min_reach) {
+		return false; // Unreachable target
 	}
-}
-
-bool BucketTrajectoryFollower::check_joint_limits(const Vector3f &position, const Vector3f &orientation)
-{
-	// Check boom extension limits
-	float boom_ext = current_boom_position.extension;
-	if (boom_ext < param_boom_ext_min.get() || boom_ext > param_boom_ext_max.get()) {
-		return false;
+	
+	// Law of cosines to find boom angle
+	float boom_tip_to_target = bucket_length;
+	float cos_boom_angle = (boom_length * boom_length + target_distance * target_distance - 
+			       boom_tip_to_target * boom_tip_to_target) / 
+			      (2.0f * boom_length * target_distance);
+	
+	if (cos_boom_angle < -1.0f || cos_boom_angle > 1.0f) {
+		return false; // Invalid solution
 	}
-
-	// Check boom lift limits
-	float boom_lift = current_boom_position.lift_angle;
-	if (boom_lift < param_boom_lift_min.get() || boom_lift > param_boom_lift_max.get()) {
-		return false;
+	
+	float boom_to_target_angle = acosf(cos_boom_angle);
+	float target_elevation_angle = atan2f(target_z, target_x);
+	
+	// Boom angle relative to ground (horizontal)
+	boom_angle_ground = target_elevation_angle - boom_to_target_angle;
+	
+	// Law of cosines to find bucket angle relative to boom
+	float cos_bucket_angle = (boom_length * boom_length + bucket_length * bucket_length - 
+				 target_distance * target_distance) / 
+				(2.0f * boom_length * bucket_length);
+	
+	if (cos_bucket_angle < -1.0f || cos_bucket_angle > 1.0f) {
+		return false; // Invalid solution
 	}
-
-	// Check bucket tilt limits
-	float bucket_tilt = current_bucket_position.tilt_angle;
-	if (bucket_tilt < param_bucket_tilt_min.get() || bucket_tilt > param_bucket_tilt_max.get()) {
-		return false;
-	}
-
+	
+	// Bucket angle relative to boom (interior angle)
+	bucket_angle_boom = M_PI_F - acosf(cos_bucket_angle);
+	
 	return true;
 }
 
-void BucketTrajectoryFollower::publish_control_commands()
+Vector3f BucketTrajectoryFollower::compute_bucket_tip_position(float boom_angle_ground, float bucket_angle_boom)
 {
-	BucketControlCommand cmd{};
-	cmd.boom_extension = boom_extension_cmd;
-	cmd.boom_lift = boom_lift_cmd;
-	cmd.bucket_tilt = bucket_tilt_cmd;
-	cmd.bucket_roll = bucket_roll_cmd;
-	cmd.bucket_pitch = bucket_pitch_cmd;
-	cmd.bucket_yaw = bucket_yaw_cmd;
-	cmd.timestamp = hrt_absolute_time();
-	cmd.valid = !emergency_stop && !joint_limits_violated && current_setpoint.valid;
-
-	bucket_control_pub.publish(cmd);
-}
-
-void BucketTrajectoryFollower::reset_controllers()
-{
-	// Reset PID controllers
-	pid_reset_integral(&pid_x);
-	pid_reset_integral(&pid_y);
-	pid_reset_integral(&pid_z);
-	pid_reset_integral(&pid_roll);
-	pid_reset_integral(&pid_pitch);
-	pid_reset_integral(&pid_yaw);
-
-	// Reset outputs
-	position_output.setZero();
-	orientation_output.setZero();
-
-	// Reset commands
-	boom_extension_cmd = 0.0f;
-	boom_lift_cmd = 0.0f;
-	bucket_tilt_cmd = 0.0f;
-	bucket_roll_cmd = 0.0f;
-	bucket_pitch_cmd = 0.0f;
-	bucket_yaw_cmd = 0.0f;
+	// Forward kinematics for validation
+	const float boom_length = 3.0f; // Should come from BoomKinematics
+	const float bucket_length = 1.5f; // Should come from BucketKinematics
+	
+	// Boom tip position
+	float boom_tip_x = boom_length * cosf(boom_angle_ground);
+	float boom_tip_z = boom_length * sinf(boom_angle_ground);
+	
+	// Bucket angle in ground frame
+	float bucket_angle_ground = boom_angle_ground + bucket_angle_boom;
+	
+	// Bucket tip position
+	float bucket_tip_x = boom_tip_x + bucket_length * cosf(bucket_angle_ground);
+	float bucket_tip_z = boom_tip_z + bucket_length * sinf(bucket_angle_ground);
+	
+	return Vector3f(bucket_tip_x, 0.0f, bucket_tip_z);
 }
 
 int BucketTrajectoryFollower::print_status()
 {
 	PX4_INFO("Bucket Trajectory Follower Status:");
-	PX4_INFO("  Emergency Stop: %s", emergency_stop ? "YES" : "NO");
-	PX4_INFO("  Joint Limits Violated: %s", joint_limits_violated ? "YES" : "NO");
-	PX4_INFO("  Setpoint Valid: %s", current_setpoint.valid ? "YES" : "NO");
-	PX4_INFO("  Current Position: (%.2f, %.2f, %.2f)",
-		(double)current_position(0), (double)current_position(1), (double)current_position(2));
-	PX4_INFO("  Target Position: (%.2f, %.2f, %.2f)",
-		(double)current_setpoint.position(0), (double)current_setpoint.position(1), (double)current_setpoint.position(2));
-	PX4_INFO("  Load Weight: %.2f kg", (double)current_load_weight);
+	PX4_INFO("  Trajectory active: %s", _trajectory_active ? "YES" : "NO");
+	PX4_INFO("  Last setpoint: [%.2f, %.2f, %.2f]", 
+		 (double)_last_setpoint_position(0),
+		 (double)_last_setpoint_position(1), 
+		 (double)_last_setpoint_position(2));
+	
+	perf_print_counter(_loop_perf);
+	perf_print_counter(_kinematics_perf);
+	
+	return 0;
+}
+
+int BucketTrajectoryFollower::custom_command(int argc, char *argv[])
+{
+	return print_usage("unknown command");
+}
+
+int BucketTrajectoryFollower::print_usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
+
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Bucket trajectory follower for wheel loader. Converts bucket tip trajectory setpoints
+into separate boom and bucket joint commands using inverse kinematics.
+
+Key coordinate system understanding:
+- Boom: Angle relative to ground/horizontal (BoomCommand)  
+- Bucket: Angle relative to boom (BucketCommand with coordinate_frame=1)
+- Bucket can ONLY rotate relative to boom physically
+
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("bucket_trajectory_follower", "controller");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
 }
 
-// Module framework functions would go here...
+extern "C" __EXPORT int bucket_trajectory_follower_main(int argc, char *argv[])
+{
+	return BucketTrajectoryFollower::main(argc, argv);
+}
