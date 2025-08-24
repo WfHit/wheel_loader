@@ -32,14 +32,14 @@
 ############################################################################
 
 px4_add_module(
-	MODULE modules__trajectory_followers__bucket_trajectory_follower
-	MAIN bucket_trajectory_follower
+	MODULE modules__trajectory_followers__end_effector_trajectory_follower
+	MAIN end_effector_trajectory_follower
 	STACK_MAIN 4096
 	COMPILE_FLAGS
 		-Wno-cast-align # TODO: fix and enable
 	SRCS
-		bucket_trajectory_follower_main.cpp
-		bucket_trajectory_follower.cpp
+		end_effector_trajectory_follower_main.cpp
+		end_effector_trajectory_follower.cpp
 	DEPENDS
 		lib_mathlib
 		lib_matrix

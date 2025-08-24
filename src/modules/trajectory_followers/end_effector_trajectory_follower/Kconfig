@@ -1,12 +1,12 @@
-menuconfig MODULES_BUCKET_TRAJECTORY_FOLLOWER
-	bool "bucket_trajectory_follower"
+menuconfig MODULES_END_EFFECTOR_TRAJECTORY_FOLLOWER
+	bool "end_effector_trajectory_follower"
 	default y
 	depends on MODULES_TRAJECTORY_FOLLOWERS
 	---help---
-		Enable the bucket trajectory follower module.
+		Enable the end effector trajectory follower module.
 
-		This module implements 6-DOF PID control for bucket motion control.
-		It provides trajectory following capabilities for the wheel loader bucket assembly,
+		This module implements 6-DOF PID control for end effector motion control.
+		It provides trajectory following capabilities for the wheel loader end effector assembly,
 		including:
 		- 6-DOF PID controllers (position + orientation)
 		- Joint limit enforcement
@@ -14,17 +14,17 @@ menuconfig MODULES_BUCKET_TRAJECTORY_FOLLOWER
 		- Load handling compensation
 		- Safety constraint monitoring
 
-if MODULES_BUCKET_TRAJECTORY_FOLLOWER
+if MODULES_END_EFFECTOR_TRAJECTORY_FOLLOWER
 
-config BUCKET_TRAJECTORY_FOLLOWER_UPDATE_RATE
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_UPDATE_RATE
 	int "Controller update rate (Hz)"
 	default 50
 	range 20 100
 	---help---
-		Update frequency of the bucket trajectory follower in Hz.
+		Update frequency of the end effector trajectory follower in Hz.
 		Higher rates provide better tracking but increase CPU usage.
 
-config BUCKET_TRAJECTORY_FOLLOWER_PID_P_GAIN
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_PID_P_GAIN
 	int "Position PID proportional gain (* 100)"
 	default 500
 	range 100 2000
@@ -32,7 +32,7 @@ config BUCKET_TRAJECTORY_FOLLOWER_PID_P_GAIN
 		Proportional gain for position PID controllers (value * 0.01).
 		Higher values provide faster response but may cause oscillations.
 
-config BUCKET_TRAJECTORY_FOLLOWER_PID_I_GAIN
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_PID_I_GAIN
 	int "Position PID integral gain (* 1000)"
 	default 100
 	range 0 500
@@ -40,7 +40,7 @@ config BUCKET_TRAJECTORY_FOLLOWER_PID_I_GAIN
 		Integral gain for position PID controllers (value * 0.001).
 		Helps eliminate steady-state errors.
 
-config BUCKET_TRAJECTORY_FOLLOWER_PID_D_GAIN
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_PID_D_GAIN
 	int "Position PID derivative gain (* 1000)"
 	default 50
 	range 0 200
@@ -48,49 +48,49 @@ config BUCKET_TRAJECTORY_FOLLOWER_PID_D_GAIN
 		Derivative gain for position PID controllers (value * 0.001).
 		Provides damping and improves stability.
 
-config BUCKET_TRAJECTORY_FOLLOWER_ORIENTATION_P_GAIN
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_ORIENTATION_P_GAIN
 	int "Orientation PID proportional gain (* 100)"
 	default 300
 	range 50 1000
 	---help---
 		Proportional gain for orientation PID controllers (value * 0.01).
-		Controls bucket roll, pitch, and yaw response.
+		Controls end effector roll, pitch, and yaw response.
 
-config BUCKET_TRAJECTORY_FOLLOWER_MAX_VELOCITY
-	int "Maximum bucket velocity (m/s * 100)"
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_MAX_VELOCITY
+	int "Maximum end effector velocity (m/s * 100)"
 	default 200
 	range 50 400
 	---help---
-		Maximum allowed bucket tip velocity in cm/s (value * 0.01 = m/s).
-		Safety limit to prevent excessive bucket speeds.
+		Maximum allowed end effector tip velocity in cm/s (value * 0.01 = m/s).
+		Safety limit to prevent excessive end effector speeds.
 
-config BUCKET_TRAJECTORY_FOLLOWER_MAX_FORCE
-	int "Maximum bucket force (N)"
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_MAX_FORCE
+	int "Maximum end effector force (N)"
 	default 5000
 	range 1000 20000
 	---help---
-		Maximum allowed bucket force in Newtons.
+		Maximum allowed end effector force in Newtons.
 		Safety limit to prevent damage to hydraulic system.
 
-config BUCKET_TRAJECTORY_FOLLOWER_GRAVITY_COMPENSATION
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_GRAVITY_COMPENSATION
 	bool "Enable gravity compensation"
 	default y
 	---help---
-		Enable gravity compensation for bucket weight.
+		Enable gravity compensation for end effector weight.
 		Improves positioning accuracy under varying loads.
 
-config BUCKET_TRAJECTORY_FOLLOWER_LOAD_COMPENSATION
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_LOAD_COMPENSATION
 	bool "Enable load compensation"
 	default y
 	---help---
 		Enable load compensation based on weight sensor readings.
-		Adjusts control parameters based on bucket load.
+		Adjusts control parameters based on end effector load.
 
-config BUCKET_TRAJECTORY_FOLLOWER_JOINT_LIMITS
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_JOINT_LIMITS
 	bool "Enable joint limit checking"
 	default y
 	---help---
-		Enable joint limit enforcement for boom and bucket actuators.
+		Enable joint limit enforcement for boom and end effector actuators.
 		Prevents mechanical damage from over-extension.
 
 config BUCKET_TRAJECTORY_FOLLOWER_BOOM_EXT_MIN
@@ -125,20 +125,20 @@ config BUCKET_TRAJECTORY_FOLLOWER_BOOM_LIFT_MAX
 		Maximum boom lift angle in tenths of degrees (value * 0.1 = degrees).
 		Positive values indicate above horizontal.
 
-config BUCKET_TRAJECTORY_FOLLOWER_BUCKET_TILT_MIN
-	int "Minimum bucket tilt angle (degrees * 10)"
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_END_EFFECTOR_TILT_MIN
+	int "Minimum end effector tilt angle (degrees * 10)"
 	default -900
 	range -1800 0
 	---help---
-		Minimum bucket tilt angle in tenths of degrees (value * 0.1 = degrees).
-		Negative values indicate bucket tilted back (dumping position).
+		Minimum end effector tilt angle in tenths of degrees (value * 0.1 = degrees).
+		Negative values indicate end effector tilted back (dumping position).
 
-config BUCKET_TRAJECTORY_FOLLOWER_BUCKET_TILT_MAX
-	int "Maximum bucket tilt angle (degrees * 10)"
+config END_EFFECTOR_TRAJECTORY_FOLLOWER_END_EFFECTOR_TILT_MAX
+	int "Maximum end effector tilt angle (degrees * 10)"
 	default 450
 	range 0 900
 	---help---
-		Maximum bucket tilt angle in tenths of degrees (value * 0.1 = degrees).
-		Positive values indicate bucket tilted forward (digging position).
+		Maximum end effector tilt angle in tenths of degrees (value * 0.1 = degrees).
+		Positive values indicate end effector tilted forward (digging position).
 
-endif # MODULES_BUCKET_TRAJECTORY_FOLLOWER
+endif # MODULES_END_EFFECTOR_TRAJECTORY_FOLLOWER

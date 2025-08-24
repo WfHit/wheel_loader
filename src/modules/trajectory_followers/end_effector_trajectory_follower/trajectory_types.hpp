@@ -56,27 +56,27 @@ struct ChassisTrajectorySetpoint {
 };
 
 /**
- * Bucket trajectory setpoint in WORLD coordinates
- * Published by operation modes, subscribed by bucket trajectory follower
+ * End effector trajectory setpoint in WORLD coordinates
+ * Published by operation modes, subscribed by end effector trajectory follower
  */
-struct BucketTrajectorySetpoint {
-	Vector3f position;           // Bucket position in world frame (m)
-	Quatf orientation;           // Bucket orientation in world frame
-	Vector3f velocity;           // Bucket linear velocity in world frame (m/s)
-	Vector3f angular_velocity;   // Bucket angular velocity in world frame (rad/s)
+struct EndEffectorTrajectorySetpoint {
+	Vector3f position;           // End effector position in world frame (m)
+	Quatf orientation;           // End effector orientation in world frame
+	Vector3f velocity;           // End effector linear velocity in world frame (m/s)
+	Vector3f angular_velocity;   // End effector angular velocity in world frame (rad/s)
 	hrt_abstime timestamp;       // Timestamp
 	bool valid{false};           // Validity flag
 };
 
 /**
- * VLA trajectory point - Complete 6DOF bucket pose in WORLD frame
+ * VLA trajectory point - Complete 6DOF end effector pose in WORLD frame
  * This is the input from the Vision-Language-Action model
  */
 struct VlaTrajectoryPoint {
-	Vector3f bucket_position;    // Bucket position in world frame (m)
-	Quatf bucket_orientation;    // Bucket orientation in world frame
-	Vector3f bucket_velocity;    // Bucket linear velocity in world frame (m/s)
-	Vector3f bucket_angular_velocity; // Bucket angular velocity in world frame (rad/s)
+	Vector3f end_effector_position;    // End effector position in world frame (m)
+	Quatf end_effector_orientation;    // End effector orientation in world frame
+	Vector3f end_effector_velocity;    // End effector linear velocity in world frame (m/s)
+	Vector3f end_effector_angular_velocity; // End effector angular velocity in world frame (rad/s)
 	hrt_abstime timestamp;       // Timestamp
 	bool valid{false};           // Validity flag
 };
@@ -88,7 +88,7 @@ struct ManualControlInputs {
 	float chassis_velocity;      // Forward/backward velocity command (-1 to 1)
 	float chassis_turn_angle;    // Turn angle command (-1 to 1)
 	float boom_lift_velocity;    // Boom lift velocity command (-1 to 1)
-	float bucket_angle;          // Bucket angle command (-1 to 1)
+	float end_effector_angle;    // End effector angle command (-1 to 1)
 	bool mode_switch;            // Mode switch state
 	hrt_abstime timestamp;       // Timestamp
 };
@@ -105,14 +105,14 @@ struct ChassisControlCommand {
 };
 
 /**
- * Bucket control command
- * Published by bucket trajectory follower to boom/bucket control modules
+ * End effector control command
+ * Published by end effector trajectory follower to boom/end effector control modules
  */
-struct BucketControlCommand {
-	Vector3f position;           // Target bucket position (m)
-	Quatf orientation;           // Target bucket orientation
-	Vector3f velocity;           // Target bucket velocity (m/s)
-	Vector3f angular_velocity;   // Target bucket angular velocity (rad/s)
+struct EndEffectorControlCommand {
+	Vector3f position;           // Target end effector position (m)
+	Quatf orientation;           // Target end effector orientation
+	Vector3f velocity;           // Target end effector velocity (m/s)
+	Vector3f angular_velocity;   // Target end effector angular velocity (rad/s)
 	hrt_abstime timestamp;       // Timestamp
 	bool valid{false};           // Validity flag
 };

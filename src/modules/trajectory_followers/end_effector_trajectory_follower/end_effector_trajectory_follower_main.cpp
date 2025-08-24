@@ -31,22 +31,22 @@
  *
  ****************************************************************************/
 
-#include "bucket_trajectory_follower.hpp"
+#include "end_effector_trajectory_follower.hpp"
 
 #include <px4_platform_common/getopt.h>
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/module.h>
 
-extern "C" __EXPORT int bucket_trajectory_follower_main(int argc, char *argv[]);
+extern "C" __EXPORT int end_effector_trajectory_follower_main(int argc, char *argv[]);
 
 /**
- * Bucket Trajectory Follower implementation - moved to main .cpp file
+ * End Effector Trajectory Follower implementation - moved to main .cpp file
  */
 
 /**
- * Main bucket trajectory follower module entry point
+ * Main end effector trajectory follower module entry point
  */
-int bucket_trajectory_follower_main(int argc, char *argv[])
+int end_effector_trajectory_follower_main(int argc, char *argv[])
 {
-	return BucketTrajectoryFollower::main(argc, argv);
+	return EndEffectorTrajectoryFollower::main(argc, argv);
 }

@@ -1,178 +1,178 @@
-module_name: Bucket Trajectory Follower
+module_name: End Effector Trajectory Follower
 serial_config:
-  - command: bucket_trajectory_follower start
+  - command: end_effector_trajectory_follower start
     port_config_param:
       name: TEL_FRSKY_CONFIG
       group: Radio Switches
 
 parameters:
-    - group: Bucket Trajectory Follower
+    - group: End Effector Trajectory Follower
       definitions:
-        OMM_BUCKET_PID_PX_P:
+        OMM_END_EFFECTOR_PID_PX_P:
             description:
-                short: Bucket position X PID proportional gain
+                short: End effector position X PID proportional gain
             type: float
             min: 0.0
             max: 10.0
             default: 1.0
             decimal: 2
 
-        OMM_BUCKET_PID_PX_I:
+        OMM_END_EFFECTOR_PID_PX_I:
             description:
-                short: Bucket position X PID integral gain
+                short: End effector position X PID integral gain
             type: float
             min: 0.0
             max: 2.0
             default: 0.1
             decimal: 3
 
-        OMM_BUCKET_PID_PX_D:
+        OMM_END_EFFECTOR_PID_PX_D:
             description:
-                short: Bucket position X PID derivative gain
+                short: End effector position X PID derivative gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.05
             decimal: 3
 
-        OMM_BUCKET_PID_PY_P:
+        OMM_END_EFFECTOR_PID_PY_P:
             description:
-                short: Bucket position Y PID proportional gain
+                short: End effector position Y PID proportional gain
             type: float
             min: 0.0
             max: 10.0
             default: 1.0
             decimal: 2
 
-        OMM_BUCKET_PID_PY_I:
+        OMM_END_EFFECTOR_PID_PY_I:
             description:
-                short: Bucket position Y PID integral gain
+                short: End effector position Y PID integral gain
             type: float
             min: 0.0
             max: 2.0
             default: 0.1
             decimal: 3
 
-        OMM_BUCKET_PID_PY_D:
+        OMM_END_EFFECTOR_PID_PY_D:
             description:
-                short: Bucket position Y PID derivative gain
+                short: End effector position Y PID derivative gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.05
             decimal: 3
 
-        OMM_BUCKET_PID_PZ_P:
+        OMM_END_EFFECTOR_PID_PZ_P:
             description:
-                short: Bucket position Z PID proportional gain
+                short: End effector position Z PID proportional gain
             type: float
             min: 0.0
             max: 10.0
             default: 1.2
             decimal: 2
 
-        OMM_BUCKET_PID_PZ_I:
+        OMM_END_EFFECTOR_PID_PZ_I:
             description:
-                short: Bucket position Z PID integral gain
+                short: End effector position Z PID integral gain
             type: float
             min: 0.0
             max: 2.0
             default: 0.15
             decimal: 3
 
-        OMM_BUCKET_PID_PZ_D:
+        OMM_END_EFFECTOR_PID_PZ_D:
             description:
-                short: Bucket position Z PID derivative gain
+                short: End effector position Z PID derivative gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.08
             decimal: 3
 
-        OMM_BUCKET_PID_R_P:
+        OMM_END_EFFECTOR_PID_R_P:
             description:
-                short: Bucket roll PID proportional gain
+                short: End effector roll PID proportional gain
             type: float
             min: 0.0
             max: 5.0
             default: 0.8
             decimal: 2
 
-        OMM_BUCKET_PID_R_I:
+        OMM_END_EFFECTOR_PID_R_I:
             description:
-                short: Bucket roll PID integral gain
+                short: End effector roll PID integral gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.05
             decimal: 3
 
-        OMM_BUCKET_PID_R_D:
+        OMM_END_EFFECTOR_PID_R_D:
             description:
-                short: Bucket roll PID derivative gain
+                short: End effector roll PID derivative gain
             type: float
             min: 0.0
             max: 0.5
             default: 0.02
             decimal: 3
 
-        OMM_BUCKET_PID_P_P:
+        OMM_END_EFFECTOR_PID_P_P:
             description:
-                short: Bucket pitch PID proportional gain
+                short: End effector pitch PID proportional gain
             type: float
             min: 0.0
             max: 5.0
             default: 0.8
             decimal: 2
 
-        OMM_BUCKET_PID_P_I:
+        OMM_END_EFFECTOR_PID_P_I:
             description:
-                short: Bucket pitch PID integral gain
+                short: End effector pitch PID integral gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.05
             decimal: 3
 
-        OMM_BUCKET_PID_P_D:
+        OMM_END_EFFECTOR_PID_P_D:
             description:
-                short: Bucket pitch PID derivative gain
+                short: End effector pitch PID derivative gain
             type: float
             min: 0.0
             max: 0.5
             default: 0.02
             decimal: 3
 
-        OMM_BUCKET_PID_Y_P:
+        OMM_END_EFFECTOR_PID_Y_P:
             description:
-                short: Bucket yaw PID proportional gain
+                short: End effector yaw PID proportional gain
             type: float
             min: 0.0
             max: 5.0
             default: 0.6
             decimal: 2
 
-        OMM_BUCKET_PID_Y_I:
+        OMM_END_EFFECTOR_PID_Y_I:
             description:
-                short: Bucket yaw PID integral gain
+                short: End effector yaw PID integral gain
             type: float
             min: 0.0
             max: 1.0
             default: 0.03
             decimal: 3
 
-        OMM_BUCKET_PID_Y_D:
+        OMM_END_EFFECTOR_PID_Y_D:
             description:
-                short: Bucket yaw PID derivative gain
+                short: End effector yaw PID derivative gain
             type: float
             min: 0.0
             max: 0.5
             default: 0.015
             decimal: 3
 
-        OMM_BUCKET_MAX_VEL:
+        OMM_END_EFFECTOR_MAX_VEL:
             description:
-                short: Maximum bucket velocity
+                short: Maximum end effector velocity
             type: float
             min: 0.1
             max: 5.0
@@ -180,9 +180,9 @@ parameters:
             decimal: 1
             unit: m/s
 
-        OMM_BUCKET_MAX_ACCEL:
+        OMM_END_EFFECTOR_MAX_ACCEL:
             description:
-                short: Maximum bucket acceleration
+                short: Maximum end effector acceleration
             type: float
             min: 0.1
             max: 10.0
@@ -190,9 +190,9 @@ parameters:
             decimal: 1
             unit: m/s^2
 
-        OMM_BUCKET_MAX_FORCE:
+        OMM_END_EFFECTOR_MAX_FORCE:
             description:
-                short: Maximum bucket force
+                short: Maximum end effector force
             type: float
             min: 100.0
             max: 10000.0
@@ -240,9 +240,9 @@ parameters:
             decimal: 2
             unit: rad
 
-        OMM_BUCKET_TILT_MIN:
+        OMM_END_EFFECTOR_TILT_MIN:
             description:
-                short: Minimum bucket tilt angle
+                short: Minimum end effector tilt angle
             type: float
             min: -1.57
             max: 0.0
@@ -250,9 +250,9 @@ parameters:
             decimal: 2
             unit: rad
 
-        OMM_BUCKET_TILT_MAX:
+        OMM_END_EFFECTOR_TILT_MAX:
             description:
-                short: Maximum bucket tilt angle
+                short: Maximum end effector tilt angle
             type: float
             min: 0.0
             max: 1.57
@@ -260,9 +260,9 @@ parameters:
             decimal: 2
             unit: rad
 
-        OMM_BUCKET_MASS:
+        OMM_END_EFFECTOR_MASS:
             description:
-                short: Bucket mass for gravity compensation
+                short: End effector mass for gravity compensation
             type: float
             min: 10.0
             max: 1000.0
