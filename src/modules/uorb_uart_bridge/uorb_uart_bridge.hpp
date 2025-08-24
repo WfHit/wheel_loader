@@ -8,7 +8,6 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/Publication.hpp>
 
-#include <uORB/topics/wheel_loader_setpoint.h>
 #include <uORB/topics/actuator_outputs.h>
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/limit_sensor.h>
@@ -75,7 +74,6 @@ private:
 	hrt_abstime _last_rear_heartbeat{0};
 
 	// Subscriptions for outgoing topics (X7+ → NXT)
-	uORB::Subscription _wheel_loader_setpoint_sub{ORB_ID(wheel_loader_setpoint)};
 	uORB::Subscription _actuator_outputs_front_sub{ORB_ID(actuator_outputs), 0};
 	uORB::Subscription _actuator_outputs_rear_sub{ORB_ID(actuator_outputs), 1};
 	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};

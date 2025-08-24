@@ -71,8 +71,12 @@ bool WheelController::init()
 	}
 
 	// Subscribe to required topics
-	if (!_setpoint_sub.subscribe()) {
-		PX4_ERR("Failed to subscribe to wheel_loader_setpoint");
+	// Determine which wheel setpoint instance to subscribe to
+	uint8_t wheel_instance = (_param_is_front_wheel.get() == 1) ? 0 : 1; // Front=0, Rear=1
+	_wheel_setpoint_sub = uORB::Subscription{ORB_ID(wheel_setpoint), wheel_instance};
+
+	if (!_wheel_setpoint_sub.subscribe()) {
+		PX4_ERR("Failed to subscribe to wheel_setpoint instance %d", wheel_instance);
 		return false;
 	}
 
@@ -177,26 +181,31 @@ void WheelController::Run()
 
 bool WheelController::update_speed_setpoint()
 {
-	wheel_loader_setpoint_s setpoint;
+	wheel_setpoint_s setpoint;
 
-	if (_setpoint_sub.update(&setpoint)) {
-		// Use speed directly based on wheel type (always update)
-		float target_speed = (_param_is_front_wheel.get() == 1) ?
-				     setpoint.front_wheel_speed :
-				     setpoint.rear_wheel_speed;
+	if (_wheel_setpoint_sub.update(&setpoint)) {
+		// Check if this wheel controller should respond to this setpoint
+		// (based on instance ID or wheel identification)
 
-		// Limit speed to maximum
-		_state.setpoint_rad_s = math::constrain(target_speed,
+		// Use the wheel speed setpoint
+		_state.setpoint_rad_s = math::constrain(setpoint.wheel_speed_rad_s,
 							-_param_max_speed.get(),
 							_param_max_speed.get());
 		_state.last_setpoint_us = hrt_absolute_time();
+
+		// Handle emergency stop
+		if (setpoint.emergency_stop) {
+			_state.emergency_stop = true;
+			_state.setpoint_rad_s = 0.0f;
+		} else {
+			_state.emergency_stop = false;
+		}
+
 		return true;
 	}
 
 	return is_setpoint_valid();
-}
-
-void WheelController::update_encoder_feedback()
+}void WheelController::update_encoder_feedback()
 {
 	sensor_quad_encoder_s encoder;
 	uint8_t encoder_instance = static_cast<uint8_t>(_param_encoder_id.get());
@@ -249,8 +258,8 @@ void WheelController::publish_motor_command()
 	cmd.duty_cycle = _state.pwm_output;
 	cmd.enable = _state.motor_enabled && !_state.emergency_stop;
 
-	// Publish to the specific instance (matching bucket controller pattern)
-	_motor_cmd_pub.publish(cmd, cmd.instance);
+	// Publish using PublicationMulti (no instance parameter needed)
+	_motor_cmd_pub.publish(cmd);
 }
 
 void WheelController::update_hbridge_status()

@@ -22,7 +22,7 @@
 #include <uORB/topics/vehicle_command.h>
 
 // uORB message includes - Chassis Control
-#include <uORB/topics/wheel_speeds_setpoint.h>
+#include <uORB/topics/wheel_setpoint.h>
 #include <uORB/topics/steering_setpoint.h>
 #include <uORB/topics/steering_status.h>
 #include <uORB/topics/traction_control.h>
@@ -47,7 +47,7 @@
 
 // Additional includes for missing topics that need to be created or exist elsewhere
 // #include <uORB/topics/slip_estimation.h>      // TODO: Create this message
-// #include <uORB/topics/terrain_adaptation.h>   // TODO: Create this message
+// #include <uORB/topics/load_sensing.h>         // TODO: Create this message
 #include <uORB/topics/input_rc.h>  // For manual control input
 
 using namespace time_literals;
@@ -227,7 +227,7 @@ private:
     uORB::Subscription _failsafe_flags_sub{ORB_ID(failsafe_flags)};
 
     // uORB subscriptions - Chassis Control
-    uORB::Subscription _wheel_speeds_sub{ORB_ID(wheel_speeds_setpoint)};
+    uORB::Subscription _wheel_setpoint_sub{ORB_ID(wheel_setpoint)};
     uORB::Subscription _steering_setpoint_sub{ORB_ID(steering_setpoint)};
     uORB::Subscription _steering_status_sub{ORB_ID(steering_status)};
     uORB::Subscription _traction_control_sub{ORB_ID(traction_control)};
@@ -244,7 +244,6 @@ private:
     uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
     // uORB::Subscription _slip_estimation_sub{ORB_ID(slip_estimation)};      // TODO: Create this message
     uORB::Subscription _load_aware_torque_sub{ORB_ID(load_aware_torque)};
-    // uORB::Subscription _terrain_adaptation_sub{ORB_ID(terrain_adaptation)}; // TODO: Create this message
 
     // uORB subscriptions - Limit sensors (up to 8 instances)
     uORB::Subscription _limit_sensor_sub[8]{};

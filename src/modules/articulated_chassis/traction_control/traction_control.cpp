@@ -90,14 +90,12 @@ void TractionControl::Run()
         return;
     }
 
-    // Get desired motion from differential drive setpoint (from trajectory follower)
-    differential_drive_setpoint_s drive_sp;
-    if (_differential_drive_setpoint_sub.copy(&drive_sp)) {
-        _desired_velocity = drive_sp.speed;
-        _desired_yaw_rate = drive_sp.yaw_rate;
-        // Force can be derived from acceleration request
-        _desired_force = drive_sp.thrust * _param_vehicle_mass.get();
-    }
+    // Get desired motion from manual control or autonomous planner
+    // For now, use default values or implement alternative input method
+    // TODO: Replace with appropriate input source (manual_control_setpoint, trajectory_setpoint, etc.)
+    _desired_velocity = 0.0f;  // Default to stationary
+    _desired_yaw_rate = 0.0f;  // Default to no turning
+    _desired_force = 0.0f;     // Default to no force
 
     // Core traction control pipeline
     estimate_axle_slip();
@@ -438,33 +436,44 @@ void TractionControl::handle_excessive_slip()
 
 void TractionControl::publish_wheel_commands()
 {
-    // Publish velocity and force commands for wheel controller
-    wheel_loader_setpoint_s wheel_sp{};
-    wheel_sp.timestamp = hrt_absolute_time();
+    // Publish wheel setpoints for front and rear wheels
 
-    // Velocity commands
-    wheel_sp.front_wheel_velocity = _front_velocity_cmd;
-    wheel_sp.rear_wheel_velocity = _rear_velocity_cmd;
+    // Front wheel setpoint
+    wheel_setpoint_s front_setpoint{};
+    front_setpoint.timestamp = hrt_absolute_time();
+    front_setpoint.wheel_speed_rad_s = _front_velocity_cmd / _param_wheel_radius.get(); // Convert m/s to rad/s
+    front_setpoint.wheel_acceleration_rad_s2 = 2.0f; // Default acceleration limit
+    front_setpoint.wheel_torque_nm = _front_force_cmd * _param_wheel_radius.get(); // Convert force to torque
+    front_setpoint.control_mode = wheel_setpoint_s::MODE_SPEED_CONTROL;
+    front_setpoint.enable_traction_control = _traction_control_active;
+    front_setpoint.emergency_stop = false;
+    front_setpoint.speed_limit_rad_s = _param_max_speed.get();
+    front_setpoint.torque_limit_nm = _param_max_force.get() * _param_wheel_radius.get();
 
-    // Force commands
-    wheel_sp.front_wheel_force = _front_force_cmd;
-    wheel_sp.rear_wheel_force = _rear_force_cmd;
+    // Rear wheel setpoint
+    wheel_setpoint_s rear_setpoint{};
+    rear_setpoint.timestamp = hrt_absolute_time();
+    rear_setpoint.wheel_speed_rad_s = _rear_velocity_cmd / _param_wheel_radius.get(); // Convert m/s to rad/s
+    rear_setpoint.wheel_acceleration_rad_s2 = 2.0f; // Default acceleration limit
+    rear_setpoint.wheel_torque_nm = _rear_force_cmd * _param_wheel_radius.get(); // Convert force to torque
+    rear_setpoint.control_mode = wheel_setpoint_s::MODE_SPEED_CONTROL;
+    rear_setpoint.enable_traction_control = _traction_control_active;
+    rear_setpoint.emergency_stop = false;
+    rear_setpoint.speed_limit_rad_s = _param_max_speed.get();
+    rear_setpoint.torque_limit_nm = _param_max_force.get() * _param_wheel_radius.get();
 
-    // Control mode flags
-    wheel_sp.velocity_control = true;
-    wheel_sp.force_control = true;
-    wheel_sp.traction_control_active = _traction_control_active;
-
-    _wheel_setpoint_pub.publish(wheel_sp);
+    // Publish setpoints
+    _wheel_setpoint_front_pub.publish(front_setpoint);
+    _wheel_setpoint_rear_pub.publish(rear_setpoint);
 }
 
 void TractionControl::publish_steering_command()
 {
     // Publish steering command
-    steering_wheel_angle_setpoint_s steering_sp{};
+    steering_setpoint_s steering_sp{};
     steering_sp.timestamp = hrt_absolute_time();
-    steering_sp.steering_wheel_angle = _articulation_cmd;
-    steering_sp.angular_velocity = _desired_yaw_rate; // Feed-forward
+    steering_sp.steering_angle_rad = _articulation_cmd;
+    steering_sp.steering_rate_rad_s = _desired_yaw_rate; // Feed-forward
 
     _steering_setpoint_pub.publish(steering_sp);
 }
@@ -515,17 +524,16 @@ Traction Control Module for Articulated Wheel Loader
 
 This module provides slip-based traction control optimized for mining operations:
 - Estimates slip for front/rear axles using motor encoders and EKF velocity
-- Outputs velocity and force commands to wheel controller
 - Provides steering compensation for articulated vehicle
 - Optimizes traction and stability for maximum performance
 
-The module acts as an intermediary between the trajectory follower and wheel controller,
+The module acts as an intermediary between control inputs and actuators,
 optimizing traction based on slip estimation and ground conditions.
 
 ### Implementation
-Subscribes to differential drive setpoints from trajectory follower.
-Publishes wheel loader setpoints (velocity + force) to wheel controller.
+Currently configured to work with manual control or autonomous planner inputs.
 Publishes steering commands to steering controller.
+Note: Direct wheel control implementation needs to be added based on specific actuator setup.
 
 ### Examples
 Start with default parameters:

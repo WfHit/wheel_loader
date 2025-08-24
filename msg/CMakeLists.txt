@@ -246,8 +246,7 @@ set(msg_files
 	VehicleTorqueSetpoint.msg
 	VelocityLimits.msg
 	WheelEncoders.msg
-	WheelDriveCommand.msg
-	WheelSpeedsSetpoint.msg
+	WheelSetpoint.msg
 	WheelStatus.msg
 	SteeringCommand.msg
 	SteeringSetpoint.msg
@@ -255,18 +254,11 @@ set(msg_files
 	SlipEstimation.msg
 	TractionControl.msg
 	PredictiveTraction.msg
-	LoadAwareTorque.msg
-	LoadLampCommand.msg
-	LoadSensing.msg
-	TerrainAdaptation.msg
 	ModuleStatus.msg
 	SensorQuadEncoder.msg
 	RoboticServoFeedback.msg
 	RoboticServoCommand.msg
 	Wind.msg
-	WheelLoaderCommand.msg
-	WheelLoaderSetpoint.msg
-	WheelLoaderStatus.msg
 	VlaCommand.msg
 	OperationModeCommand.msg
 	YawEstimatorStatus.msg

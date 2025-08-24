@@ -49,7 +49,7 @@
 #include <uORB/topics/hbridge_status.h>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_quad_encoder.h>
-#include <uORB/topics/wheel_loader_setpoint.h>
+#include <uORB/topics/wheel_setpoint.h>
 
 using namespace time_literals;
 
@@ -107,7 +107,7 @@ private:
 
 	// uORB subscriptions
 	uORB::Subscription _param_update_sub{ORB_ID(parameter_update)};
-	uORB::Subscription _setpoint_sub{ORB_ID(wheel_loader_setpoint)};
+	uORB::Subscription _wheel_setpoint_sub{ORB_ID(wheel_setpoint), 0}; // Will be updated in init()
 
 	// Instance-specific subscriptions - initialized in init()
 	uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _encoder_sub{ORB_ID::sensor_quad_encoder};

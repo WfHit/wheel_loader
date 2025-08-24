@@ -50,15 +50,15 @@
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/vehicle_angular_velocity.h>
 #include <uORB/topics/vehicle_acceleration.h>
-#include <uORB/topics/differential_drive_setpoint.h>
-#include <uORB/topics/vehicle_control_mode.h>
+#include <uORB/topics/chassis_control_command.h>
 #include <uORB/topics/vehicle_status.h>
-#include <uORB/topics/actuator_motors.h>
+#include <uORB/topics/sensor_quad_encoder.h>
 
 // uORB publications
 #include <uORB/Publication.hpp>
-#include <uORB/topics/wheel_loader_setpoint.h>
-#include <uORB/topics/steering_wheel_angle_setpoint.h>
+#include <uORB/topics/wheel_setpoint.h>
+#include <uORB/topics/steering_setpoint.h>
+#include <uORB/topics/hbridge_command.h>
 
 using namespace matrix;
 
@@ -189,14 +189,14 @@ private:
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
     uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
-    uORB::Subscription _differential_drive_setpoint_sub{ORB_ID(differential_drive_setpoint)};
-    uORB::Subscription _actuator_motors_sub{ORB_ID(actuator_motors)};
-    uORB::Subscription _vehicle_control_mode_sub{ORB_ID(vehicle_control_mode)};
+    uORB::Subscription _chassis_control_command_sub{ORB_ID(chassis_control_command)};
+    uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _encoder_sub{ORB_ID::sensor_quad_encoder};
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
     // Publications
-    uORB::Publication<wheel_loader_setpoint_s> _wheel_setpoint_pub{ORB_ID(wheel_loader_setpoint)};
-    uORB::Publication<steering_wheel_angle_setpoint_s> _steering_setpoint_pub{ORB_ID(steering_wheel_angle_setpoint)};
+    uORB::Publication<wheel_setpoint_s> _wheel_setpoint_front_pub{ORB_ID(wheel_setpoint), 0};
+    uORB::Publication<wheel_setpoint_s> _wheel_setpoint_rear_pub{ORB_ID(wheel_setpoint), 1};
+    uORB::Publication<steering_setpoint_s> _steering_setpoint_pub{ORB_ID(steering_setpoint)};
 
     // Parameters
     DEFINE_PARAMETERS(

@@ -22,11 +22,6 @@ static constexpr uint8_t BOARD_ID_NXT_REAR = 0x02;
 enum class UartMessageId : uint8_t {
 	HEARTBEAT = 0x01,
 
-	// High-level wheel loader commands and status
-	WHEEL_LOADER_SETPOINT = 0x10,
-	WHEEL_LOADER_STATUS_FRONT = 0x11,
-	WHEEL_LOADER_STATUS_REAR = 0x12,
-
 	// Low-level actuator outputs
 	ACTUATOR_OUTPUTS_FRONT = 0x20,
 	ACTUATOR_OUTPUTS_REAR = 0x21,
