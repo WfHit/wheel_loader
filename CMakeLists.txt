@@ -227,7 +227,7 @@ endif()
 #=============================================================================
 # project definition
 #
-project(px4 CXX C ASM)
+project(wheel_loader_robot CXX C ASM)
 
 # CMake build type (Debug Release RelWithDebInfo MinSizeRel Coverage)
 if(NOT CMAKE_BUILD_TYPE)
