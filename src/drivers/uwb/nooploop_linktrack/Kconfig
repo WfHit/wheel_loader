@@ -1,0 +1,7 @@
+menuconfig DRIVERS_UWB_NOOPLOOP_LINKTRACK
+	bool "NoopLoop LinkTrack UWB driver"
+	default n
+	---help---
+		Enable support for NoopLoop LinkTrack UWB positioning system.
+		Simple driver for LP_MODE2 with Node_Frame3 protocol.
+

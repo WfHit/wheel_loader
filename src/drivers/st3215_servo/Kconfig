@@ -1,0 +1,8 @@
+menuconfig DRIVERS_ST3215_SERVO
+	bool "ST3215 servo driver"
+	default n
+	help
+	  Enable support for ST3215 smart servo driver.
+
+	  This driver provides communication with ST3215 smart servos
+	  via UART interface, allowing position control and feedback.

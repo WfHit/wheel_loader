@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2020 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,10 +31,15 @@
 #
 ############################################################################
 
-add_subdirectory(uwb_sr150)
-
-px4_add_git_submodule(TARGET git_libdw1000 PATH "libdw1000")
-
-if(CONFIG_DRIVERS_UWB_NOOPLOOP_LINKTRACK)
-	add_subdirectory(nooploop_linktrack)
-endif()
+px4_add_module(
+	MODULE drivers__uwb__nooploop_linktrack
+	MAIN nooploop_linktrack
+	COMPILE_FLAGS
+	SRCS
+		nooploop_linktrack.cpp
+		nooploop_linktrack_main.cpp
+	DEPENDS
+		px4_work_queue
+	MODULE_CONFIG
+		module.yaml
+)

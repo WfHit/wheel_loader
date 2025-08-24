@@ -1,0 +1,7 @@
+menuconfig DRIVERS_TEST_SERIAL
+	bool "Test Serial Driver"
+	default n
+	---help---
+		Enable the Test Serial Driver for testing serial port communication.
+		This driver provides comprehensive testing capabilities for serial ports
+		including loopback tests, data integrity verification, and stress testing.

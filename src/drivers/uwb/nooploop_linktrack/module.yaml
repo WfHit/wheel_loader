@@ -1,0 +1,65 @@
+module_name: NoopLoop LinkTrack UWB Driver
+serial_config:
+    - command: nooploop_linktrack start -d ${SERIAL_DEV}
+      port_config_param:
+          name: UWB_CONFIG
+          group: Serial
+          description:
+              short: NoopLoop LinkTrack UWB serial port configuration
+              long: |
+                  Configure on which serial port to run NoopLoop LinkTrack UWB driver.
+          type: enum
+          values:
+              0: Disabled
+              6: UART 6
+              101: TELEM 1
+              102: TELEM 2
+              103: TELEM 3
+              201: GPS 1
+              202: GPS 2
+              401: UART 4
+              402: UART 7
+              403: UART 8
+              501: UWB 1
+              502: UWB 2
+              503: UWB 3
+              504: UWB 4
+              601: SERVO 1
+              602: SERVO 2
+          reboot_required: true
+parameters:
+    - group: NoopLoop LinkTrack UWB
+      definitions:
+          UWB_EN:
+              description:
+                  short: Enable NoopLoop LinkTrack UWB
+                  long: Enable the NoopLoop LinkTrack UWB driver for positioning
+              type: int32
+              min: 0
+              max: 1
+              default: 1
+          UWB_TAG_ID:
+              description:
+                  short: NoopLoop LinkTrack Tag ID
+                  long: The unique tag ID for this vehicle in the UWB network (0-39)
+              type: int32
+              min: 0
+              max: 39
+              default: 0
+          UWB_BAUD:
+              description:
+                  short: NoopLoop LinkTrack serial baudrate
+                  long: Baudrate for the NoopLoop LinkTrack UWB communication
+              type: int32
+              min: 9600
+              max: 4000000
+              default: 921600
+          UWB_UPDATE_RATE:
+              description:
+                  short: NoopLoop LinkTrack update rate
+                  long: Update rate in Hz for LP_MODE2 positioning data
+              type: int32
+              min: 1
+              max: 50
+              default: 20
+              unit: Hz
