@@ -1,0 +1,109 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#333">Boom Kinematics Mechanism</text>
+
+  <!-- Ground line -->
+  <line x1="50" y1="550" x2="750" y2="550" stroke="#8B4513" stroke-width="8"/>
+  <text x="400" y="575" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#666">Ground Level</text>
+
+  <!-- Boom pivot point O (at top) -->
+  <circle cx="200" cy="150" r="8" fill="#FF4444"/>
+  <text x="185" y="140" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#FF4444">O</text>
+  <text x="170" y="130" font-family="Arial, sans-serif" font-size="12" fill="#333">boom_pivot</text>
+
+  <!-- Actuator mount point A (bottom left) -->
+  <circle cx="120" cy="450" r="6" fill="#4444FF"/>
+  <text x="105" y="445" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#4444FF">A</text>
+  <text x="70" y="470" font-family="Arial, sans-serif" font-size="12" fill="#333">actuator_mount</text>
+
+  <!-- Actuator boom joint B (on boom, closer to pivot) -->
+  <circle cx="300" cy="220" r="6" fill="#44FF44"/>
+  <text x="310" y="215" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#44FF44">B</text>
+  <text x="310" y="240" font-family="Arial, sans-serif" font-size="12" fill="#333">actuator_boom_joint</text>
+
+  <!-- Bucket joint C (end of boom, extended much further) -->
+  <circle cx="650" cy="280" r="6" fill="#FF8844"/>
+  <text x="660" y="275" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#FF8844">C</text>
+  <text x="660" y="290" font-family="Arial, sans-serif" font-size="12" fill="#333">bucket_joint</text>
+
+  <!-- Ground point D (below bucket, extended much further) -->
+  <circle cx="650" cy="550" r="4" fill="#888888"/>
+  <text x="660" y="545" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#888888">D</text>
+  <text x="660" y="570" font-family="Arial, sans-serif" font-size="12" fill="#333">ground_point</text>
+
+  <!-- Boom structure (O to C, now much longer) -->
+  <line x1="200" y1="150" x2="650" y2="280" stroke="#333" stroke-width="6"/>
+  <text x="420" y="200" font-family="Arial, sans-serif" font-size="12" fill="#333">Boom Structure</text>
+
+  <!-- Actuator cylinder (A to B, shorter OB distance) -->
+  <line x1="120" y1="450" x2="300" y2="220" stroke="#FF6600" stroke-width="8"/>
+  <text x="190" y="320" font-family="Arial, sans-serif" font-size="12" fill="#FF6600" font-weight="bold">Linear Actuator</text>
+
+  <!-- Fixed boom geometry lines (dashed) -->
+  <line x1="200" y1="150" x2="300" y2="220" stroke="#44FF44" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="300" y1="220" x2="650" y2="280" stroke="#44FF44" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Chassis connection lines -->
+  <line x1="200" y1="150" x2="120" y2="450" stroke="#4444FF" stroke-width="2" stroke-dasharray="5,5"/>
+
+  <!-- Height indicators -->
+  <line x1="650" y1="280" x2="650" y2="550" stroke="#888" stroke-width="2" stroke-dasharray="3,3"/>
+  <text x="660" y="415" font-family="Arial, sans-serif" font-size="11" fill="#666">bucket_height</text>
+
+  <!-- Pivot height indicator -->
+  <line x1="200" y1="150" x2="200" y2="550" stroke="#FF4444" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="160" y="350" font-family="Arial, sans-serif" font-size="11" fill="#666" transform="rotate(-90 160 350)">pivot_height</text>
+
+  <!-- Coordinate system axes -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- X axis -->
+  <line x1="200" y1="150" x2="280" y2="150" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="285" y="155" font-family="Arial, sans-serif" font-size="12" fill="#666">X</text>
+
+  <!-- Z axis (pointing up) -->
+  <line x1="200" y1="150" x2="200" y2="70" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <text x="205" y="65" font-family="Arial, sans-serif" font-size="12" fill="#666">Z</text>
+
+  <!-- Origin label -->
+  <text x="175" y="180" font-family="Arial, sans-serif" font-size="12" fill="#666">Origin (0,0)</text>
+
+  <!-- Boom angle indicator -->
+  <path d="M 220 150 A 20 20 0 0 1 232 168" stroke="#FF4444" stroke-width="2" fill="none"/>
+  <text x="240" y="180" font-family="Arial, sans-serif" font-size="11" fill="#FF4444">boom_angle</text>
+
+  <!-- AS5600 sensor indicator -->
+  <circle cx="120" cy="450" r="15" fill="none" stroke="#4444FF" stroke-width="2" stroke-dasharray="2,2"/>
+  <text x="60" y="430" font-family="Arial, sans-serif" font-size="11" fill="#4444FF">AS5600</text>
+  <text x="60" y="442" font-family="Arial, sans-serif" font-size="11" fill="#4444FF">Encoder</text>
+
+  <!-- Triangle labels -->
+  <text x="160" y="320" font-family="Arial, sans-serif" font-size="11" fill="#666" style="font-style: italic">Variable Triangle O-A-B</text>
+  <text x="160" y="335" font-family="Arial, sans-serif" font-size="11" fill="#666" style="font-style: italic">(changes with actuator)</text>
+
+  <text x="450" y="190" font-family="Arial, sans-serif" font-size="11" fill="#666" style="font-style: italic">Fixed Triangle O-B-C</text>
+  <text x="450" y="205" font-family="Arial, sans-serif" font-size="11" fill="#666" style="font-style: italic">(rigid boom structure)</text>
+
+  <!-- Legend -->
+  <rect x="580" y="30" width="250" height="140" fill="white" stroke="#CCC" stroke-width="1"/>
+  <text x="700" y="50" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#333">Legend</text>
+
+  <circle cx="595" cy="70" r="4" fill="#FF4444"/>
+  <text x="610" y="75" font-family="Arial, sans-serif" font-size="12" fill="#333">Boom Pivot (Origin)</text>
+
+  <circle cx="595" cy="90" r="4" fill="#4444FF"/>
+  <text x="610" y="95" font-family="Arial, sans-serif" font-size="12" fill="#333">Actuator Mount</text>
+
+  <circle cx="595" cy="110" r="4" fill="#44FF44"/>
+  <text x="610" y="115" font-family="Arial, sans-serif" font-size="12" fill="#333">Actuator-Boom Joint</text>
+
+  <circle cx="595" cy="130" r="4" fill="#FF8844"/>
+  <text x="610" y="135" font-family="Arial, sans-serif" font-size="12" fill="#333">Bucket Joint</text>
+
+  <line x1="590" y1="150" x2="620" y2="150" stroke="#FF6600" stroke-width="4"/>
+  <text x="630" y="155" font-family="Arial, sans-serif" font-size="12" fill="#333">Linear Actuator</text>
+</svg>

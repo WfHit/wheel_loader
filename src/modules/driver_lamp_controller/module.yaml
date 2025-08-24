@@ -1,0 +1,17 @@
+module_name: Driver Lamp Controller
+
+parameters:
+    - group: Driver Lamp Controller
+      definitions:
+        DRV_LAMP_BLINK:
+            description:
+                short: Turn signal blink rate
+                long: |
+                    Blink rate for turn signals in Hz.
+
+                    Standard automotive rate is 1.5 Hz.
+            type: float
+            min: 0.5
+            max: 5.0
+            default: 1.5
+            decimal: 1

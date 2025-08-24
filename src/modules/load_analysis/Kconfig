@@ -1,7 +1,0 @@
-menuconfig MODULES_LOAD_ANALYSIS
-	bool "load_analysis"
-	default n
-	---help---
-		Enable support for motor load analysis and lamp control coordination.
-		This module analyzes HBridge motor loads across all instances and
-		generates lamp control commands for distributed systems.

@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2025 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2024 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,12 +31,7 @@
 #
 ############################################################################
 
-px4_add_module(
-	MODULE modules__load_analysis
-	MAIN load_analysis
-	COMPILE_FLAGS
-	SRCS
-		load_analysis.cpp
-	DEPENDS
-		px4_work_queue
-	)
+px4_add_library(distributed_uorb_uart_protocol
+	uart_protocol.cpp
+	uart_protocol.hpp
+)
