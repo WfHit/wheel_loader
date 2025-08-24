@@ -1,62 +1,110 @@
-# PX4 Drone Autopilot
+# Wheel Loader Control System
 
-[![Releases](https://img.shields.io/github/release/PX4/PX4-Autopilot.svg)](https://github.com/PX4/PX4-Autopilot/releases) [![DOI](https://zenodo.org/badge/22634/PX4/PX4-Autopilot.svg)](https://zenodo.org/badge/latestdoi/22634/PX4/PX4-Autopilot)
+[![Build Status](https://github.com/WfHit/wheel_loader/actions/workflows/build.yml/badge.svg)](https://github.com/WfHit/wheel_loader/actions/workflows/build.yml)
 
-[![Build Targets](https://github.com/PX4/PX4-Autopilot/actions/workflows/build_all_targets.yml/badge.svg?branch=main)](https://github.com/PX4/PX4-Autopilot/actions/workflows/build_all_targets.yml) [![SITL Tests](https://github.com/PX4/PX4-Autopilot/workflows/SITL%20Tests/badge.svg?branch=master)](https://github.com/PX4/PX4-Autopilot/actions?query=workflow%3A%22SITL+Tests%22)
+This repository contains an **independent wheel loader control system** based on the [PX4](http://px4.io) autopilot framework. The project has diverged significantly from the main PX4 codebase to provide specialized autonomous control capabilities for wheel loader vehicles.
 
-[![Discord Shield](https://discordapp.com/api/guilds/1022170275984457759/widget.png?style=shield)](https://discord.gg/dronecode)
+## Project Overview
 
-This repository holds the [PX4](http://px4.io) flight control solution for drones, with the main applications located in the [src/modules](https://github.com/PX4/PX4-Autopilot/tree/main/src/modules) directory. It also contains the PX4 Drone Middleware Platform, which provides drivers and middleware to run drones.
+This control system is specifically designed for wheel loader operations and includes:
+- **Articulated chassis control** with advanced traction management
+- **Boom and bucket hydraulic control** for material handling
+- **Battery-aware power management** for extended operation
+- **Safety systems** designed for construction environments
+- **Multi-modal control** supporting manual, semi-autonomous, and fully autonomous operation
 
-PX4 is highly portable, OS-independent and supports Linux, NuttX and MacOS out of the box.
+The system is built on the robust, real-time PX4 middleware platform but has been extensively modified to meet the unique requirements of wheel loader applications.
 
-* Official Website: http://px4.io (License: BSD 3-clause, [LICENSE](https://github.com/PX4/PX4-Autopilot/blob/main/LICENSE))
-* [Supported airframes](https://docs.px4.io/main/en/airframes/airframe_reference.html) ([portfolio](https://px4.io/ecosystem/commercial-systems/)):
-  * [Multicopters](https://docs.px4.io/main/en/frames_multicopter/)
-  * [Fixed wing](https://docs.px4.io/main/en/frames_plane/)
-  * [VTOL](https://docs.px4.io/main/en/frames_vtol/)
-  * [Autogyro](https://docs.px4.io/main/en/frames_autogyro/)
-  * [Rover](https://docs.px4.io/main/en/frames_rover/)
-  * many more experimental types (Blimps, Boats, Submarines, High Altitude Balloons, Spacecraft, etc)
-* Releases: [Downloads](https://github.com/PX4/PX4-Autopilot/releases)
+## Relationship to PX4
 
-## Releases
+This project was **separated from the main PX4 codebase** due to significant architectural divergence required for wheel loader applications. While it maintains the robust foundation of PX4's real-time operating system and middleware, the control algorithms, safety systems, and operational modes have been completely redesigned for ground-based construction vehicles.
 
-Release notes and supporting information for PX4 releases can be found on the [Developer Guide](https://docs.px4.io/main/en/releases/).
+**Base Version**: PX4 v1.16.0  
+**Separation Reason**: The wheel loader modifications were too extensive and specialized to be merged back into the main PX4 project, which focuses on aerial vehicles.
 
-## Building a PX4 based drone, rover, boat or robot
+### Key Modifications from PX4
+- **Ground vehicle dynamics** instead of flight dynamics
+- **Hydraulic system control** for boom and bucket operations  
+- **Articulated chassis control** with slip estimation and traction management
+- **Construction-specific safety systems** and operational modes
+- **Power management** optimized for battery-powered heavy equipment
 
-The [PX4 User Guide](https://docs.px4.io/main/en/) explains how to assemble [supported vehicles](https://docs.px4.io/main/en/airframes/airframe_reference.html) and fly drones with PX4. See the [forum and chat](https://docs.px4.io/main/en/#getting-help) if you need help!
+## Installation and Usage
 
+### Prerequisites
+- Ubuntu 20.04 or later (tested on Ubuntu 22.04)
+- GCC 9+ or Clang 12+
+- CMake 3.16+
+- Python 3.8+
 
-## Changing Code and Contributing
+### Building the System
+```bash
+git clone https://github.com/WfHit/wheel_loader.git --recursive
+cd wheel_loader
+make px4_sitl default
+```
 
-This [Developer Guide](https://docs.px4.io/main/en/development/development.html) is for software developers who want to modify the flight stack and middleware (e.g. to add new flight modes), hardware integrators who want to support new flight controller boards and peripherals, and anyone who wants to get PX4 working on a new (unsupported) airframe/vehicle.
+### Running SITL Simulation
+```bash
+make px4_sitl gazebo_wheel_loader
+```
 
-Developers should read the [Guide for Contributions](https://docs.px4.io/main/en/contribute/).
-See the [forum and chat](https://docs.px4.io/main/en/#getting-help) if you need help!
+### Hardware Deployment
+Refer to the [deployment documentation](docs/deployment.md) for hardware-specific build targets and configuration.
 
+## Architecture
 
-## Weekly Dev Call
+The control system consists of several specialized modules:
 
-The PX4 Dev Team syncs up on a [weekly dev call](https://docs.px4.io/main/en/contribute/).
+- **Wheel Loader Robot** (`src/modules/wheel_loader_robot/`) - Main coordination and safety management
+- **Articulated Chassis** (`src/modules/articulated_chassis/`) - Advanced chassis control with MPC
+- **Boom Control** (`src/modules/boom_control/`) - Hydraulic boom actuation
+- **Bucket Control** (`src/modules/bucket_control/`) - Hydraulic bucket control
+- **Load Monitoring** (`src/modules/load_mon/`) - Payload and stability monitoring
+- **Safety Manager** (`src/modules/safety_manager/`) - Construction-specific safety systems
 
-> **Note** The dev call is open to all interested developers (not just the core dev team). This is a great opportunity to meet the team and contribute to the ongoing development of the platform. It includes a QA session for newcomers. All regular calls are listed in the [Dronecode calendar](https://www.dronecode.org/calendar/).
+For detailed architecture information, see [design/wheel_loader_robot_design.md](design/wheel_loader_robot_design.md).
+
+## Version Tracking
+
+This project maintains independent versioning while tracking its relationship to upstream PX4 changes. See [PX4_VERSION_TRACKING.md](PX4_VERSION_TRACKING.md) for detailed version history and cherry-picked changes.
+
+## Building a Wheel Loader Control System
+
+This system is designed for integration with wheel loader hardware platforms. Supported configurations include:
+- Battery-powered compact wheel loaders
+- Hydraulic system integration via CAN/PWM interfaces  
+- Articulated chassis with front and rear axles
+- Various sensor packages (IMU, encoders, load cells, etc.)
+
+For hardware integration guides, see the [hardware documentation](docs/hardware/).
+
+## Contributing to Wheel Loader Development
+
+This project welcomes contributions specifically related to wheel loader control systems. Please read our [wheel loader contribution guidelines](CONTRIBUTING.md) before submitting changes.
+
+**Focus areas for contributions:**
+- Autonomous digging and loading algorithms
+- Improved hydraulic control strategies  
+- Enhanced safety systems for construction environments
+- Power optimization for battery operations
+- Integration with fleet management systems
+
+See our [project roadmap](docs/roadmap.md) for planned features and development priorities.
 
 
 ## Maintenance Team
 
 See the latest list of maintainers on [MAINTAINERS](MAINTAINERS.md) file at the root of the project.
 
-For the latest stats on contributors please see the latest stats for the Dronecode ecosystem in our project dashboard under [LFX Insights](https://insights.lfx.linuxfoundation.org/foundation/dronecode). For information on how to update your profile and affiliations please see the following support link on how to [Complete Your LFX Profile](https://docs.linuxfoundation.org/lfx/my-profile/complete-your-lfx-profile). Dronecode publishes a yearly snapshot of contributions and achievements on its [website under the Reports section](https://dronecode.org).
+## License and Acknowledgments
 
-## Supported Hardware
+This project is licensed under the BSD 3-clause license - see the [LICENSE](LICENSE) file for details.
 
-For the most up to date information, please visit [PX4 User Guide > Autopilot Hardware](https://docs.px4.io/main/en/flight_controller/).
-
-## Project Governance
-
-The PX4 Autopilot project including all of its trademarks is hosted under [Dronecode](https://www.dronecode.org/), part of the Linux Foundation.
+**Acknowledgments:**
+- Based on the [PX4 Autopilot](https://github.com/PX4/PX4-Autopilot) framework v1.16.0
+- PX4 Development Team for the foundational middleware and real-time systems
+- [Dronecode Foundation](https://www.dronecode.org/) for supporting open-source autopilot development
 
 <a href="https://www.dronecode.org/" style="padding:20px" ><img src="https://dronecode.org/wp-content/uploads/sites/24/2020/08/dronecode_logo_default-1.png" alt="Dronecode Logo" width="110px"/></a>
 <div style="padding:10px">&nbsp;</div>
