@@ -1,6 +1,10 @@
 ############################################################################
 #
 # Copyright (c) 2017 - 2024 PX4 Development Team. All rights reserved.
+# Copyright (c) 2024 WfHit Team. All rights reserved.
+#
+# This wheel loader control system is based on PX4 Autopilot v1.16.0
+# and has been extensively modified for wheel loader applications.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -227,7 +231,7 @@ endif()
 #=============================================================================
 # project definition
 #
-project(px4 CXX C ASM)
+project(wheel_loader CXX C ASM)
 
 # CMake build type (Debug Release RelWithDebInfo MinSizeRel Coverage)
 if(NOT CMAKE_BUILD_TYPE)
