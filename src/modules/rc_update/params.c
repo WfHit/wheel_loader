@@ -1936,7 +1936,6 @@ PARAM_DEFINE_INT32(RC_FAILS_THR, 0);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_RETURN_TH, 0.75f);
@@ -1953,7 +1952,6 @@ PARAM_DEFINE_FLOAT(RC_RETURN_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_LOITER_TH, 0.75f);
@@ -1970,7 +1968,6 @@ PARAM_DEFINE_FLOAT(RC_LOITER_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_OFFB_TH, 0.75f);
@@ -1987,7 +1984,6 @@ PARAM_DEFINE_FLOAT(RC_OFFB_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_KILLSWITCH_TH, 0.75f);
@@ -2004,7 +2000,6 @@ PARAM_DEFINE_FLOAT(RC_KILLSWITCH_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_ARMSWITCH_TH, 0.75f);
@@ -2021,7 +2016,6 @@ PARAM_DEFINE_FLOAT(RC_ARMSWITCH_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_TRANS_TH, 0.75f);
@@ -2038,7 +2032,6 @@ PARAM_DEFINE_FLOAT(RC_TRANS_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_GEAR_TH, 0.75f);
@@ -2055,13 +2048,12 @@ PARAM_DEFINE_FLOAT(RC_GEAR_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_ENG_MOT_TH, 0.75f);
 
 /**
- * Threshold for on position of payload power switch
+ * Threshold for selecting payload power switch
  *
  * 0-1 indicate where in the full channel range the threshold sits
  * 		0 : min
@@ -2072,27 +2064,9 @@ PARAM_DEFINE_FLOAT(RC_ENG_MOT_TH, 0.75f);
  *
  * @min -1
  * @max 1
- * @decimal 2
  * @group Radio Switches
  */
 PARAM_DEFINE_FLOAT(RC_PAYLOAD_TH, 0.75f);
-
-/**
- * Threshold for mid position of payload power switch
- *
- * 0-1 indicate where in the full channel range the threshold sits
- * 		0 : min
- * 		1 : max
- * sign indicates polarity of comparison
- * 		positive : true when channel>th
- * 		negative : true when channel<th
- *
- * @min -1
- * @max 1
- * @decimal 2
- * @group Radio Switches
- */
-PARAM_DEFINE_FLOAT(RC_PAYLOAD_MIDTH, 0.25f);
 
 /**
  * PWM input channel that provides RSSI.

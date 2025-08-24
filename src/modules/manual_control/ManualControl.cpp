@@ -277,8 +277,7 @@ void ManualControl::processSwitches(hrt_abstime &now)
 					if (switches.payload_power_switch == manual_control_switches_s::SWITCH_POS_ON) {
 						PAYLOAD_POWER_EN(true);
 
-					} else if (switches.payload_power_switch == manual_control_switches_s::SWITCH_POS_OFF
-						   || switches.payload_power_switch == manual_control_switches_s::SWITCH_POS_MIDDLE) {
+					} else if (switches.payload_power_switch == manual_control_switches_s::SWITCH_POS_OFF) {
 						PAYLOAD_POWER_EN(false);
 					}
 				}

@@ -18,7 +18,8 @@ Mode documentation for the PX4 internal modes are listed below:
 - [Flight Modes (Multicopter)](../flight_modes_mc/index.md)
 - [Flight Modes (Fixed-Wing)](../flight_modes_fw/index.md)
 - [Flight Modes (VTOL)](../flight_modes_vtol/index.md)
-- [Drive Modes (Rover)](../flight_modes_rover/index.md)
+- [Drive Modes (Differential Rover)](../flight_modes_rover/differential.md)
+- [Drive Modes (Ackermann Rover)](../flight_modes_rover/ackermann.md)
 - [Basic Configuration > Flight Modes](../config/flight_mode.md)
 
 ## Internal vs External Modes

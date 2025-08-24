@@ -288,11 +288,10 @@ PARAM_DEFINE_INT32(UAVCAN_SUB_BARO, 0);
  * Enable UAVCAN battery subscription.
  *  uavcan::equipment::power::BatteryInfo
  *  ardupilot::equipment::power::BatteryInfoAux
- *  cuav::equipment::power::CBAT
  *
  *  0 - Disable
  *  1 - Use raw data. Recommended for Smart battery
- *  2 - Filter the data with internal battery library (unsupported with CBAT)
+ *  2 - Filter the data with internal battery library
  *
  * @min 0
  * @max 2
