@@ -1,5 +1,0 @@
-menuconfig MODULES_TERRAIN_ADAPTATION
-	bool "terrain_adaptation"
-	default n
-	---help---
-		Enable support for terrain_adaptation

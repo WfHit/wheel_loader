@@ -1,0 +1,6 @@
+menuconfig MODULES_TRACTION_CONTROL
+	bool "Traction Control"
+	default n
+	help
+		Enable advanced traction control for articulated wheel loader
+		with slip estimation and dynamic torque distribution for mining operations

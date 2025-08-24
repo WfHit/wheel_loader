@@ -22,33 +22,12 @@ config ARTICULATED_CHASSIS_STEERING_CONTROLLER
 		Articulated chassis steering controller with PID position control
 		and servo PWM output for hydraulic steering systems.
 
-config ARTICULATED_CHASSIS_SLIP_ESTIMATOR
-	bool "Enable slip estimator"
+config ARTICULATED_CHASSIS_TRACTION_CONTROL
+	bool "Enable traction control"
 	default y
 	help
-		Advanced slip estimation using Extended Kalman Filter (EKF)
-		for improved traction control performance.
-
-config ARTICULATED_CHASSIS_PREDICTIVE_TRACTION
-	bool "Enable predictive traction control"
-	default y
-	help
-		Model Predictive Control (MPC) based traction management
-		with slip prediction and terrain adaptation.
-
-config ARTICULATED_CHASSIS_LOAD_AWARE_TORQUE
-	bool "Enable load-aware torque distribution"
-	default y
-	help
-		Dynamic torque distribution based on load sensing
-		and weight distribution for optimal traction.
-
-config ARTICULATED_CHASSIS_TERRAIN_ADAPTATION
-	bool "Enable terrain adaptation"
-	default y
-	help
-		Intelligent terrain classification and adaptation system
-		for optimized performance across different surface types.
+		Advanced traction control for articulated wheel loader
+		with slip estimation and dynamic torque distribution for mining operations.
 
 config ARTICULATED_CHASSIS_CHASSIS_CONTROLLER
 	bool "Enable main chassis controller"

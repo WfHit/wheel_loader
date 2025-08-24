@@ -37,7 +37,4 @@
 # Add all chassis control modules as subdirectories
 add_subdirectory(wheel_controller)
 add_subdirectory(steering_controller)
-add_subdirectory(slip_estimator)
-add_subdirectory(predictive_traction)
-add_subdirectory(load_aware_torque)
-add_subdirectory(terrain_adaptation)
+add_subdirectory(traction_control)
