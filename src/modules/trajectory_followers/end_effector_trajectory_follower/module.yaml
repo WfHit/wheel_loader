@@ -1,0 +1,280 @@
+module_name: End Effector Trajectory Follower
+serial_config:
+  - command: end_effector_trajectory_follower start
+    port_config_param:
+      name: TEL_FRSKY_CONFIG
+      group: Radio Switches
+
+parameters:
+    - group: End Effector Trajectory Follower
+      definitions:
+        OMM_END_EFFECTOR_PID_PX_P:
+            description:
+                short: End effector position X PID proportional gain
+            type: float
+            min: 0.0
+            max: 10.0
+            default: 1.0
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_PX_I:
+            description:
+                short: End effector position X PID integral gain
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.1
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_PX_D:
+            description:
+                short: End effector position X PID derivative gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.05
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_PY_P:
+            description:
+                short: End effector position Y PID proportional gain
+            type: float
+            min: 0.0
+            max: 10.0
+            default: 1.0
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_PY_I:
+            description:
+                short: End effector position Y PID integral gain
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.1
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_PY_D:
+            description:
+                short: End effector position Y PID derivative gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.05
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_PZ_P:
+            description:
+                short: End effector position Z PID proportional gain
+            type: float
+            min: 0.0
+            max: 10.0
+            default: 1.2
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_PZ_I:
+            description:
+                short: End effector position Z PID integral gain
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.15
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_PZ_D:
+            description:
+                short: End effector position Z PID derivative gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.08
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_R_P:
+            description:
+                short: End effector roll PID proportional gain
+            type: float
+            min: 0.0
+            max: 5.0
+            default: 0.8
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_R_I:
+            description:
+                short: End effector roll PID integral gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.05
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_R_D:
+            description:
+                short: End effector roll PID derivative gain
+            type: float
+            min: 0.0
+            max: 0.5
+            default: 0.02
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_P_P:
+            description:
+                short: End effector pitch PID proportional gain
+            type: float
+            min: 0.0
+            max: 5.0
+            default: 0.8
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_P_I:
+            description:
+                short: End effector pitch PID integral gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.05
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_P_D:
+            description:
+                short: End effector pitch PID derivative gain
+            type: float
+            min: 0.0
+            max: 0.5
+            default: 0.02
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_Y_P:
+            description:
+                short: End effector yaw PID proportional gain
+            type: float
+            min: 0.0
+            max: 5.0
+            default: 0.6
+            decimal: 2
+
+        OMM_END_EFFECTOR_PID_Y_I:
+            description:
+                short: End effector yaw PID integral gain
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.03
+            decimal: 3
+
+        OMM_END_EFFECTOR_PID_Y_D:
+            description:
+                short: End effector yaw PID derivative gain
+            type: float
+            min: 0.0
+            max: 0.5
+            default: 0.015
+            decimal: 3
+
+        OMM_END_EFFECTOR_MAX_VEL:
+            description:
+                short: Maximum end effector velocity
+            type: float
+            min: 0.1
+            max: 5.0
+            default: 2.0
+            decimal: 1
+            unit: m/s
+
+        OMM_END_EFFECTOR_MAX_ACCEL:
+            description:
+                short: Maximum end effector acceleration
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 3.0
+            decimal: 1
+            unit: m/s^2
+
+        OMM_END_EFFECTOR_MAX_FORCE:
+            description:
+                short: Maximum end effector force
+            type: float
+            min: 100.0
+            max: 10000.0
+            default: 5000.0
+            decimal: 0
+            unit: N
+
+        OMM_BOOM_EXT_MIN:
+            description:
+                short: Minimum boom extension
+            type: float
+            min: 0.0
+            max: 3.0
+            default: 0.5
+            decimal: 1
+            unit: m
+
+        OMM_BOOM_EXT_MAX:
+            description:
+                short: Maximum boom extension
+            type: float
+            min: 1.0
+            max: 5.0
+            default: 3.5
+            decimal: 1
+            unit: m
+
+        OMM_BOOM_LIFT_MIN:
+            description:
+                short: Minimum boom lift angle
+            type: float
+            min: -1.57
+            max: 0.0
+            default: -0.5
+            decimal: 2
+            unit: rad
+
+        OMM_BOOM_LIFT_MAX:
+            description:
+                short: Maximum boom lift angle
+            type: float
+            min: 0.0
+            max: 1.57
+            default: 1.2
+            decimal: 2
+            unit: rad
+
+        OMM_END_EFFECTOR_TILT_MIN:
+            description:
+                short: Minimum end effector tilt angle
+            type: float
+            min: -1.57
+            max: 0.0
+            default: -1.0
+            decimal: 2
+            unit: rad
+
+        OMM_END_EFFECTOR_TILT_MAX:
+            description:
+                short: Maximum end effector tilt angle
+            type: float
+            min: 0.0
+            max: 1.57
+            default: 1.0
+            decimal: 2
+            unit: rad
+
+        OMM_END_EFFECTOR_MASS:
+            description:
+                short: End effector mass for gravity compensation
+            type: float
+            min: 10.0
+            max: 1000.0
+            default: 200.0
+            decimal: 0
+            unit: kg
+
+        OMM_LOAD_COMP_EN:
+            description:
+                short: Enable load compensation
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 1.0
+            decimal: 0

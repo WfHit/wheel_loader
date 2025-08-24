@@ -1,0 +1,6 @@
+menuconfig ARTICULATED_CHASSIS_WHEEL_CONTROLLER
+	bool "wheel controller"
+	default n
+	---help---
+		Enable support for wheel controller module
+

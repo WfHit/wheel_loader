@@ -1,0 +1,82 @@
+module_name: Operation Mode Manager
+
+parameters:
+  - group: Operation Mode Manager
+    definitions:
+      OMM_DEFAULT_MODE:
+        description:
+          short: Default operation mode
+          long: |
+            Default operation mode on startup:
+            0: Manual mode (RC control)
+            1: VLA mode (autonomous)
+        type: int32
+        default: 0
+        min: 0
+        max: 1
+
+      OMM_MODE_SWITCH_CH:
+        description:
+          short: Mode switch RC channel
+          long: RC channel used for mode switching (5-9 for AUX1-AUX5)
+        type: int32
+        default: 5
+        min: 5
+        max: 9
+
+      OMM_MODE_SWITCH_THRESH:
+        description:
+          short: Mode switch threshold
+          long: RC input threshold for mode switching
+        type: float
+        default: 0.5
+        min: 0.1
+        max: 0.9
+
+      OMM_SAFETY_ENABLE:
+        description:
+          short: Enable safety checks
+          long: Enable safety monitoring and emergency stop functionality
+        type: int32
+        default: 1
+        min: 0
+        max: 1
+
+      OMM_EMERGENCY_TIMEOUT:
+        description:
+          short: Emergency timeout (s)
+          long: Timeout for emergency stop activation in VLA mode
+        type: float
+        default: 2.0
+        min: 0.5
+        max: 10.0
+        unit: s
+
+      OMM_MIN_POSITION_ACCURACY:
+        description:
+          short: Minimum position accuracy (m)
+          long: Required position accuracy for operation
+        type: float
+        default: 1.0
+        min: 0.1
+        max: 5.0
+        unit: m
+
+      OMM_DEBUG_ENABLE:
+        description:
+          short: Enable debug output
+          long: Enable debug logging and status output
+        type: int32
+        default: 0
+        min: 0
+        max: 1
+
+      OMM_UPDATE_RATE:
+        description:
+          short: Update rate (Hz)
+          long: Main loop update frequency
+        type: float
+        default: 100.0
+        min: 10.0
+        max: 200.0
+        unit: Hz

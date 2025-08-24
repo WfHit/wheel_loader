@@ -1,0 +1,67 @@
+menuconfig MODULES_CHASSIS_TRAJECTORY_FOLLOWER
+	bool "chassis_trajectory_follower"
+	default y
+	depends on MODULES_TRAJECTORY_FOLLOWERS
+	---help---
+		Enable the chassis trajectory follower module.
+
+		This module implements Model Predictive Control (MPC) for chassis motion control.
+		It provides trajectory following capabilities for the wheel loader chassis,
+		including:
+		- MPC-based trajectory tracking
+		- Velocity and acceleration constraints
+		- Emergency stop handling
+		- Coordination with bucket controller
+		- Real-time trajectory optimization
+
+if MODULES_CHASSIS_TRAJECTORY_FOLLOWER
+
+config CHASSIS_TRAJECTORY_FOLLOWER_MPC_PREDICTION_HORIZON
+	int "MPC prediction horizon steps"
+	default 10
+	range 5 20
+	---help---
+		Number of prediction steps in the MPC horizon.
+		Higher values provide better trajectory tracking but increase computational cost.
+
+config CHASSIS_TRAJECTORY_FOLLOWER_MPC_CONTROL_HORIZON
+	int "MPC control horizon steps"
+	default 5
+	range 3 10
+	---help---
+		Number of control steps in the MPC horizon.
+		Must be less than or equal to prediction horizon.
+
+config CHASSIS_TRAJECTORY_FOLLOWER_UPDATE_RATE
+	int "Controller update rate (Hz)"
+	default 50
+	range 20 100
+	---help---
+		Update frequency of the chassis trajectory follower in Hz.
+		Higher rates provide better tracking but increase CPU usage.
+
+config CHASSIS_TRAJECTORY_FOLLOWER_MAX_VELOCITY
+	int "Maximum chassis velocity (m/s * 100)"
+	default 300
+	range 50 500
+	---help---
+		Maximum allowed chassis velocity in cm/s (value * 0.01 = m/s).
+		Safety limit to prevent excessive speeds.
+
+config CHASSIS_TRAJECTORY_FOLLOWER_MAX_ACCELERATION
+	int "Maximum chassis acceleration (m/s² * 100)"
+	default 200
+	range 50 400
+	---help---
+		Maximum allowed chassis acceleration in cm/s² (value * 0.01 = m/s²).
+		Safety limit to prevent excessive accelerations.
+
+config CHASSIS_TRAJECTORY_FOLLOWER_EMERGENCY_STOP_DECEL
+	int "Emergency stop deceleration (m/s² * 100)"
+	default 500
+	range 200 1000
+	---help---
+		Emergency stop deceleration in cm/s² (value * 0.01 = m/s²).
+		Higher values provide faster stopping but may cause instability.
+
+endif # MODULES_CHASSIS_TRAJECTORY_FOLLOWER

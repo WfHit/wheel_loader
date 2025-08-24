@@ -1,0 +1,141 @@
+module_name: Chassis Trajectory Follower
+serial_config:
+  - command: chassis_trajectory_follower start
+    port_config_param:
+      name: TEL_FRSKY_CONFIG
+      group: Radio Switches
+
+parameters:
+    - group: Chassis Trajectory Follower
+      definitions:
+        CTF_POS_P:
+            description:
+                short: Chassis position tracking weight for MPC
+                long: |
+                  Weight for position tracking error in the MPC cost function.
+                  Higher values result in more aggressive position tracking.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 2.0
+            decimal: 1
+
+        CTF_HDG_P:
+            description:
+                short: Chassis heading tracking weight for MPC
+                long: |
+                  Weight for heading tracking error in the MPC cost function.
+                  Higher values result in more aggressive heading tracking.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 1.5
+            decimal: 1
+
+        CTF_VEL_P:
+            description:
+                short: Chassis velocity tracking weight for MPC
+                long: |
+                  Weight for velocity tracking error in the MPC cost function.
+                  Higher values result in more aggressive velocity tracking.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 1.0
+            decimal: 1
+
+        CTF_ACC_R:
+            description:
+                short: Chassis acceleration cost weight for MPC
+                long: |
+                  Weight for acceleration effort in the MPC cost function.
+                  Higher values result in smoother acceleration commands.
+            type: float
+            min: 0.01
+            max: 5.0
+            default: 0.1
+            decimal: 2
+
+        CTF_STR_R:
+            description:
+                short: Chassis steering cost weight for MPC
+                long: |
+                  Weight for steering effort in the MPC cost function.
+                  Higher values result in smoother steering commands.
+            type: float
+            min: 0.01
+            max: 5.0
+            default: 0.2
+            decimal: 2
+
+        CTF_MAX_VEL:
+            description:
+                short: Maximum chassis velocity
+                long: |
+                  Maximum allowed chassis velocity in m/s.
+            type: float
+            min: 0.1
+            max: 10.0
+            default: 3.0
+            decimal: 1
+            unit: m/s
+
+        CTF_MAX_ACC:
+            description:
+                short: Maximum chassis acceleration
+                long: |
+                  Maximum allowed chassis acceleration in m/s².
+            type: float
+            min: 0.1
+            max: 5.0
+            default: 2.0
+            decimal: 1
+            unit: m/s^2
+
+        CTF_MAX_STR:
+            description:
+                short: Maximum chassis steering angle
+                long: |
+                  Maximum allowed chassis steering angle in radians.
+            type: float
+            min: 0.1
+            max: 1.57
+            default: 0.7
+            decimal: 2
+            unit: rad
+
+        CTF_COORD_EN:
+            description:
+                short: Enable chassis-bucket coordination
+                long: |
+                  Enable coordination between chassis and bucket motion.
+                  When enabled, chassis will assist bucket operations.
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 1.0
+            decimal: 0
+
+        CTF_COORD_K:
+            description:
+                short: Chassis-bucket coordination gain
+                long: |
+                  Gain for chassis-bucket coordination. Higher values
+                  result in more aggressive chassis assistance.
+            type: float
+            min: 0.0
+            max: 2.0
+            default: 0.5
+            decimal: 2
+
+        CTF_WHEEL_B:
+            description:
+                short: Chassis wheelbase length
+                long: |
+                  Distance between front and rear axles in meters.
+            type: float
+            min: 1.0
+            max: 5.0
+            default: 2.5
+            decimal: 1
+            unit: m

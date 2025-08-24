@@ -1,0 +1,72 @@
+module_name: Load Analysis
+
+parameters:
+    - group: Load Analysis
+      definitions:
+        LOAD_ANALYSIS_ALPHA:
+            description:
+                short: Load smoothing alpha
+                long: |
+                    Alpha value for exponential moving average smoothing of load data.
+
+                    Higher values (closer to 1.0) = faster response, more noise
+                    Lower values (closer to 0.0) = slower response, more stable
+            type: float
+            min: 0.01
+            max: 1.0
+            default: 0.2
+            decimal: 2
+
+        LOAD_THRESHOLD_LOW:
+            description:
+                short: Load threshold low
+                long: |
+                    First load threshold for lamp command level mapping.
+
+                    Below this threshold: LOAD_MED_LOW (2 Hz blink)
+                    Above this threshold: LOAD_MEDIUM (5 Hz blink)
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.3
+            decimal: 2
+
+        LOAD_THRESHOLD_MED:
+            description:
+                short: Load threshold medium
+                long: |
+                    Second load threshold for lamp command level mapping.
+
+                    Above this threshold: LOAD_HIGH (10 Hz blink)
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.6
+            decimal: 2
+
+        LOAD_THRESHOLD_HIGH:
+            description:
+                short: Load threshold high
+                long: |
+                    Third load threshold for lamp command level mapping.
+
+                    Above this threshold: LOAD_VERY_HIGH (20 Hz blink)
+            type: float
+            min: 0.0
+            max: 1.0
+            default: 0.8
+            decimal: 2
+
+        LOAD_CMD_RATE_HZ:
+            description:
+                short: Load command rate
+                long: |
+                    Rate at which load lamp commands are published to rear board.
+
+                    Higher rates provide more responsive lamp control but increase
+                    network traffic in distributed uORB system.
+            type: int32
+            min: 1
+            max: 50
+            default: 5
+            unit: Hz

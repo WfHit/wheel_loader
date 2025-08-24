@@ -1,0 +1,27 @@
+menuconfig MODULES_TRAJECTORY_FOLLOWERS
+	bool "trajectory_followers"
+	default n
+	---help---
+		Enable support for trajectory following modules
+
+if MODULES_TRAJECTORY_FOLLOWERS
+
+config MODULES_CHASSIS_TRAJECTORY_FOLLOWER
+	bool "chassis_trajectory_follower"
+	default y
+	depends on MODULES_TRAJECTORY_FOLLOWERS
+	---help---
+		Enable the chassis trajectory follower module.
+		This module implements Model Predictive Control (MPC) for chassis motion,
+		providing trajectory following capabilities for the wheel loader chassis.
+
+config MODULES_BUCKET_TRAJECTORY_FOLLOWER
+	bool "bucket_trajectory_follower"
+	default y
+	depends on MODULES_TRAJECTORY_FOLLOWERS
+	---help---
+		Enable the bucket trajectory follower module.
+		This module implements 6-DOF PID control for bucket motion,
+		providing trajectory following capabilities for the wheel loader bucket assembly.
+
+endif # MODULES_TRAJECTORY_FOLLOWERS

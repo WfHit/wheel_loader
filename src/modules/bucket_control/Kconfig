@@ -1,0 +1,34 @@
+menuconfig MODULES_BUCKET_CONTROL
+	bool "bucket_control"
+	default n
+	---help---
+		Enable support for bucket control module
+
+		This module provides advanced bucket control for wheel loader applications
+		including kinematic calculations, motion planning, boom compensation,
+		and state management with calibration.
+
+if MODULES_BUCKET_CONTROL
+
+config BUCKET_CONTROL_BOOM_COMPENSATION
+	bool "Enable boom compensation"
+	default y
+	---help---
+		Enable boom angle compensation to maintain bucket orientation
+		relative to ground when boom moves.
+
+config BUCKET_CONTROL_CALIBRATION
+	bool "Enable automatic calibration"
+	default y
+	---help---
+		Enable automatic calibration sequence to determine actuator
+		limits and bucket angle ranges.
+
+config BUCKET_CONTROL_PERFORMANCE_MONITORING
+	bool "Enable performance monitoring"
+	default y
+	---help---
+		Enable performance metrics collection for control system
+		analysis and tuning.
+
+endif # MODULES_BUCKET_CONTROL
