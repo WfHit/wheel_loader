@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# NXT-Dual-WL-Front board specific extras init
+# Front wheel and bucket control board
+#------------------------------------------------------------------------------
+
+# Start bucket control module
+if param compare BUCKET_CTRL_EN 1
+then
+	echo "Starting bucket control module"
+	bucket_control start
+
+	# Wait for module to initialize
+	sleep 1
+
+	echo "Bucket control module started successfully"
+fi
+
+# Start H-bridge driver for bucket actuator
+hbridge start
+
+# Initialize front wheel motor control
+echo "Initializing front wheel motor control"
+
+# Start quadrature encoder for front wheel motor
+echo "Starting quadrature encoder for front wheel"
+quadrature_encoder start
