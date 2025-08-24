@@ -1,6 +1,14 @@
 ############################################################################
 #
+<<<<<<< HEAD
 #   Copyright (c) 2016 PX4 Development Team. All rights reserved.
+=======
+<<<<<<< HEAD:src/lib/distributed_uorb/uart_protocol/CMakeLists.txt
+#   Copyright (c) 2024 PX4 Development Team. All rights reserved.
+=======
+#   Copyright (c) 2016 PX4 Development Team. All rights reserved.
+>>>>>>> v1.16.0:boards/holybro/kakuteh7-wing/src/CMakeLists.txt
+>>>>>>> v1.16.0
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -48,6 +56,15 @@ if("${PX4_BOARD_LABEL}" STREQUAL  "bootloader")
 	)
 	target_include_directories(drivers_board PRIVATE ${PX4_SOURCE_DIR}/platforms/nuttx/src/bootloader/common)
 
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD:src/lib/distributed_uorb/uart_protocol/CMakeLists.txt
+px4_add_library(distributed_uorb_uart_protocol
+	uart_protocol.cpp
+	uart_protocol.hpp
+)
+=======
+>>>>>>> v1.16.0
 else()
 	add_library(drivers_board
 		can.c
@@ -72,3 +89,7 @@ else()
 			px4_layer
 	)
 endif()
+<<<<<<< HEAD
+=======
+>>>>>>> v1.16.0:boards/holybro/kakuteh7-wing/src/CMakeLists.txt
+>>>>>>> v1.16.0

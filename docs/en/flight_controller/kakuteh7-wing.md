@@ -1,6 +1,10 @@
+<<<<<<< HEAD
 # Holybro Kakute H743-Wing 
 
 <Badge type="tip" text="PX4 v1.16" />
+=======
+# Holybro Kakute H7 V2
+>>>>>>> v1.16.0
 
 :::warning
 PX4 does not manufacture this (or any) autopilot.
@@ -35,7 +39,13 @@ The board can be bought from one of the following shops (for example):
 | Buz-, Buz+       | Piezo buzzer                      |                            |
 | M1 to M14        | Motor signal outputs              |                            |
 
+<<<<<<< HEAD
 ## PX4 Bootloader Update {#bootloader}
+=======
+<a id="bootloader"></a>
+
+## PX4 Bootloader Update
+>>>>>>> v1.16.0
 
 The board comes pre-installed with [Betaflight](https://github.com/betaflight/betaflight/wiki).
 Before the PX4 firmware can be installed, the _PX4 bootloader_ must be flashed.
@@ -52,7 +62,11 @@ make holybro_kakuteh7-wing_default
 ## Installing PX4 Firmware
 
 ::: info
+<<<<<<< HEAD
 KakuteH7-wing is supported in PX4 v1.16 or newer.
+=======
+KakuteH7-wing is supported with PX4 master & PX4 v1.16 or newer..
+>>>>>>> v1.16.0
 Prior to that release you will need to manually build and install the firmware.
 :::
 
