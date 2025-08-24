@@ -1,0 +1,84 @@
+module_name: VLA Proxy
+
+parameters:
+  - group: VLA Proxy
+    definitions:
+      VLA_PROXY_EN:
+        description:
+          short: Enable VLA proxy module
+          long: |
+            When enabled, the module will establish connection with VLA model
+            and handle bidirectional communication.
+        type: int32
+        values:
+          0: Disabled
+          1: Enabled
+        default: 0
+        reboot_required: true
+
+      VLA_UART_EN:
+        description:
+          short: Enable VLA UART communication
+          long: Enable UART communication with VLA model
+        type: int32
+        values:
+          0: Disabled
+          1: Enabled
+        default: 1
+
+      VLA_UART_BAUD:
+        description:
+          short: VLA UART baud rate
+          long: Baud rate for UART communication with VLA model
+        type: int32
+        min: 9600
+        max: 921600
+        values:
+          9600: 9600 baud
+          19200: 19200 baud
+          38400: 38400 baud
+          57600: 57600 baud
+          115200: 115200 baud
+          230400: 230400 baud
+          460800: 460800 baud
+          921600: 921600 baud
+        default: 115200
+
+      VLA_UART_DEV:
+        description:
+          short: VLA UART device
+          long: |
+            UART device path for VLA communication.
+            Set to 0 for /dev/ttyS3, 1 for /dev/ttyS4, etc.
+        type: int32
+        min: 0
+        max: 10
+        values:
+          0: /dev/ttyS3
+          1: /dev/ttyS4
+          2: /dev/ttyS5
+          3: /dev/ttyUSB0
+        default: 0
+
+      VLA_UPDATE_RATE:
+        description:
+          short: VLA status update rate
+          long: Rate at which robot status is sent to VLA model (Hz)
+        type: float
+        unit: Hz
+        min: 1.0
+        max: 100.0
+        decimal: 1
+        default: 20.0
+
+      VLA_TIMEOUT_MS:
+        description:
+          short: VLA trajectory timeout
+          long: |
+            Timeout in milliseconds. If no trajectory is received within
+            this time, VLA control is automatically stopped.
+        type: int32
+        unit: ms
+        min: 100
+        max: 10000
+        default: 1000
