@@ -40,9 +40,17 @@ TractionControl::TractionControl() :
     ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::rate_ctrl)
 {
     // Initialize PID controllers for slip control
-    _slip_controller_front.set_parameters(1.0f, 0.2f, 0.1f, 1.0f, 1.0f);
-    _slip_controller_rear.set_parameters(1.0f, 0.2f, 0.1f, 1.0f, 1.0f);
-    _yaw_rate_controller.set_parameters(1.2f, 0.1f, 0.2f, 1.0f, 1.0f);
+    _slip_controller_front.setGains(1.0f, 0.2f, 0.1f);
+    _slip_controller_front.setOutputLimit(1.0f);
+    _slip_controller_front.setIntegralLimit(1.0f);
+
+    _slip_controller_rear.setGains(1.0f, 0.2f, 0.1f);
+    _slip_controller_rear.setOutputLimit(1.0f);
+    _slip_controller_rear.setIntegralLimit(1.0f);
+
+    _yaw_rate_controller.setGains(1.2f, 0.1f, 0.2f);
+    _yaw_rate_controller.setOutputLimit(1.0f);
+    _yaw_rate_controller.setIntegralLimit(1.0f);
 }
 
 TractionControl::~TractionControl()
@@ -54,20 +62,13 @@ TractionControl::~TractionControl()
 
 bool TractionControl::init()
 {
-    if (!_vehicle_local_position_sub.registerCallback()) {
-        PX4_ERR("callback registration failed");
-        return false;
-    }
-
     ScheduleOnInterval(1000000 / UPDATE_RATE_HZ); // 50Hz
-
     return true;
 }
 
 void TractionControl::Run()
 {
     if (should_exit()) {
-        _vehicle_local_position_sub.unregisterCallback();
         exit_and_cleanup();
         return;
     }

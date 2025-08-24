@@ -39,23 +39,26 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 
 #include <lib/matrix/matrix/math.hpp>
-#include <lib/pid/pid.h>
+#include <lib/pid/PID.hpp>
 #include <lib/mathlib/mathlib.h>
 #include <lib/perf/perf_counter.h>
 
 // uORB subscriptions
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionCallback.hpp>
+#include <uORB/SubscriptionMultiArray.hpp>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/vehicle_local_position.h>
 #include <uORB/topics/vehicle_angular_velocity.h>
 #include <uORB/topics/vehicle_acceleration.h>
-#include <uORB/topics/chassis_control_command.h>
+#include <uORB/topics/vehicle_control_mode.h>
+// #include <uORB/topics/chassis_control_command.h>  // TODO: Fix missing header
 #include <uORB/topics/vehicle_status.h>
 #include <uORB/topics/sensor_quad_encoder.h>
 
 // uORB publications
 #include <uORB/Publication.hpp>
+#include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/wheel_setpoint.h>
 #include <uORB/topics/steering_setpoint.h>
 #include <uORB/topics/hbridge_command.h>
@@ -185,17 +188,18 @@ private:
     PID _yaw_rate_controller;
 
     // Subscriptions
-    uORB::SubscriptionCallback _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
+    uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
     uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
     uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
     uORB::Subscription _vehicle_acceleration_sub{ORB_ID(vehicle_acceleration)};
-    uORB::Subscription _chassis_control_command_sub{ORB_ID(chassis_control_command)};
+    uORB::Subscription _vehicle_control_mode_sub{ORB_ID(vehicle_control_mode)};
+    // uORB::Subscription _chassis_control_command_sub{ORB_ID(chassis_control_command)};  // TODO: Fix missing header
     uORB::SubscriptionMultiArray<sensor_quad_encoder_s> _encoder_sub{ORB_ID::sensor_quad_encoder};
     uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
     // Publications
-    uORB::Publication<wheel_setpoint_s> _wheel_setpoint_front_pub{ORB_ID(wheel_setpoint), 0};
-    uORB::Publication<wheel_setpoint_s> _wheel_setpoint_rear_pub{ORB_ID(wheel_setpoint), 1};
+    uORB::PublicationMulti<wheel_setpoint_s> _wheel_setpoint_front_pub{ORB_ID(wheel_setpoint)};
+    uORB::PublicationMulti<wheel_setpoint_s> _wheel_setpoint_rear_pub{ORB_ID(wheel_setpoint)};
     uORB::Publication<steering_setpoint_s> _steering_setpoint_pub{ORB_ID(steering_setpoint)};
 
     // Parameters
